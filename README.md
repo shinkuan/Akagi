@@ -19,6 +19,8 @@ A Majsoul Helper<br>
 
 # About The Project
 
+![image](https://github.com/shinkuan/RandomStuff/assets/35415788/4f9b2e2f-059e-44a8-b11a-5b2ce28cb520)
+
 https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-2fe1bd2bb653
 
 # Usage
