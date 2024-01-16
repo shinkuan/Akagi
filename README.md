@@ -35,21 +35,30 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ## Setup
 
-### Install
+### Installation, I suggest you watch the video.
 
-- In Dev
+[YouTube Video for you to follow.](https://youtu.be/ZN3qbMyZeus)
 
 You will need:
 1. Docker
 2. Proxifier or something that can redirect connection to mitmproxy.
 3. A `bot.zip` that contains the AI. [Examples](https://github.com/smly/mjai.app/tree/main/examples)
-4. (Optional) Use Windows Terminal to open client.py for a nice looking TUI.
+4. (Optional, Recommend) Use Windows Terminal to open client.py for a nice looking TUI.
+
+__Don't know how to make a bot.zip yourself? Don't worry!__
+
+__Get bot.zip at [Discord](https://discord.gg/Z2wjXUK8bN)__
 
 Docker:
 1. Install Docker on your PC
 2. `docker pull smly/mjai-client:v3`
 
 Akagi:
+
+`install.bat` is found to have some problem on some machines.
+
+I suggest you follow the [video](https://youtu.be/ZN3qbMyZeus).
+
 1. `git clone this`
 2. `cd into this repo`
 3. Create a Python Virtual Env `python -m venv venv`
@@ -57,11 +66,15 @@ Akagi:
 5. `pip install -r requirement.txt`
 6. `cd mjai.app`
 7. Install mjai `pip install -e .`
-8. put `bot.zip` into ./player folder
+8. put `bot.zip` into ./players folder
+
+or
+1. Run `install.bat`
+2. put `bot.zip` into ./players folder
 
 ### Run
 
-After you activate the venv:
+After you __activate the venv__:
 1. Configure your setting at `setting.json`
 2. `python mitm.py`
 3. `python client.py`
@@ -121,7 +134,7 @@ Following guide can minimum the probility of account suspension.
  - [ ] Change Setting inside application.
  - [x] Autoplay - (Working now, but it is __not__ stable)
    - [ ] Auto use stickers to make opponent think we are not a bot.
- - [ ] Add random time in settings.json to let user choose time they want.
+   - [ ] Add random time in settings.json to let user choose time they want.
  - [ ] Mix multiple AI's decision to make we more like a human but not a perfect bot.
  - [ ] Reduce Startup time of the bot. (Maybe start it before match begin?)
  - [x] Intergrade with [MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker)
@@ -148,15 +161,26 @@ Following guide can minimum the probility of account suspension.
 
 ## Support me
 
-__Donating is optional, and the full functionality of this program is avaliable even without a donation.__
+### Donating is optional, and the full functionality of this program is avaliable even without a donation.
 
 ETH Mainnet: 0x83095C4355E43bDFe9cEf2e439F371900664D41F
 
-Paypal: Maybe? Contact me.
-
-If you've made a donation to support me, feel free to let me know what feature or enhancement you'd like to see in the future!
+Paypal or Others: Maybe? Contact me.
 
 You can find me at [Discord](https://discord.gg/Z2wjXUK8bN).
+
+### What can I get after donating?
+
+Firstly, thank you very much for your willingness to support the author. 
+
+I will prioritize the opinions of donors, such as feature requests and bug fixes.
+
+Next, you can find me on Discord, where I will assign you a donor role.
+
+<!-- Planned in future:
+
+- Help test unreleased features that are still in development
+- Other bot.zip options to choose from -->
 
 # See Also
 
@@ -171,3 +195,21 @@ You can find me at [Discord](https://discord.gg/Z2wjXUK8bN).
 [MahjongRepository/mahjong_soul_api](https://github.com/MahjongRepository/mahjong_soul_api)
 
 [smly/mjai.app](https://github.com/smly/mjai.app)
+
+# LICENSE
+
+```
+“Commons Clause” License Condition v1.0
+
+The Software is provided to you by the Licensor under the License, as defined below, subject to the following condition.
+
+Without limiting other conditions in the License, the grant of rights under the License will not include, and the License does not grant to you, the right to Sell the Software.
+
+For purposes of the foregoing, “Sell” means practicing any or all of the rights granted to you under the License to provide to third parties, for a fee or other consideration (including without limitation fees for hosting or consulting/ support services related to the Software), a product or service whose value derives, entirely or substantially, from the functionality of the Software. Any license notice or attribution required by the License must also include this Commons Clause License Condition notice.
+
+Software: Akagi
+
+License: GNU Affero General Public License version 3 with Commons Clause
+
+Licensor: shinkuan
+```
