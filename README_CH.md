@@ -61,8 +61,8 @@ Akagi:
 3. 創建一個Python venv `python -m venv venv`
 4. 啟動它. `.\venv\Scripts\activate`
 5. `pip install -r requirement.txt`
-6. `cd mjai.app`
-7. 安裝 mjai `pip install -e .`
+6. ~~`cd mjai.app`~~
+7. ~~安裝 mjai `pip install -e .`~~
 8. 將`bot.zip`放入 ./players
 
 或
