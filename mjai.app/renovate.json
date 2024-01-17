@@ -1,0 +1,43 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base",
+    "docker:disable",
+    ":timezone(Asia/Tokyo)",
+    ":enableVulnerabilityAlertsWithLabel(security)"
+  ],
+  "labels": ["dependencies"],
+  "schedule": [
+    "after 07:00 before 20:00 every weekday"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "groupName": "Dev Dependencies",
+      "groupSlug": "dev-dependencies",
+      "matchDepTypes": [
+        "devDependencies"
+      ],
+      "automerge": true
+    },
+    {
+      "groupName": "Patches",
+      "groupSlug": "patches",
+      "matchUpdateTypes": [
+        "patch"
+      ]
+    }
+  ],
+  "regexManagers": [
+    {
+      "fileMatch": ["^\\.github\\/workflows\\/.*\\.yaml$"],
+      "matchStrings": ["python-version: \"(?<currentValue>.*?)\""],
+      "depNameTemplate": "python",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ]
+}

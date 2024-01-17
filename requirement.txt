@@ -1,0 +1,12 @@
+docker==7.0.0
+loguru==0.7.2
+mitmproxy==10.1.6
+numpy==1.26.3
+opencv-python==4.9.0.80
+Pillow==10.1.0
+protobuf==4.25.1
+PyAutoGUI==0.9.54
+PyGetWindow==0.0.9
+rich==13.7.0
+textual==0.46.0
+dxcam==0.0.5

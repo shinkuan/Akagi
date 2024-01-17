@@ -1,0 +1,15 @@
+.idea
+env
+
+*.py[cod]
+__pycache__
+.DS_Store
+
+MANIFEST
+dist/*
+*.egg-info
+build/*
+
+
+temp
+temp.py

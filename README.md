@@ -42,6 +42,7 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 You will need:
 1. Docker
 2. Proxifier or something that can redirect connection to mitmproxy.
+   1. __Remember to trust mitmproxy's Certificate!!!__ Don't know how? Google it.
 3. A `bot.zip` that contains the AI. [Examples](https://github.com/smly/mjai.app/tree/main/examples)
 4. (Optional, Recommend) Use Windows Terminal to open client.py for a nice looking TUI.
 

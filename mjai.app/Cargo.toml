@@ -1,0 +1,38 @@
+[package]
+name = "mjai"
+version = "0.1.9"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "mlibriichi"
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1"
+log = "0.4"
+pyo3-log = "0.8"
+once_cell = "1"
+serde_json = "1"
+boomphf = "0.6"
+byteorder = "1"
+rayon = "1"
+ndarray = "0.15"
+numpy = "0.19"
+serde_with = "3"
+rand = "0.8"
+rand_chacha = "0.3"
+flate2 = "1"
+sha3 = "0.10"
+glob = "0.3"
+derivative = "2"
+ahash = "0.8"
+tinyvec = { version = "1", features = ["alloc", "serde"] }
+serde = { version = "1", features = ["derive"] }
+mimalloc = { version = "0.1", default-features = false, optional = true }
+# NOTE: `fast_shanten` can't handle '1456s6z(p5z3)(234p0)(123m0)'
+riichi-tools-rs = { version = "0.0.73", git = "https://github.com/harphield/riichi-tools-rs", rev = "cc3eb9f" }
+
+[dependencies.pyo3]
+version = "0.19"
+features = ["multiple-pymethods", "anyhow"]

@@ -1,0 +1,16 @@
+/akagi.log
+/detect_test.py
+/detect_window.py
+/players
+/proto_test.py
+/test.py
+/test2.py
+/test3.py
+/VENV
+/__pycache__
+/client.bat
+/mitm.bat
+/mjai.app/target
+*.pyc
+*/__pycache__
+/.vscode

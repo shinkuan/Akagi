@@ -40,6 +40,7 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 在開始前，你需要以下東西:
 1. Docker
 2. Proxifier或任何可以將雀魂連線導向到MITM Proxy的工具。
+   1. __記得要信任mitmproxy的憑證!!!__ 不要問我怎麼做。去問Google。
 3. 一個`bot.zip`。 [Examples](https://github.com/smly/mjai.app/tree/main/examples)
 4. (Optional) 推薦使用Windows Terminal，以獲得預期中的UI效果。
 

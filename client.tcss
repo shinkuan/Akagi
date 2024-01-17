@@ -1,0 +1,437 @@
+#log_container {
+    width: 1fr;
+    height: 2fr;
+    align: center top;
+}
+
+#liqi_log_container {
+    width: 1fr;
+    height: 1fr;
+    border: round $accent;
+    border-title-align: center;
+    align: left top;
+    padding: 1;
+}
+
+#mjai_log_container {
+    width: 1fr;
+    height: 1fr;
+    border: round $accent;
+    border-title-align: center;
+    align: right top;
+    padding: 1;
+}
+
+$chi: #00ff80;
+$chi-lighten-1: #3f9;
+$chi-lighten-2: #66ffb3;
+$chi-lighten-3: #9fc;
+$chi-darken-1: #0c6;
+$chi-darken-2: #00994d;
+$chi-darken-3: #063;
+
+Button.action_chi {
+    background: $chi;
+    color: $text;
+    border-top: tall $chi-lighten-2;
+    border-bottom: tall $chi-darken-3;
+}
+
+Button.action_chi:hover {
+    background: $chi-darken-2;
+    color: $text;
+    border-top: tall $chi;
+}
+
+Button.action_chi.-active {
+    background: $chi;
+    border-bottom: tall $chi-lighten-2;
+    border-top: tall $chi-darken-2;
+}
+
+$pon: #007fff;
+$pon-lighten-1: #39f;
+$pon-lighten-2: #66b2ff;
+$pon-lighten-3: #9cf;
+$pon-darken-1: #06c;
+$pon-darken-2: #004c99;
+$pon-darken-3: #036;
+
+Button.action_pon {
+    background: $pon;
+    color: $text;
+    border-top: tall $pon-lighten-3;
+    border-bottom: tall $pon-darken-3;
+}
+
+Button.action_pon:hover {
+    background: $pon-darken-2;
+    color: $text;
+    border-top: tall $pon;
+}
+
+Button.action_pon.-active {
+    background: $pon;
+    border-bottom: tall $pon-lighten-3;
+    border-top: tall $pon-darken-3;
+}
+
+$kan: #9a1cbd;
+$kan-lighten-1: #b92ce0;
+$kan-lighten-2: #c859e6;
+$kan-lighten-3: #d685ed;
+$kan-darken-1: #761591;
+$kan-darken-2: #520f64;
+$kan-darken-3: #2d0838;
+
+Button.action_daiminkan {
+    background: $kan;
+    color: $text;
+    border-top: tall $kan-lighten-3;
+    border-bottom: tall $kan-darken-3;
+}
+
+Button.action_daiminkan:hover {
+    background: $kan-darken-2;
+    color: $text;
+    border-top: tall $kan;
+}
+
+Button.action_daiminkan.-active {
+    background: $kan;
+    border-bottom: tall $kan-lighten-3;
+    border-top: tall $kan-darken-3;
+}
+
+Button.action_kakan {
+    background: $kan;
+    color: $text;
+    border-top: tall $kan-lighten-3;
+    border-bottom: tall $kan-darken-3;
+}
+
+Button.action_kakan:hover {
+    background: $kan-darken-2;
+    color: $text;
+    border-top: tall $kan;
+}
+
+Button.action_kakan.-active {
+    background: $kan;
+    border-bottom: tall $kan-lighten-3;
+    border-top: tall $kan-darken-3;
+}
+
+Button.action_ankan {
+    background: $kan;
+    color: $text;
+    border-top: tall $kan-lighten-3;
+    border-bottom: tall $kan-darken-3;
+}
+
+Button.action_ankan:hover {
+    background: $kan-darken-2;
+    color: $text;
+    border-top: tall $kan;
+}
+
+Button.action_ankan.-active {
+    background: $kan;
+    border-bottom: tall $kan-lighten-3;
+    border-top: tall $kan-darken-3;
+}
+
+$reach: #e06c20;
+$reach-lighten-1: #e68a4d;
+$reach-lighten-2: #eca77a;
+$reach-lighten-3: #f3c5a6;
+$reach-darken-1: #b45619;
+$reach-darken-2: #874113;
+$reach-darken-3: #5a2b0d;
+
+Button.action_reach {
+    background: $reach;
+    color: $text;
+    border-top: tall $reach-lighten-3;
+    border-bottom: tall $reach-darken-3;
+}
+
+Button.action_reach:hover {
+    background: $reach-darken-2;
+    color: $text;
+    border-top: tall $reach;
+}
+
+Button.action_reach.-active {
+    background: $reach;
+    border-bottom: tall $reach-lighten-3;
+    border-top: tall $reach-darken-3;
+}
+
+$hora: #c13535;
+$hora-lighten-1: #d15858;
+$hora-lighten-2: #dc8080;
+$hora-lighten-3: #e7a8a8;
+$hora-darken-1: #992a2a;
+$hora-darken-2: #711f1f;
+$hora-darken-3: #491414;
+
+Button.action_hora {
+    background: $hora;
+    color: $text;
+    border-top: tall $hora-lighten-3;
+    border-bottom: tall $hora-darken-3;
+}
+
+Button.action_hora:hover {
+    background: $hora-darken-2;
+    color: $text;
+    border-top: tall $hora;
+}
+
+Button.action_hora.-active {
+    background: $hora;
+    border-bottom: tall $hora-lighten-3;
+    border-top: tall $hora-darken-3;
+}
+
+$none: #a0a0a0;
+$none-lighten-1: #bababa;
+$none-lighten-2: #d3d3d3;
+$none-lighten-3: #ededed;
+$none-darken-1: #878787;
+$none-darken-2: #6d6d6d;
+$none-darken-3: #545454;
+
+Button.action_none {
+    background: $none;
+    color: $text;
+    border-top: tall $none-lighten-3;
+    border-bottom: tall $none-darken-3;
+}
+
+Button.action_none:hover {
+    background: $none-darken-2;
+    color: $text;
+    border-top: tall $none;
+}
+
+Button.action_none.-active {
+    background: $none;
+    border-bottom: tall $none-lighten-3;
+    border-top: tall $none-darken-3;
+}
+
+$ryukyoku: #8574a1;
+$ryukyoku-lighten-1: #a092b6;
+$ryukyoku-lighten-2: #bab1ca;
+$ryukyoku-lighten-3: #d5cfdf;
+$ryukyoku-darken-1: #6c5b87;
+$ryukyoku-darken-2: #534768;
+$ryukyoku-darken-3: #3b324a;
+
+Button.action_ryukyoku {
+    background: $ryukyoku;
+    color: $text;
+    border-top: tall $ryukyoku-lighten-3;
+    border-bottom: tall $ryukyoku-darken-3;
+}
+
+Button.action_ryukyoku:hover {
+    background: $ryukyoku-darken-2;
+    color: $text;
+    border-top: tall $ryukyoku;
+}
+
+Button.action_ryukyoku.-active {
+    background: $ryukyoku;
+    border-bottom: tall $ryukyoku-lighten-3;
+    border-top: tall $ryukyoku-darken-3;
+}
+
+#bottom_container {
+    width: 1fr;
+    height: 8;
+    align: center top;
+}
+
+#tehai_container {
+    width: 1fr;
+    height: auto;
+    border: round $accent;
+    border-title-align: left;
+    align: center top;
+    padding: 0;
+}
+
+#akagi_container {
+    width: 1fr;
+    height: 8;
+    border: round $accent;
+    border-title-align: left;
+    align: center top;
+}
+
+#akagi_action {
+    width: 1fr;
+    height: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#akagi_pai {
+    width: 2fr;
+    height: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#checkbox_container {
+    width: auto;
+    height: 1fr;
+    border: round $accent;
+    border-title-align: left;
+    align: center top;
+    padding: 0;
+}
+
+#autoplay_setting_left_pai_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#autoplay_setting_left_pai_x_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_left_pai_y_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_left_pai_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
+#autoplay_setting_right_pai_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#autoplay_setting_right_pai_x_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_right_pai_y_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_right_pai_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
+#autoplay_setting_random_time_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#autoplay_setting_random_time_min_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_random_time_max_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_random_time_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
+#autoplay_setting_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+    border: round $accent;
+    border-title-align: center;
+}
+
+#port_setting_mitm_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#port_setting_mitm_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#port_setting_mitm_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
+#port_setting_xmlrpc_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#port_setting_xmlrpc_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#port_setting_xmlrpc_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
+#port_setting_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+    border: round $accent;
+    border-title-align: center;
+}
