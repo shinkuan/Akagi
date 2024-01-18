@@ -46,7 +46,7 @@ class MajsoulBridge:
         self.syncing = False
         pass
 
-    def input(self, mjai_client: MjaiPlayerClient, parse_msg: dict) -> dict | None:
+    def input(self, mjai_client: list[MjaiPlayerClient], parse_msg: dict) -> dict | None:
         # TODO SyncGame
         if parse_msg['method'] == '.lq.FastTest.syncGame':
             self.syncing = True
@@ -72,14 +72,14 @@ class MajsoulBridge:
         if parse_msg['method'] == '.lq.FastTest.authGame' and parse_msg['type'] == MsgType.Res:
             seatList = parse_msg['data']['seatList']
             self.seat = seatList.index(self.accountId)
-            mjai_client.launch_container(self.seat)
+            # mjai_client.launch_container(self.seat)
             self.mjai_message.append(
                 {
                     'type': 'start_game',
                     'id': self.seat
                 }
             )
-            self.react(mjai_client)
+            self.react(mjai_client[self.seat])
             return None
         if parse_msg['method'] == '.lq.ActionPrototype':
             # start_kyoku
@@ -326,7 +326,7 @@ class MajsoulBridge:
                 )
                 self.my_tehais = ["?"]*13
                 self.my_tsumohai = "?"
-                self.react(mjai_client)
+                self.react(mjai_client[self.seat])
                 return None
             # notile
             if parse_msg['data']['name'] == 'ActionNoTile':
@@ -338,7 +338,7 @@ class MajsoulBridge:
                 )
                 self.my_tehais = ["?"]*13
                 self.my_tsumohai = "?"
-                self.react(mjai_client)
+                self.react(mjai_client[self.seat])
                 return None
             # ryukyoku
             if parse_msg['data']['name'] == 'ActionLiuJu':
@@ -355,7 +355,7 @@ class MajsoulBridge:
                 )
                 self.my_tehais = ["?"]*13
                 self.my_tsumohai = "?"
-                self.react(mjai_client)
+                self.react(mjai_client[self.seat])
                 return None
             
             if 'data' in parse_msg['data']:
@@ -370,9 +370,9 @@ class MajsoulBridge:
                         self.doras = parse_msg['data']['data']['doras']
                 if 'operation' in parse_msg['data']['data']:
                     self.operation = parse_msg['data']['data']['operation']
-                    return self.react(mjai_client)
+                    return self.react(mjai_client[self.seat])
         # end_game
-        if parse_msg['method'] == '.lq.NotifyGameEndResult':
+        if parse_msg['method'] == '.lq.NotifyGameEndResult' or parse_msg['method'] == '.lq.NotifyGameTerminate':
             self.mjai_message.append(
                 {
                     'type': 'end_game'
@@ -380,7 +380,8 @@ class MajsoulBridge:
             )
             self.my_tehais = ["?"]*13
             self.my_tsumohai = "?"
-            self.react(mjai_client)
+            self.react(mjai_client[self.seat])
+            mjai_client[self.seat].restart_container(self.seat)
             return None
         
         return None

@@ -19,6 +19,8 @@ from mjai.player import MjaiPlayerClient
 from majsoul2mjai import MajsoulBridge
 from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
 from action import Action
+from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
@@ -148,6 +150,9 @@ class FlowScreen(Screen):
                         if liqi_msg['data']['name'] == 'ActionNewRound':
                             self.action.isNewRound = True
                             self.action.reached = False
+                    if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
+                        self.action_quit()
+                    
             elif self.syncing:
                 self.query_one("#loading_indicator").remove()
                 self.syncing = False
@@ -282,6 +287,27 @@ class Akagi(App):
         self.akagi_log_dict= dict() # flow.id -> List[akagi_log]
         self.loguru_log = [] # List[loguru_log]
 
+        self.four_mjai_client = []
+        used_port = get_container_ports()
+        port_num = PORT_NUM
+        four_port_num = []
+        for i in range(4):
+            while port_num in used_port:
+                port_num+=1
+            four_port_num.append(port_num)
+            used_port.append(port_num)
+            
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(self.launch_client, i, four_port_num[i], submission) for i in range(4)}
+            self.four_mjai_client = [future.result() for future in futures]
+        
+        self.four_mjai_client.sort(key=lambda x: x.player_id)
+        
+    def launch_client(self, i, port_num, submission):
+        client = MjaiPlayerClient(submission, timeout=15, port_num=port_num)
+        client.launch_container(i)
+        return client
+
     def on_mount(self) -> None:
         self.update_flow = self.set_interval(1, self.refresh_flow)
         self.get_messages_flow = self.set_interval(0.05, self.get_messages)
@@ -344,7 +370,10 @@ class Akagi(App):
                 logger.info(liqi_msg)
                 if liqi_msg is not None:
                     self.liqi_msg_dict[flow_id].append(liqi_msg)
-                    mjai_msg = self.bridge[flow_id].input(self.mjai_client[flow_id], liqi_msg)
+                    if liqi_msg['method'] == '.lq.FastTest.authGame' and liqi_msg['type'] == MsgType.Req:
+                        self.app.push_screen(FlowScreen(flow_id))
+                        pass
+                    mjai_msg = self.bridge[flow_id].input(self.four_mjai_client, liqi_msg)
                     if mjai_msg is not None:
                         if self.bridge[flow_id].reach and mjai_msg["type"] == "dahai":
                             mjai_msg["type"] = "reach"
@@ -370,6 +399,8 @@ class Akagi(App):
         self.rpc_server.reset_message_idx()
         for flow_id in self.active_flows:
             self.mjai_client[flow_id].delete_container()
+        for mjai_client in self.four_mjai_client:
+            mjai_client.delete_container()
         self.exit()
 
     def action_settings(self) -> None:
