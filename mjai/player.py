@@ -15,8 +15,8 @@ import requests
 from loguru import logger
 from mjai.exceptions import EngineRuntimeError, TimeoutExpired
 
-MEMORY_SIZE = "1G"
-CPU_CORES = "1"
+# MEMORY_SIZE = "1G"
+# CPU_CORES = "1"
 
 
 class MjaiPlayerClient:
@@ -91,10 +91,10 @@ class MjaiPlayerClient:
             "/workspace",
             "-p",
             f"{self.port_num}:3000",
-            "--memory",
-            MEMORY_SIZE,
-            "--cpus",
-            CPU_CORES,
+            # "--memory",
+            # MEMORY_SIZE,
+            # "--cpus",
+            # CPU_CORES,
             "--mount",
             f"type=bind,src={self.submission_path.resolve()},dst=/bot.zip,readonly",  # noqa: E501
             "--mount",
