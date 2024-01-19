@@ -65,9 +65,8 @@ I suggest you follow the [video](https://youtu.be/ZN3qbMyZeus).
 3. Create a Python Virtual Env `python -m venv venv`
 4. Activate it. `.\venv\Scripts\activate`
 5. `pip install -r requirement.txt`
-6. ~~`cd mjai.app`~~
-7. ~~Install mjai `pip install -e .`~~
-8. put `bot.zip` into ./players folder
+6. `playwright install chromium`
+7. put `bot.zip` into ./players folder
 
 or
 1. Run `install.bat`
