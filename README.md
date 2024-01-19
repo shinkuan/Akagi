@@ -37,6 +37,10 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ### Installation, I suggest you watch the video.
 
+### Some content are outdated:
+- You don't need to install mjai now.
+- You need to install chromium if you want to use playwright: `playwright install chromium`
+
 [YouTube Video for you to follow.](https://youtu.be/ZN3qbMyZeus)
 
 You will need:
