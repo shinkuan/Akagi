@@ -8,6 +8,7 @@ import mitmproxy.http
 import mitmproxy.log
 import mitmproxy.tcp
 import mitmproxy.websocket
+from pathlib import Path
 from optparse import OptionParser
 from mitmproxy import proxy, options, ctx
 from mitmproxy.tools.dump import DumpMaster
@@ -137,7 +138,7 @@ if __name__ == '__main__':
     with sync_playwright() as playwright:
         chromium = playwright.chromium
         browser = chromium.launch_persistent_context(
-            user_data_dir='./data',
+            user_data_dir=Path(__file__).parent / 'data',
             headless=False,
             viewport={'width': 1920, 'height': 1080},
             proxy={"server": f"http://localhost:{mitm_port}"})
