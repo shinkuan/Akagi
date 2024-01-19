@@ -233,8 +233,9 @@ class LiqiModify:
                             person['title'] = self.current_title
                             person['avatarFrame'] = self.current_frame
                 if msg['method'] == '.lq.Lobby.fetchRoom':
+                    # console.log(msg, style="bold red")
                     action = 'modify'
-                    for person in modify_msg['data']['persons']:
+                    for person in modify_msg['data']['room']['persons']:
                         if person['accountId'] == self.accountId:
                             person['avatarId'] = self.current_skin
                             person['character']['charid'] = self.current_character
@@ -242,6 +243,8 @@ class LiqiModify:
                             person['character']['level'] = 5
                             person['character']['exp'] = 0
                             person['character']['isUpgraded'] = True
+                            person['title'] = self.current_title
+                            person['avatarFrame'] = self.current_frame  
 
             # Request from client, drop it or fake a response to avoid Majsoul found we cheat
             if msg['type'] == MsgType.Req:
