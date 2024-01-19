@@ -7,6 +7,7 @@ import docker
 import json
 from loguru import logger
 
+from textual import on  
 from textual.app import App, ComposeResult
 from textual.containers import ScrollableContainer, Horizontal, Vertical
 from textual.events import Event, ScreenResume
@@ -49,7 +50,7 @@ class FlowScreen(Screen):
         # ("d", "toggle_dark", "Toggle dark mode"),
         # ("a", "add_stopwatch", "Add"),
         # ("r", "remove_stopwatch", "Remove"),
-        ("q", "quit", "Quit"),
+        ("ctrl+q", "quit", "Quit"),
     ]
 
     def __init__(self, flow_id, *args, **kwargs) -> None:
@@ -226,40 +227,97 @@ class FlowDisplay(Static):
 class SettingsScreen(Screen):
     
     BINDINGS = [
-        ("x", "quit_setting", "Quit Settings"),
+        ("ctrl+q", "quit_setting", "Quit Settings"),
+        ("ctrl+s", "quit_setting", "Quit Settings"),
     ]
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        with open("settings.json", "r") as f:
+            settings = json.load(f)
+            self.value_port_setting_mitm_input = settings["Port"]["MITM"]
+            self.value_port_setting_xmlrpc_input = settings["Port"]["XMLRPC"]
+            self.value_unlocker_setting_enable_checkbox = settings["Unlocker"]
+            self.value_unlocker_setting_v10_checkbox = settings["v10"]
+            self.value_autoplay_setting_enable_checkbox = settings["Autoplay"]
+            # self.value_autoplay_setting_random_time_min_input = settings["Autoplay"]["Random Time"]["Min"]
+            # self.value_autoplay_setting_random_time_max_input = settings["Autoplay"]["Random Time"]["Max"]
+
     def compose(self) -> ComposeResult:
-        self.autoplay_setting_left_pai_label = Label("Left Pai", id="autoplay_setting_left_pai_label")
-        self.autoplay_setting_left_pai_x_input = Input(placeholder="X Cord", type="integer", id="autoplay_setting_left_pai_x_input")
-        self.autoplay_setting_left_pai_y_input = Input(placeholder="Y Cord", type="integer", id="autoplay_setting_left_pai_y_input")
-        self.autoplay_setting_left_pai_container = Horizontal(self.autoplay_setting_left_pai_label, self.autoplay_setting_left_pai_x_input, self.autoplay_setting_left_pai_y_input, id="autoplay_setting_left_pai_container")
-        self.autoplay_setting_right_pai_label = Label("Right Pai", id="autoplay_setting_right_pai_label")
-        self.autoplay_setting_right_pai_x_input = Input(placeholder="X Cord", type="integer", id="autoplay_setting_right_pai_x_input")
-        self.autoplay_setting_right_pai_y_input = Input(placeholder="Y Cord", type="integer", id="autoplay_setting_right_pai_y_input")
-        self.autoplay_setting_right_pai_container = Horizontal(self.autoplay_setting_right_pai_label, self.autoplay_setting_right_pai_x_input, self.autoplay_setting_right_pai_y_input, id="autoplay_setting_right_pai_container")
+        self.port_setting_mitm_label = Label("MITM Port", id="port_setting_mitm_label")
+        self.port_setting_mitm_input = Input(placeholder="Port", type="integer", id="port_setting_mitm_input", value=str(self.value_port_setting_mitm_input))
+        self.port_setting_mitm_container = Horizontal(self.port_setting_mitm_label, self.port_setting_mitm_input, id="port_setting_mitm_container")
+        self.port_setting_xmlrpc_label = Label("XMLRPC Port", id="port_setting_xmlrpc_label")
+        self.port_setting_xmlrpc_input = Input(placeholder="Port", type="integer", id="port_setting_xmlrpc_input", value=str(self.value_port_setting_xmlrpc_input))
+        self.port_setting_xmlrpc_container = Horizontal(self.port_setting_xmlrpc_label, self.port_setting_xmlrpc_input, id="port_setting_xmlrpc_container")
+        self.port_setting_container = Vertical(self.port_setting_mitm_container, self.port_setting_xmlrpc_container, id="port_setting_container")
+        self.port_setting_container.border_title = "Port"
+
+        self.unlocker_setting_label = Label("Unlocker", id="unlocker_setting_label")
+        self.unlocker_setting_enable_checkbox = Checkbox("Enable", id="unlocker_setting_enable_checkbox", classes="short", value=self.value_unlocker_setting_enable_checkbox)
+        self.unlocker_setting_v10_checkbox = Checkbox("v10", id="unlocker_setting_v10_checkbox", classes="short", value=self.value_unlocker_setting_v10_checkbox)
+        self.unlocker_setting_container = Horizontal(self.unlocker_setting_label, self.unlocker_setting_enable_checkbox, self.unlocker_setting_v10_checkbox, id="unlocker_setting_container")
+        self.unlocker_setting_container.border_title = "Unlocker"
+
+        self.autoplay_setting_enable_label = Label("Enable", id="autoplay_setting_enable_label")
+        self.autoplay_setting_enable_checkbox = Checkbox("Enable", id="autoplay_setting_enable_checkbox", classes="short", value=self.value_autoplay_setting_enable_checkbox)
+        self.autoplay_setting_enable_container = Horizontal(self.autoplay_setting_enable_label, self.autoplay_setting_enable_checkbox, id="autoplay_setting_enable_container")
         self.autoplay_setting_random_time_label = Label("Random Time", id="autoplay_setting_random_time_label")
         self.autoplay_setting_random_time_min_input = Input(placeholder="Min", type="number", id="autoplay_setting_random_time_min_input")
         self.autoplay_setting_random_time_max_input = Input(placeholder="Max", type="number", id="autoplay_setting_random_time_max_input")
         self.autoplay_setting_random_time_container = Horizontal(self.autoplay_setting_random_time_label, self.autoplay_setting_random_time_min_input, self.autoplay_setting_random_time_max_input, id="autoplay_setting_random_time_container")
-        self.autoplay_setting_container = Vertical(self.autoplay_setting_left_pai_container, self.autoplay_setting_right_pai_container, self.autoplay_setting_random_time_container, id="autoplay_setting_container")
+        self.autoplay_setting_container = Vertical(self.autoplay_setting_enable_container, self.autoplay_setting_random_time_container, id="autoplay_setting_container")
         self.autoplay_setting_container.border_title = "Autoplay"
 
-        self.port_setting_mitm_label = Label("MITM Port", id="port_setting_mitm_label")
-        self.port_setting_mitm_input = Input(placeholder="Port", type="integer", id="port_setting_mitm_input")
-        self.port_setting_mitm_container = Horizontal(self.port_setting_mitm_label, self.port_setting_mitm_input, id="port_setting_mitm_container")
-        self.port_setting_xmlrpc_label = Label("XMLRPC Port", id="port_setting_xmlrpc_label")
-        self.port_setting_xmlrpc_input = Input(placeholder="Port", type="integer", id="port_setting_xmlrpc_input")
-        self.port_setting_xmlrpc_container = Horizontal(self.port_setting_xmlrpc_label, self.port_setting_xmlrpc_input, id="port_setting_xmlrpc_container")
-        self.port_setting_container = Vertical(self.port_setting_mitm_container, self.port_setting_xmlrpc_container, id="port_setting_container")
-        self.port_setting_container.border_title = "Port"
         yield Header()
-        yield Footer()
         yield Markdown("# Settings")
-        yield self.autoplay_setting_container
         yield self.port_setting_container
+        yield self.unlocker_setting_container
+        yield self.autoplay_setting_container
+        yield Footer()
+
+    @on(Input.Changed, "#port_setting_mitm_input")
+    def port_setting_mitm_input_changed(self, event: Input.Changed) -> None:
+        self.value_port_setting_mitm_input = event.value
+
+    @on(Input.Changed, "#port_setting_xmlrpc_input")
+    def port_setting_xmlrpc_input_changed(self, event: Input.Changed) -> None:
+        self.value_port_setting_xmlrpc_input = event.value
+
+    @on(Checkbox.Changed, "#unlocker_setting_enable_checkbox")
+    def unlocker_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        self.value_unlocker_setting_enable_checkbox = event.value
+
+    @on(Checkbox.Changed, "#unlocker_setting_v10_checkbox")
+    def unlocker_setting_v10_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        self.value_unlocker_setting_v10_checkbox = event.value
+
+    @on(Checkbox.Changed, "#autoplay_setting_enable_checkbox")
+    def autoplay_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        self.value_autoplay_setting_enable_checkbox = event.value
+
+    @on(Input.Changed, "#autoplay_setting_random_time_min_input")
+    def autoplay_setting_random_time_min_input_changed(self, event: Input.Changed) -> None:
+        # self.value_autoplay_setting_random_time_min_input = event.value
+        pass
+
+    @on(Input.Changed, "#autoplay_setting_random_time_max_input")
+    def autoplay_setting_random_time_max_input_changed(self, event: Input.Changed) -> None:
+        # self.value_autoplay_setting_random_time_max_input = event.value
+        pass
 
     def action_quit_setting(self) -> None:
+        with open("settings.json", "r") as f:
+            settings = json.load(f)
+            settings["Port"]["MITM"] = int(self.value_port_setting_mitm_input)
+            settings["Port"]["XMLRPC"] = int(self.value_port_setting_xmlrpc_input)
+            settings["Unlocker"] = self.value_unlocker_setting_enable_checkbox
+            settings["v10"] = self.value_unlocker_setting_v10_checkbox
+            settings["Autoplay"] = self.value_autoplay_setting_enable_checkbox
+            # settings["Autoplay"]["Random Time"]["Min"] = self.value_autoplay_setting_random_time_min_input
+            # settings["Autoplay"]["Random Time"]["Max"] = self.value_autoplay_setting_random_time_max_input
+        with open("settings.json", "w") as f:
+            json.dump(settings, f, indent=4)
         self.app.pop_screen()
 
 
@@ -270,8 +328,8 @@ class Akagi(App):
         # ("d", "toggle_dark", "Toggle dark mode"),
         # ("a", "add_stopwatch", "Add"),
         # ("r", "remove_stopwatch", "Remove"),
-        ("q", "quit", "Quit"),
-        ("s", "settings", "Settings")
+        ("ctrl+q", "quit", "Quit"),
+        ("ctrl+s", "settings", "Settings")
     ]
 
     def __init__(self, rpc_server, *args, **kwargs) -> None:
@@ -419,5 +477,13 @@ if __name__ == '__main__':
     logger.add(app.my_sink)
     logger.add("akagi.log")
     logger.level("CLICK", no=10, icon="CLICK")
-    app.run()
+    try:
+        app.run()
+    except Exception as e:
+        containers = docker.from_env().containers.list()
+        for container in containers:
+            if container.image.tags[0] == 'smly/mjai-client:v3':
+                container.stop()
+                container.remove()
+        raise e
     

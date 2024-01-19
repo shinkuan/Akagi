@@ -349,6 +349,27 @@ Button.action_ryukyoku.-active {
     margin: 0;
 }
 
+#autoplay_setting_enable_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#autoplay_setting_enable_checkbox {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_enable_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
 #autoplay_setting_random_time_label {
     padding: 1 0;
     width: 11;
@@ -377,6 +398,35 @@ Button.action_ryukyoku.-active {
 }
 
 #autoplay_setting_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+    border: round $accent;
+    border-title-align: center;
+}
+
+#unlocker_setting_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#unlocker_setting_enable_checkbox {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#unlocker_setting_v10_checkbox {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#unlocker_setting_container {
     width: 1fr;
     height: auto;
     align: center top;
