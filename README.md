@@ -80,7 +80,7 @@ or
 
 After you __activate the venv__:
 1. Configure your setting at `setting.json`
-2. `python mitm.py`
+2. `python mitm_playwright.py` or `python mitm.py`
 3. `python client.py`
 
 ### settings.json

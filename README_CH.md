@@ -78,7 +78,7 @@ Akagi:
 
 在**啟動venv**後:
 1. 在`setting.json`調整設定
-2. `python mitm.py`
+2. `python mitm_playwright.py` or `python mitm.py`
 3. `python client.py`
 
 ### settings.json
