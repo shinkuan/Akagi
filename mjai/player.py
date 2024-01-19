@@ -15,8 +15,8 @@ import requests
 from loguru import logger
 from mjai.exceptions import EngineRuntimeError, TimeoutExpired
 
-MEMORY_SIZE = "1G"
-CPU_CORES = "1"
+# MEMORY_SIZE = "1G"
+# CPU_CORES = "1"
 
 
 class MjaiPlayerClient:
@@ -78,6 +78,10 @@ class MjaiPlayerClient:
         return True
 
     def launch_container(self, player_id: int) -> None:
+        if self.proc is not None:
+            # raise ValueError("Container is already running")
+            return
+
         self.player_id = player_id
         logger.info(f"Start docker container for player{player_id}")
         command = [
@@ -91,10 +95,10 @@ class MjaiPlayerClient:
             "/workspace",
             "-p",
             f"{self.port_num}:3000",
-            "--memory",
-            MEMORY_SIZE,
-            "--cpus",
-            CPU_CORES,
+            # "--memory",
+            # MEMORY_SIZE,
+            # "--cpus",
+            # CPU_CORES,
             "--mount",
             f"type=bind,src={self.submission_path.resolve()},dst=/bot.zip,readonly",  # noqa: E501
             "--mount",
@@ -166,20 +170,26 @@ class MjaiPlayerClient:
         proc.wait()
         self.proc = None
 
+    def restart_container(self, player_id: int) -> None:
+        self.delete_container()
+        self.launch_container(player_id)
+
     def react(self, events: str) -> str:
         if self.proc is None:
             raise ValueError("Container is not running (3)")
 
         try:
             input_data = events.encode("utf8")
-            logger.debug(f"{self.player_id} <- {input_data}")
 
             timeout_per_action = self.timeout
             if json.loads(events)[0]["type"] in ["start_game", "start_kyoku"]:
                 # Workaround: To avoid timeouts
                 # Some bots time out when loading models with start_game.
                 timeout_per_action = 100.0
+                if json.loads(events)[0]["type"] == "start_game":
+                    self.player_id = json.loads(events)[0]["id"]
 
+            logger.debug(f"{self.player_id} <- {input_data}")
             resp = requests.post(
                 f"http://localhost:{self.port_num}",
                 data=input_data,

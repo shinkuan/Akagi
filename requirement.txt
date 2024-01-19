@@ -9,4 +9,4 @@ PyAutoGUI==0.9.54
 PyGetWindow==0.0.9
 rich==13.7.0
 textual==0.46.0
-dxcam==0.0.5
+playwright==1.41.0
