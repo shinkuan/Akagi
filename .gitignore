@@ -14,3 +14,5 @@
 *.pyc
 */__pycache__
 /.vscode
+/data
+/mitm_playwright.bat

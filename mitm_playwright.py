@@ -3,11 +3,13 @@ import threading
 import asyncio
 import signal
 import time
+import re
 import mitmproxy.addonmanager
 import mitmproxy.http
 import mitmproxy.log
 import mitmproxy.tcp
 import mitmproxy.websocket
+from pathlib import Path
 from optparse import OptionParser
 from mitmproxy import proxy, options, ctx
 from mitmproxy.tools.dump import DumpMaster
@@ -41,6 +43,22 @@ class ClientWebSocket:
         activated_flows.remove(flow.id)
         messages_dict.pop(flow.id)
 
+class ClientHTTP:
+    def __init__(self):
+        pass
+
+    def request(self, flow: mitmproxy.http.HTTPFlow):
+        if flow.request.method == "GET":
+            if re.search(r'^https://game\.maj\-soul\.(com|net)/[0-9]+/v[0-9\.]+\.w/code\.js$', flow.request.url):
+                print("====== GET code.js ======"*3)
+                print("====== GET code.js ======"*3)
+                print("====== GET code.js ======"*3)
+                flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
+            elif re.search(r'^https://game\.mahjongsoul\.com/v[0-9\.]+\.w/code\.js$', flow.request.url):
+                flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
+            elif re.search(r'^https://mahjongsoul\.game\.yo-star\.com/v[0-9\.]+\.w/code\.js$', flow.request.url):
+                flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
+
 async def start_proxy(host, port, enable_unlocker, v10):
     opts = options.Options(listen_host=host, listen_port=port)
 
@@ -50,6 +68,7 @@ async def start_proxy(host, port, enable_unlocker, v10):
         # with_dumper=False,
     )
     master.addons.add(ClientWebSocket())
+    master.addons.add(ClientHTTP())
     if enable_unlocker:
         if v10:
             from unlocker_v10 import Unlocker
@@ -137,7 +156,7 @@ if __name__ == '__main__':
     with sync_playwright() as playwright:
         chromium = playwright.chromium
         browser = chromium.launch_persistent_context(
-            user_data_dir='./data',
+            user_data_dir=Path(__file__).parent / 'data',
             headless=False,
             viewport={'width': 1920, 'height': 1080},
             proxy={"server": f"http://localhost:{mitm_port}"})
