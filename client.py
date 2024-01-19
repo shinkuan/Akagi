@@ -4,6 +4,7 @@ os.environ["LOGURU_AUTOINIT"] = "False"
 from typing import Any, Coroutine
 from xmlrpc.client import ServerProxy
 import docker
+import subprocess
 import json
 from loguru import logger
 
@@ -15,10 +16,10 @@ from textual.css.query import NoMatches
 from textual.screen import Screen
 
 from liqi import LiqiProto, MsgType
-from mjai.player import MjaiPlayerClient
 from majsoul2mjai import MajsoulBridge
+from bot import Bot
 from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
-from action import Action
+# from action import Action
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 
@@ -60,7 +61,7 @@ class FlowScreen(Screen):
         self.consume_ids = []
         self.latest_operation_list = None
         self.syncing = True
-        self.action = Action()
+        # self.action = Action()
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
@@ -141,15 +142,15 @@ class FlowScreen(Screen):
                 self.tsumohai_label.update(TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tsumohai])
                 liqi_msg = self.app.liqi_msg_dict[self.flow_id][-1]
                 if liqi_msg['type'] == MsgType.Notify:
-                    if liqi_msg['method'] == '.lq.ActionPrototype':
-                        if liqi_msg['data']['name'] == 'ActionDiscardTile':
-                            self.action.isNewRound = False
-                            if 'operation' in liqi_msg['data']['data']:
-                                if 'operationList' in liqi_msg['data']['data']['operation']:
-                                    self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
-                        if liqi_msg['data']['name'] == 'ActionNewRound':
-                            self.action.isNewRound = True
-                            self.action.reached = False
+                    # if liqi_msg['method'] == '.lq.ActionPrototype':
+                    #     if liqi_msg['data']['name'] == 'ActionDiscardTile':
+                    #         self.action.isNewRound = False
+                    #         if 'operation' in liqi_msg['data']['data']:
+                    #             if 'operationList' in liqi_msg['data']['data']['operation']:
+                    #                 self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
+                    #     if liqi_msg['data']['name'] == 'ActionNewRound':
+                    #         self.action.isNewRound = True
+                    #         self.action.reached = False
                     if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
                         self.action_quit()
                     
@@ -191,17 +192,17 @@ class FlowScreen(Screen):
                     self.akagi_pai.label = "None"
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH["?"])
                 # Action
-                if not self.syncing and AUTOPLAY:
-                    logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
-                    self.app.set_timer(0.1, self.autoplay)
+                # if not self.syncing and AUTOPLAY:
+                #     logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
+                #     self.app.set_timer(0.1, self.autoplay)
                     
         except Exception as e:
             logger.error(e)
             pass
         
-    def autoplay(self) -> None:
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.app.bridge[self.flow_id].my_tehais, self.app.bridge[self.flow_id].my_tsumohai)
-        pass
+    # def autoplay(self) -> None:
+    #     self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.app.bridge[self.flow_id].my_tehais, self.app.bridge[self.flow_id].my_tsumohai)
+    #     pass
 
     def action_quit(self) -> None:
         self.app.set_timer(2, self.app.update_flow.resume)
@@ -277,7 +278,6 @@ class Akagi(App):
     def __init__(self, rpc_server, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.rpc_server = rpc_server
-        self.mjai_client: dict[str, MjaiPlayerClient]={}
         self.liqi: dict[str, LiqiProto]={}
         self.bridge: dict[str, MajsoulBridge]={}
         self.active_flows = []
@@ -287,26 +287,27 @@ class Akagi(App):
         self.akagi_log_dict= dict() # flow.id -> List[akagi_log]
         self.loguru_log = [] # List[loguru_log]
 
-        self.four_mjai_client = []
-        used_port = get_container_ports()
-        port_num = PORT_NUM
-        four_port_num = []
-        for i in range(4):
-            while port_num in used_port:
-                port_num+=1
-            four_port_num.append(port_num)
-            used_port.append(port_num)
-            
+        self.four_bot = []
+        proc = subprocess.Popen(
+            [
+                "unzip",
+                "-q",
+                "./"+submission,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
+        proc.wait()
         with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(self.launch_client, i, four_port_num[i], submission) for i in range(4)}
-            self.four_mjai_client = [future.result() for future in futures]
+            futures = {executor.submit(self.launch_bot, i) for i in range(4)}
+            self.four_bot = [future.result() for future in futures]
         
-        self.four_mjai_client.sort(key=lambda x: x.player_id)
+        self.four_bot.sort(key=lambda x: x.player_id)
         
-    def launch_client(self, i, port_num, submission):
-        client = MjaiPlayerClient(submission, timeout=15, port_num=port_num)
-        client.launch_container(i)
-        return client
+    def launch_bot(self, i):
+        bot = Bot(i)
+        return bot
 
     def on_mount(self) -> None:
         self.update_flow = self.set_interval(1, self.refresh_flow)
@@ -331,7 +332,6 @@ class Akagi(App):
                 self.liqi_msg_dict.pop(flow_id)
                 self.mjai_msg_dict.pop(flow_id)
                 self.akagi_log_dict.pop(flow_id)
-                self.mjai_client[flow_id].delete_container()
         for flow_id in flows:
             try:
                 self.query_one("#FlowContainer")
@@ -346,15 +346,6 @@ class Akagi(App):
                 self.liqi_msg_dict[flow_id] = []
                 self.mjai_msg_dict[flow_id] = []
                 self.akagi_log_dict[flow_id] = []
-                used_port = get_container_ports()
-                port_num = PORT_NUM
-                while port_num in used_port:
-                    port_num+=1
-                self.mjai_client[flow_id] = MjaiPlayerClient(
-                    submission,
-                    timeout=15,
-                    port_num=port_num
-                )
                 self.liqi[flow_id] = LiqiProto()
                 self.bridge[flow_id] = MajsoulBridge()
 
@@ -373,7 +364,7 @@ class Akagi(App):
                     if liqi_msg['method'] == '.lq.FastTest.authGame' and liqi_msg['type'] == MsgType.Req:
                         self.app.push_screen(FlowScreen(flow_id))
                         pass
-                    mjai_msg = self.bridge[flow_id].input(self.four_mjai_client, liqi_msg)
+                    mjai_msg = self.bridge[flow_id].input(self.four_bot, liqi_msg)
                     if mjai_msg is not None:
                         if self.bridge[flow_id].reach and mjai_msg["type"] == "dahai":
                             mjai_msg["type"] = "reach"
@@ -397,10 +388,6 @@ class Akagi(App):
         self.update_flow.stop()
         self.get_messages_flow.stop()
         self.rpc_server.reset_message_idx()
-        for flow_id in self.active_flows:
-            self.mjai_client[flow_id].delete_container()
-        for mjai_client in self.four_mjai_client:
-            mjai_client.delete_container()
         self.exit()
 
     def action_settings(self) -> None:

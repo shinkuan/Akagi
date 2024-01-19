@@ -1,7 +1,7 @@
 import json
 import time
 from enum import Enum
-from mjai.player import MjaiPlayerClient
+from bot import Bot
 from liqi import MsgType
 from convert import MS_TILE_2_MJAI_TILE, MJAI_TILE_2_MS_TILE
 from liqi import LiqiProto
@@ -46,7 +46,7 @@ class MajsoulBridge:
         self.syncing = False
         pass
 
-    def input(self, mjai_client: list[MjaiPlayerClient], parse_msg: dict) -> dict | None:
+    def input(self, mjai_client: list[Bot], parse_msg: dict) -> dict | None:
         # TODO SyncGame
         if parse_msg['method'] == '.lq.FastTest.syncGame':
             self.syncing = True
@@ -381,12 +381,12 @@ class MajsoulBridge:
             self.my_tehais = ["?"]*13
             self.my_tsumohai = "?"
             self.react(mjai_client[self.seat])
-            mjai_client[self.seat].restart_container(self.seat)
+            mjai_client[self.seat].__init__(self.seat)
             return None
         
         return None
 
-    def react(self, mjai_client: MjaiPlayerClient, overwrite: str|None=None) -> dict:
+    def react(self, mjai_client: Bot, overwrite: str|None=None) -> dict:
         if overwrite is not None:
             # print(f"<- {overwrite}")
             out = mjai_client.react(str(overwrite).replace("\'", "\"").replace("True", "true").replace("False", "false"))
