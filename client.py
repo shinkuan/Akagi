@@ -1,3 +1,4 @@
+import atexit
 import os
 os.environ["LOGURU_AUTOINIT"] = "False"
 
@@ -465,6 +466,13 @@ class Akagi(App):
         self.push_screen(SettingsScreen())
         pass
 
+def exit_handler():
+    containers = docker.from_env().containers.list()
+    for container in containers:
+        if container.image.tags[0] == 'smly/mjai-client:v3':
+            container.stop()
+            container.remove()
+    pass
 
 if __name__ == '__main__':
     with open("settings.json", "r") as f:
@@ -473,17 +481,14 @@ if __name__ == '__main__':
     rpc_host = "127.0.0.1"
     s = ServerProxy(f"http://{rpc_host}:{rpc_port}", allow_none=True)
     s.reset_message_idx()
+    logger.level("CLICK", no=10, icon="CLICK")
+    logger.add("akagi.log")
     app = Akagi(rpc_server=s)
     logger.add(app.my_sink)
-    logger.add("akagi.log")
-    logger.level("CLICK", no=10, icon="CLICK")
+    atexit.register(exit_handler)
     try:
         app.run()
     except Exception as e:
-        containers = docker.from_env().containers.list()
-        for container in containers:
-            if container.image.tags[0] == 'smly/mjai-client:v3':
-                container.stop()
-                container.remove()
+        exit_handler()
         raise e
     
