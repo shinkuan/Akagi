@@ -54,6 +54,10 @@ Docker:
 
 Akagi:
 
+### 部分內容已過時:
+- 現在你不再需要安裝mjai
+- 如果你想使用playwright記得安裝chromium: `playwright install chromium`
+
 建議你跟著[影片](https://youtu.be/ZN3qbMyZeus)中的教學安裝。
 
 1. 下載這個Repo到你電腦內，或在cmd輸入`git clone <repo>`
@@ -74,7 +78,7 @@ Akagi:
 
 在**啟動venv**後:
 1. 在`setting.json`調整設定
-2. `python mitm.py`
+2. `python mitm_playwright.py` or `python mitm.py`
 3. `python client.py`
 
 ### settings.json
