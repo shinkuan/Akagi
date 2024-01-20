@@ -140,6 +140,19 @@ class MajsoulBridge:
                     )
                 else:
                     raise
+
+            # According to mjai.app, in the case of an ankan, the dora event comes first, followed by the tsumo event.
+            if 'data' in parse_msg['data']:
+                if 'doras' in parse_msg['data']['data']:
+                    if len(parse_msg['data']['data']['doras']) > len(self.doras):
+                        self.mjai_message.append(
+                            {
+                                'type': 'dora',
+                                'dora_marker': MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['doras'][-1]]
+                            }
+                        )
+                        self.doras = parse_msg['data']['data']['doras']
+                
             # tsumo
             if parse_msg['data']['name'] == 'ActionDealTile':
                 actor = parse_msg['data']['data']['seat']
@@ -359,15 +372,6 @@ class MajsoulBridge:
                 return None
             
             if 'data' in parse_msg['data']:
-                if 'doras' in parse_msg['data']['data']:
-                    if len(parse_msg['data']['data']['doras']) > len(self.doras):
-                        self.mjai_message.append(
-                            {
-                                'type': 'dora',
-                                'dora_marker': MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['doras'][-1]]
-                            }
-                        )
-                        self.doras = parse_msg['data']['data']['doras']
                 if 'operation' in parse_msg['data']['data']:
                     self.operation = parse_msg['data']['data']['operation']
                     return self.react(mjai_client[self.seat])
@@ -383,7 +387,6 @@ class MajsoulBridge:
             self.react(mjai_client[self.seat])
             mjai_client[self.seat].restart_container(self.seat)
             return None
-        
         return None
 
     def react(self, mjai_client: MjaiPlayerClient, overwrite: str|None=None) -> dict:
