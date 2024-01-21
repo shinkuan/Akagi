@@ -85,7 +85,7 @@ ACTION2TYPE = {
     "ankan": 4,
     "kakan": 6,
     "reach": 7,
-    "hora": 9,
+    "zimo": 8,
     #^^^^^^^^^^^^^^^^Self Discard^^^^^^^^^^^^^^^^
 }
 
@@ -134,6 +134,9 @@ class Action:
         # Sort latest_operation_list by ACTION_PIORITY
         # logger.debug(f"latest_operation_list_temp: {latest_operation_list_temp}")
         latest_operation_list_temp.sort(key=lambda x: ACTION_PIORITY[x['type']])
+
+        if tsumohai is not None and mjai_msg['type'] == 'hora':
+            mjai_msg['type'] = 'zimo'
 
         for idx, operation in enumerate(latest_operation_list_temp):
             if operation['type'] == ACTION2TYPE[mjai_msg['type']]:
@@ -229,7 +232,8 @@ class Action:
         for tehai in tehais:
             if tehai != '?':
                 tehai_count += 1
-
+        if tehai_count >= 14:
+            tehai_count = 13
         if idx == 13:
             pai_cord = (LOCATION['tiles'][tehai_count][0] + LOCATION['tsumo_space'], LOCATION['tiles'][tehai_count][1])
         else:
@@ -273,7 +277,7 @@ class Action:
             self.click_dahai(mjai_msg, tehai, tsumohai)
             return
         if mjai_msg['type'] in ['none', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan', 'hora', 'reach', 'ryukyoku']:
-            time.sleep(1.3)
+            time.sleep(1.5)
             self.click_chiponkan(mjai_msg, tehai, tsumohai)
             # kan can have multiple candidates too! ex: tehai=1111m 1111p 111s 11z, tsumohai=1s
         
