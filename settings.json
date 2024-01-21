@@ -1,11 +1,16 @@
 {
     "Unlocker": true,
     "v10": false,
-    "Autoplay": false,
+    "Autoplay": true,
     "Port": {
         "MITM": 7878,
         "XMLRPC": 7879,
         "MJAI": 28680
+    },
+    "Playwright": {
+        "enable": true,
+        "width": 1280,
+        "height": 720
     },
     "views": [
         {

@@ -1,5 +1,7 @@
 import atexit
 import os
+from pathlib import Path
+import time
 os.environ["LOGURU_AUTOINIT"] = "False"
 
 from typing import Any, Coroutine
@@ -23,14 +25,17 @@ from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
 from action import Action
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
+from playwright.sync_api import Playwright, sync_playwright
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
 AUTOPLAY = False
+ENABLE_PLAYWRIGHT = False
 with open("settings.json", "r") as f:
     settings = json.load(f)
     PORT_NUM = settings["Port"]["MJAI"]
     AUTOPLAY = settings["Autoplay"]
+    ENABLE_PLAYWRIGHT = settings["Playwright"]["enable"]
 
 def get_container_ports():
     client = docker.from_env()
@@ -62,7 +67,7 @@ class FlowScreen(Screen):
         self.consume_ids = []
         self.latest_operation_list = None
         self.syncing = True
-        self.action = Action()
+        self.action = Action(self.app.rpc_server)
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
@@ -144,11 +149,11 @@ class FlowScreen(Screen):
                 liqi_msg = self.app.liqi_msg_dict[self.flow_id][-1]
                 if liqi_msg['type'] == MsgType.Notify:
                     if liqi_msg['method'] == '.lq.ActionPrototype':
+                        if 'operation' in liqi_msg['data']['data']:
+                            if 'operationList' in liqi_msg['data']['data']['operation']:
+                                self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
                         if liqi_msg['data']['name'] == 'ActionDiscardTile':
                             self.action.isNewRound = False
-                            if 'operation' in liqi_msg['data']['data']:
-                                if 'operationList' in liqi_msg['data']['data']['operation']:
-                                    self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
                         if liqi_msg['data']['name'] == 'ActionNewRound':
                             self.action.isNewRound = True
                             self.action.reached = False
@@ -193,9 +198,9 @@ class FlowScreen(Screen):
                     self.akagi_pai.label = "None"
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH["?"])
                 # Action
-                if not self.syncing and AUTOPLAY:
+                if not self.syncing and ENABLE_PLAYWRIGHT and AUTOPLAY:
                     logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
-                    self.app.set_timer(0.1, self.autoplay)
+                    self.app.set_timer(0.05, self.autoplay)
                     
         except Exception as e:
             logger.error(e)
@@ -359,7 +364,6 @@ class Akagi(App):
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(self.launch_client, i, four_port_num[i], submission) for i in range(4)}
             self.four_mjai_client = [future.result() for future in futures]
-        
         self.four_mjai_client.sort(key=lambda x: x.player_id)
         
     def launch_client(self, i, port_num, submission):
@@ -370,12 +374,6 @@ class Akagi(App):
     def on_mount(self) -> None:
         self.update_flow = self.set_interval(1, self.refresh_flow)
         self.get_messages_flow = self.set_interval(0.05, self.get_messages)
-        
-    # on_event
-    # def on_event(self, event: Event) -> Coroutine[Any, Any, None]:
-    #     if isinstance(event, ScreenResume):
-    #         self.update_flow.resume()
-    #         self.get_messages_flow.resume()
 
     def refresh_flow(self) -> None:
         flows = self.rpc_server.get_activated_flows()
@@ -487,6 +485,7 @@ if __name__ == '__main__':
     logger.add(app.my_sink)
     atexit.register(exit_handler)
     try:
+        logger.info("Start Akagi")
         app.run()
     except Exception as e:
         exit_handler()
