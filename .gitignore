@@ -16,3 +16,5 @@
 /.vscode
 /data
 /mitm_playwright.bat
+/playwright_test.py
+/unlocker_test.py
