@@ -1,7 +1,6 @@
 /akagi.log
 /detect_test.py
 /detect_window.py
-/players
 /proto_test.py
 /test.py
 /test2.py
@@ -18,3 +17,7 @@
 /mitm_playwright.bat
 /playwright_test.py
 /unlocker_test.py
+/objects
+/players/bot
+/players/docker
+/players/bot.zip
