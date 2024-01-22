@@ -1,5 +1,7 @@
 import atexit
 import os
+from pathlib import Path
+import time
 os.environ["LOGURU_AUTOINIT"] = "False"
 
 from typing import Any, Coroutine
@@ -23,14 +25,17 @@ from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
 from action import Action
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
+from playwright.sync_api import Playwright, sync_playwright
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
 AUTOPLAY = False
+ENABLE_PLAYWRIGHT = False
 with open("settings.json", "r") as f:
     settings = json.load(f)
     PORT_NUM = settings["Port"]["MJAI"]
     AUTOPLAY = settings["Autoplay"]
+    ENABLE_PLAYWRIGHT = settings["Playwright"]["enable"]
 
 def get_container_ports():
     client = docker.from_env()
@@ -62,7 +67,7 @@ class FlowScreen(Screen):
         self.consume_ids = []
         self.latest_operation_list = None
         self.syncing = True
-        self.action = Action()
+        self.action = Action(self.app.rpc_server)
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
@@ -87,7 +92,7 @@ class FlowScreen(Screen):
         akagi_container.border_title = "Akagi"
         loading_indicator = LoadingIndicator(id="loading_indicator")
         loading_indicator.styles.height = "3"
-        checkbox_autoplay = Checkbox("Autoplay", id="checkbox_autoplay", classes="short")
+        checkbox_autoplay = Checkbox("Autoplay", id="checkbox_autoplay", classes="short", value=AUTOPLAY)
         checkbox_test_one = Checkbox("test_one", id="checkbox_test_one", classes="short")
         checkbox_test_two = Checkbox("test_two", id="checkbox_test_two", classes="short")
         checkbox_container = Vertical(checkbox_autoplay, checkbox_test_one, id="checkbox_container")
@@ -144,11 +149,11 @@ class FlowScreen(Screen):
                 liqi_msg = self.app.liqi_msg_dict[self.flow_id][-1]
                 if liqi_msg['type'] == MsgType.Notify:
                     if liqi_msg['method'] == '.lq.ActionPrototype':
+                        if 'operation' in liqi_msg['data']['data']:
+                            if 'operationList' in liqi_msg['data']['data']['operation']:
+                                self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
                         if liqi_msg['data']['name'] == 'ActionDiscardTile':
                             self.action.isNewRound = False
-                            if 'operation' in liqi_msg['data']['data']:
-                                if 'operationList' in liqi_msg['data']['data']['operation']:
-                                    self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
                         if liqi_msg['data']['name'] == 'ActionNewRound':
                             self.action.isNewRound = True
                             self.action.reached = False
@@ -193,13 +198,19 @@ class FlowScreen(Screen):
                     self.akagi_pai.label = "None"
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH["?"])
                 # Action
-                if not self.syncing and AUTOPLAY:
+                if not self.syncing and ENABLE_PLAYWRIGHT and AUTOPLAY:
                     logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
-                    self.app.set_timer(0.1, self.autoplay)
+                    self.app.set_timer(0.05, self.autoplay)
                     
         except Exception as e:
             logger.error(e)
             pass
+
+    @on(Checkbox.Changed, "#checkbox_autoplay")
+    def checkbox_autoplay_changed(self, event: Checkbox.Changed) -> None:
+        global AUTOPLAY
+        AUTOPLAY = event.value
+        pass
         
     def autoplay(self) -> None:
         self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.app.bridge[self.flow_id].my_tehais, self.app.bridge[self.flow_id].my_tsumohai)
@@ -243,6 +254,9 @@ class SettingsScreen(Screen):
             self.value_autoplay_setting_enable_checkbox = settings["Autoplay"]
             # self.value_autoplay_setting_random_time_min_input = settings["Autoplay"]["Random Time"]["Min"]
             # self.value_autoplay_setting_random_time_max_input = settings["Autoplay"]["Random Time"]["Max"]
+            self.value_playwright_setting_enable_checkbox = settings["Playwright"]["enable"]
+            self.value_playwright_setting_width_input = settings["Playwright"]["width"]
+            self.value_playwright_setting_height_input = settings["Playwright"]["height"]
 
     def compose(self) -> ComposeResult:
         self.port_setting_mitm_label = Label("MITM Port", id="port_setting_mitm_label")
@@ -270,20 +284,31 @@ class SettingsScreen(Screen):
         self.autoplay_setting_container = Vertical(self.autoplay_setting_enable_container, self.autoplay_setting_random_time_container, id="autoplay_setting_container")
         self.autoplay_setting_container.border_title = "Autoplay"
 
+        self.playwright_setting_enable_label = Label("Enable", id="playwright_setting_enable_label")
+        self.playwright_setting_enable_checkbox = Checkbox("Enable", id="playwright_setting_enable_checkbox", classes="short", value=self.value_playwright_setting_enable_checkbox)
+        self.playwright_setting_enable_container = Horizontal(self.playwright_setting_enable_label, self.playwright_setting_enable_checkbox, id="playwright_setting_enable_container")
+        self.playwright_setting_resolution_label = Label("Resolution", id="playwright_setting_resolution_label")
+        self.playwright_setting_width_input = Input(placeholder="Width", type="integer", id="playwright_setting_width_input", value=str(self.value_playwright_setting_width_input))
+        self.playwright_setting_height_input = Input(placeholder="Height", type="integer", id="playwright_setting_height_input", value=str(self.value_playwright_setting_height_input))
+        self.playwright_setting_resolution_container = Horizontal(self.playwright_setting_resolution_label, self.playwright_setting_width_input, self.playwright_setting_height_input, id="playwright_setting_resolution_container")
+        self.playwright_setting_container = Vertical(self.playwright_setting_enable_container, self.playwright_setting_resolution_container, id="playwright_setting_container")
+        self.playwright_setting_container.border_title = "Playwright"
+
         yield Header()
         yield Markdown("# Settings")
         yield self.port_setting_container
         yield self.unlocker_setting_container
         yield self.autoplay_setting_container
+        yield self.playwright_setting_container
         yield Footer()
 
     @on(Input.Changed, "#port_setting_mitm_input")
     def port_setting_mitm_input_changed(self, event: Input.Changed) -> None:
-        self.value_port_setting_mitm_input = event.value
+        self.value_port_setting_mitm_input = int(event.value)
 
     @on(Input.Changed, "#port_setting_xmlrpc_input")
     def port_setting_xmlrpc_input_changed(self, event: Input.Changed) -> None:
-        self.value_port_setting_xmlrpc_input = event.value
+        self.value_port_setting_xmlrpc_input = int(event.value)
 
     @on(Checkbox.Changed, "#unlocker_setting_enable_checkbox")
     def unlocker_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
@@ -295,6 +320,8 @@ class SettingsScreen(Screen):
 
     @on(Checkbox.Changed, "#autoplay_setting_enable_checkbox")
     def autoplay_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        global AUTOPLAY
+        AUTOPLAY = event.value
         self.value_autoplay_setting_enable_checkbox = event.value
 
     @on(Input.Changed, "#autoplay_setting_random_time_min_input")
@@ -307,16 +334,31 @@ class SettingsScreen(Screen):
         # self.value_autoplay_setting_random_time_max_input = event.value
         pass
 
+    @on(Checkbox.Changed, "#playwright_setting_enable_checkbox")
+    def playwright_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        self.value_playwright_setting_enable_checkbox = event.value
+
+    @on(Input.Changed, "#playwright_setting_width_input")
+    def playwright_setting_width_input_changed(self, event: Input.Changed) -> None:
+        self.value_playwright_setting_width_input = int(event.value)
+
+    @on(Input.Changed, "#playwright_setting_height_input")
+    def playwright_setting_height_input_changed(self, event: Input.Changed) -> None:
+        self.value_playwright_setting_height_input = int(event.value)
+
     def action_quit_setting(self) -> None:
         with open("settings.json", "r") as f:
             settings = json.load(f)
-            settings["Port"]["MITM"] = int(self.value_port_setting_mitm_input)
-            settings["Port"]["XMLRPC"] = int(self.value_port_setting_xmlrpc_input)
+            settings["Port"]["MITM"] = self.value_port_setting_mitm_input
+            settings["Port"]["XMLRPC"] = self.value_port_setting_xmlrpc_input
             settings["Unlocker"] = self.value_unlocker_setting_enable_checkbox
             settings["v10"] = self.value_unlocker_setting_v10_checkbox
             settings["Autoplay"] = self.value_autoplay_setting_enable_checkbox
             # settings["Autoplay"]["Random Time"]["Min"] = self.value_autoplay_setting_random_time_min_input
             # settings["Autoplay"]["Random Time"]["Max"] = self.value_autoplay_setting_random_time_max_input
+            settings["Playwright"]["enable"] = self.value_playwright_setting_enable_checkbox
+            settings["Playwright"]["width"] = self.value_playwright_setting_width_input
+            settings["Playwright"]["height"] = self.value_playwright_setting_height_input
         with open("settings.json", "w") as f:
             json.dump(settings, f, indent=4)
         self.app.pop_screen()
@@ -359,7 +401,6 @@ class Akagi(App):
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(self.launch_client, i, four_port_num[i], submission) for i in range(4)}
             self.four_mjai_client = [future.result() for future in futures]
-        
         self.four_mjai_client.sort(key=lambda x: x.player_id)
         
     def launch_client(self, i, port_num, submission):
@@ -370,12 +411,6 @@ class Akagi(App):
     def on_mount(self) -> None:
         self.update_flow = self.set_interval(1, self.refresh_flow)
         self.get_messages_flow = self.set_interval(0.05, self.get_messages)
-        
-    # on_event
-    # def on_event(self, event: Event) -> Coroutine[Any, Any, None]:
-    #     if isinstance(event, ScreenResume):
-    #         self.update_flow.resume()
-    #         self.get_messages_flow.resume()
 
     def refresh_flow(self) -> None:
         flows = self.rpc_server.get_activated_flows()
@@ -487,6 +522,7 @@ if __name__ == '__main__':
     logger.add(app.my_sink)
     atexit.register(exit_handler)
     try:
+        logger.info("Start Akagi")
         app.run()
     except Exception as e:
         exit_handler()

@@ -295,60 +295,6 @@ Button.action_ryukyoku.-active {
     padding: 0;
 }
 
-#autoplay_setting_left_pai_label {
-    padding: 1 0;
-    width: 11;
-    height: 3;
-    align: center middle;
-    margin: 0 1;
-}
-
-#autoplay_setting_left_pai_x_input {
-    width: 1fr;
-    align: center top;
-    margin: 0 1;
-}
-
-#autoplay_setting_left_pai_y_input {
-    width: 1fr;
-    align: center top;
-    margin: 0 1;
-}
-
-#autoplay_setting_left_pai_container {
-    width: 1fr;
-    height: auto;
-    align: center top;
-    margin: 0;
-}
-
-#autoplay_setting_right_pai_label {
-    padding: 1 0;
-    width: 11;
-    height: 3;
-    align: center middle;
-    margin: 0 1;
-}
-
-#autoplay_setting_right_pai_x_input {
-    width: 1fr;
-    align: center top;
-    margin: 0 1;
-}
-
-#autoplay_setting_right_pai_y_input {
-    width: 1fr;
-    align: center top;
-    margin: 0 1;
-}
-
-#autoplay_setting_right_pai_container {
-    width: 1fr;
-    height: auto;
-    align: center top;
-    margin: 0;
-}
-
 #autoplay_setting_enable_label {
     padding: 1 0;
     width: 11;
@@ -398,6 +344,63 @@ Button.action_ryukyoku.-active {
 }
 
 #autoplay_setting_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+    border: round $accent;
+    border-title-align: center;
+}
+
+#playwright_setting_enable_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#playwright_setting_enable_checkbox {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#playwright_setting_enable_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
+#playwright_setting_resolution_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#playwright_setting_width_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#playwright_setting_height_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#playwright_setting_resolution_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
+#playwright_setting_container {
     width: 1fr;
     height: auto;
     align: center top;
