@@ -33,7 +33,7 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ## 教程
 
-### 安裝, 建議觀看影片
+### 安裝
 
 [點我到Youtube觀看安裝影片](https://youtu.be/ZN3qbMyZeus)
 
@@ -54,9 +54,22 @@ Docker:
 
 Akagi:
 
-### 部分內容已過時:
+### 影片部分內容已過時:
+- 現在已經有自動化安裝 `install_akagi.ps1`
 - 現在你不再需要安裝mjai
 - 如果你想使用playwright記得安裝chromium: `playwright install chromium`
+
+到[Release](https://github.com/shinkuan/Akagi/releases/latest)下載`install_akagi.ps1` 
+
+1. 把`install_akagi.ps1`放到你想安裝的位置
+2. 以管理員開啟Powershell
+3. cd到安裝位置
+4. 有些電腦會限制Powershell腳本的執行，這也是為什麼我們需要管理員權限，執行以下指令以讓腳本能夠運行：
+  - `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+5. 執行 `install_akagi.ps1`
+6. 將`bot.zip`放入 ./players
+
+### 如果 `install_akagi.ps1` 有問題：
 
 建議你跟著[影片](https://youtu.be/ZN3qbMyZeus)中的教學安裝。
 
@@ -67,12 +80,6 @@ Akagi:
 5. `pip install -r requirement.txt`
 6. `playwright install chromium`
 7. put `bot.zip` into ./players folder
-
-或
-
-`install.bat` 在某些電腦上可能會有問題，如果遇到問題，請改使用上面的方式安裝。
-1. 執行`install.bat`
-2. 將`bot.zip`放入 ./players
 
 ### 執行
 
@@ -90,6 +97,10 @@ Akagi:
    - `MITM`: MITM Port, 你應該將雀魂連線導向到這個Port.
    - `XMLRPC`: The XMLRPC Port.
    - `MJAI`: The port bind to MJAI bot container.
+ - `Playwright`:
+   - `enable`: Enable the playwright
+   - `width`: width of the viewport of playwright
+   - `height`: height of the viewport of playwright
  - The rest are the setting for MajsoulUnlocker.
 
 ## 如何使用
@@ -136,12 +147,12 @@ LiqiProto訊息隨後被轉錄為mjai格式並發送給機器人。
 
 # TODO
 
- - [ ] 在應用程式內更改Setting。
+ - [x] 在應用程式內更改Setting。
  - [x] 自動打牌 - （能運作，但 __不__ 穩定）
    - [ ] 自動使用貼圖，讓對手認為我們不是機器人。
    - [ ] 在settings.json中添加隨機時間，讓用戶選擇他們想要的時間。
  - [ ] 混合多個AI的決策，讓我們看起來更像人類，而不是完美的機器人。
- - [ ] 縮短機器人的啟動時間。（也許在遊戲開始前就啟動？）
+ - [x] 縮短機器人的啟動時間。（也許在遊戲開始前就啟動？）
  - [x] 與[MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker)整合
  - [ ] 完全不使用MITM進行遊戲，使用圖像識別。
    - [ ] 決定使用哪種模型
@@ -150,7 +161,7 @@ LiqiProto訊息隨後被轉錄為mjai格式並發送給機器人。
    - [ ] 得分差異識別。
    - [ ] 流局識別。
    - [ ] 實施
- - [ ] 更簡單的安裝流程
+ - [x] 更簡單的安裝流程
 
 ## Need Help!
 
