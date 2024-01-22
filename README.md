@@ -43,7 +43,7 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 [YouTube Video for you to follow.](https://youtu.be/ZN3qbMyZeus)
 
-You will need:
+### You will need:
 1. Docker
 2. Proxifier or something that can redirect connection to mitmproxy.
    1. __Remember to trust mitmproxy's Certificate!!!__ Don't know how? Google it.
@@ -54,15 +54,25 @@ __Don't know how to make a bot.zip yourself? Don't worry!__
 
 __Get bot.zip at [Discord](https://discord.gg/Z2wjXUK8bN)__
 
-Docker:
+### Docker:
 1. Install Docker on your PC
 2. `docker pull smly/mjai-client:v3`
 
-Akagi:
+### Akagi:
 
-`install.bat` is found to have some problem on some machines.
+Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/releases/latest)
 
-I suggest you follow the [video](https://youtu.be/ZN3qbMyZeus).
+1. Place `install_akagi.ps1` at the folder you want to install Akagi.
+2. Open Powershell as admin.
+3. Go to the folder.
+4. To prevent your PC restrict from executing powershell script, run:
+  - `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+5. Run `install_akagi.ps1`
+6. put `bot.zip` into ./players folder
+
+### if `install_akagi.ps1` not working for you:
+
+Follow the [video](https://youtu.be/ZN3qbMyZeus).
 
 1. `git clone this`
 2. `cd into this repo`
@@ -71,10 +81,6 @@ I suggest you follow the [video](https://youtu.be/ZN3qbMyZeus).
 5. `pip install -r requirement.txt`
 6. `playwright install chromium`
 7. put `bot.zip` into ./players folder
-
-or
-1. Run `install.bat`
-2. put `bot.zip` into ./players folder
 
 ### Run
 
@@ -92,6 +98,10 @@ After you __activate the venv__:
    - `MITM`: The MITM Port, you should redirect Majsoul connection to this port.
    - `XMLRPC`: The XMLRPC Port.
    - `MJAI`: The port bind to MJAI bot container.
+ - `Playwright`:
+   - `enable`: Enable the playwright
+   - `width`: width of the viewport of playwright
+   - `height`: height of the viewport of playwright
  - The rest are the setting for MajsoulUnlocker.
 
 ## Instructions
@@ -135,12 +145,12 @@ Following guide can minimum the probility of account suspension.
 ### There is no way to guarantee 100% no account suspension currently.
 
 # TODO
- - [ ] Change Setting inside application.
- - [x] Autoplay - (Working now, but it is __not__ stable)
+ - [x] Change Setting inside application.
+ - [x] Autoplay
    - [ ] Auto use stickers to make opponent think we are not a bot.
    - [ ] Add random time in settings.json to let user choose time they want.
  - [ ] Mix multiple AI's decision to make we more like a human but not a perfect bot.
- - [ ] Reduce Startup time of the bot. (Maybe start it before match begin?)
+ - [x] Reduce Startup time of the bot. (Maybe start it before match begin?)
  - [x] Intergrade with [MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker)
  - [ ] Don't use MITM at all for the gameplay, use image recognition.
    - [ ] Decide use what model
@@ -149,7 +159,7 @@ Following guide can minimum the probility of account suspension.
    - [ ] Delta Score Recognition.
    - [ ] Ryukyoku Recognition.
    - [ ] Implement
- - [ ] Easier installation.
+ - [x] Easier installation.
 
 ## Need Help!
 
