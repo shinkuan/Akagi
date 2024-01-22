@@ -135,7 +135,7 @@ class Action:
         # logger.debug(f"latest_operation_list_temp: {latest_operation_list_temp}")
         latest_operation_list_temp.sort(key=lambda x: ACTION_PIORITY[x['type']])
 
-        if tsumohai is not None and mjai_msg['type'] == 'hora':
+        if tsumohai != '?' and mjai_msg['type'] == 'hora':
             mjai_msg['type'] = 'zimo'
 
         for idx, operation in enumerate(latest_operation_list_temp):
@@ -256,7 +256,7 @@ class Action:
                     self.page_clicker(pai_coord)
                     self.isNewRound = False
                     return
-        if tsumohai is not None:
+        if tsumohai != '?':
             if dahai == tsumohai:
                 pai_coord = self.get_pai_coord(13, tehai)
                 self.page_clicker(pai_coord)
