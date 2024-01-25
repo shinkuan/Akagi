@@ -65,8 +65,8 @@ async def start_proxy(host, port, enable_unlocker, v10):
 
     master = DumpMaster(
         opts,
-        # with_termlog=False,
-        # with_dumper=False,
+        with_termlog=False,
+        with_dumper=False,
     )
     master.addons.add(ClientWebSocket())
     master.addons.add(ClientHTTP())
@@ -74,7 +74,7 @@ async def start_proxy(host, port, enable_unlocker, v10):
         if v10:
             from unlocker_v10 import Unlocker
         else:
-            from unlocker import Unlocker
+            from mhm.addons import WebSocketAddon as Unlocker
         master.addons.add(Unlocker())
     await master.run()
     return master
@@ -125,6 +125,7 @@ if __name__ == '__main__':
         rpc_port = settings["Port"]["XMLRPC"]
         enable_unlocker = settings["Unlocker"]
         v10 = settings["v10"]
+        enable_helper = settings["Helper"]
         enable_playwright = settings["Playwright"]["enable"]
         playwright_width = settings["Playwright"]["width"]
         playwright_height = settings["Playwright"]["height"]
@@ -154,6 +155,12 @@ if __name__ == '__main__':
     if opts.v10 is not None:
         v10 = bool(opts.v10)
 
+    with open("mhmp.json", "r") as f:
+        mhmp = json.load(f)
+        mhmp["mitmdump"]["mode"] = f"regular@{mitm_port}"
+        mhmp["hook"]["enable_aider"] = enable_helper
+    with open("mhmp.json", "w") as f:
+        json.dump(mhmp, f, indent=4)
     # Create and start the proxy server thread
     proxy_thread = threading.Thread(target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker, v10)))
     proxy_thread.start()
@@ -172,7 +179,9 @@ if __name__ == '__main__':
             user_data_dir=Path(__file__).parent / 'data',
             headless=False,
             viewport={'width': playwright_width, 'height': playwright_height},
-            proxy={"server": f"http://localhost:{mitm_port}"})
+            proxy={"server": f"http://localhost:{mitm_port}"},
+            ignore_default_args=['--enable-automation']
+        )
 
         print(f'startup browser success')
 
@@ -215,7 +224,7 @@ if enable_unlocker:
     if v10:
         from unlocker_v10 import Unlocker
     else:
-        from unlocker import Unlocker
+        from mhm.addons import WebSocketAddon as Unlocker
     addons = [ClientWebSocket(), Unlocker()]
 else:
     addons = [ClientWebSocket()]
@@ -224,10 +233,3 @@ rpc_host="127.0.0.1"
 liqiServer = LiqiServer(rpc_host, rpc_port)
 server_thread = threading.Thread(target=lambda: liqiServer.serve_forever())
 server_thread.start()
-# try:
-#     while True:
-#         time.sleep(1)  # main thread will block here
-# except KeyboardInterrupt:
-#     # On Ctrl+C, stop the other threads
-#     liqiServer.server.shutdown()
-#     exit(0)

@@ -2,6 +2,7 @@
     "Unlocker": true,
     "v10": false,
     "Autoplay": true,
+    "Helper": true,
     "Port": {
         "MITM": 7878,
         "XMLRPC": 7879,
@@ -68,6 +69,6 @@
             "itemIdList": []
         }
     ],
-    "main_character": 200076,
+    "main_character": 200052,
     "title": 600037
 }
