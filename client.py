@@ -198,6 +198,8 @@ class FlowScreen(Screen):
                     self.akagi_pai.label = "None"
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH["?"])
                 # Action
+                logger.info(f"Current tehai: {self.app.bridge[self.flow_id].my_tehais}")
+                logger.info(f"Current tsumohai: {self.app.bridge[self.flow_id].my_tsumohai}")
                 if not self.syncing and ENABLE_PLAYWRIGHT and AUTOPLAY:
                     logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
                     self.app.set_timer(0.05, self.autoplay)

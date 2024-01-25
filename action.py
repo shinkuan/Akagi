@@ -277,7 +277,7 @@ class Action:
             self.click_dahai(mjai_msg, tehai, tsumohai)
             return
         if mjai_msg['type'] in ['none', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan', 'hora', 'reach', 'ryukyoku']:
-            time.sleep(1.5)
+            time.sleep(2)
             self.click_chiponkan(mjai_msg, tehai, tsumohai)
             # kan can have multiple candidates too! ex: tehai=1111m 1111p 111s 11z, tsumohai=1s
         
