@@ -103,6 +103,8 @@ class LiqiModify:
         self.accountId = -1
         self.current_character = -1
         self.current_skin = -1
+        self.current_frame = None
+        self.current_title = 0
         with open('./settings.json', 'r', encoding='utf-8') as f:
             settings = json.load(f)
             self.current_character = settings['main_character']
@@ -132,14 +134,12 @@ class LiqiModify:
                     action = 'modify'
                     self.accountId = msg['data']['account']['accountId']
                     modify_msg['data']['account']['avatarId'] = self.current_skin
-                    # modify_msg['data']['account']['level'] = {'id': 10720, 'score': 0}
-                    # modify_msg['data']['account']['level3'] = {'id': 20720, 'score': 0}
+                    modify_msg['data']['account']['title'] = self.current_title
                 if msg['method'] == '.lq.Lobby.oauth2Login':
                     action = 'modify'
                     self.accountId = msg['data']['account']['accountId']
                     modify_msg['data']['account']['avatarId'] = self.current_skin
-                    # modify_msg['data']['account']['level'] = {'id': 10720, 'score': 0}
-                    # modify_msg['data']['account']['level3'] = {'id': 20720, 'score': 0}
+                    modify_msg['data']['account']['title'] = self.current_title
 
                 if msg['method'] == '.lq.Lobby.fetchInfo':
                     action = 'modify'
@@ -164,11 +164,6 @@ class LiqiModify:
                                     "itemId": itemId[id]['id'],
                                     "stack": 999
                                 })
-                    # Achievements
-                    # for achievement in modify_msg['data']['achievement']['progresses']:
-                    #     if achievement['achieved'] is False:
-                    #         achievement['achieved'] = True
-                    #         achievement['achievedTime'] = 1704067200
                     # Characters
                     modify_msg['data']['characterInfo']['characters'] = []
                     modify_msg['data']['characterInfo']['characterSort'] = []
@@ -215,7 +210,8 @@ class LiqiModify:
                             person['character']['exp'] = 0
                             person['character']['isUpgraded'] = True
                             person['title'] = self.current_title
-                            person['avatarFrame'] = self.current_frame
+                            if self.current_frame is not None:
+                                person['avatarFrame'] = self.current_frame
                 if msg['method'] == '.lq.Lobby.fetchAccountInfo':
                     action = 'modify'
                     if modify_msg['data']['account']['accountId'] == self.accountId:
@@ -231,7 +227,12 @@ class LiqiModify:
                             person['character']['exp'] = 0
                             person['character']['isUpgraded'] = True
                             person['title'] = self.current_title
-                            person['avatarFrame'] = self.current_frame
+                            if self.current_frame is not None:
+                                person['avatarFrame'] = self.current_frame
+                            with open('./settings.json', 'r', encoding='utf-8') as f:
+                                settings = json.load(f)
+                                person['views'] = settings['views']
+
                 if msg['method'] == '.lq.Lobby.fetchRoom':
                     # console.log(msg, style="bold red")
                     action = 'modify'
@@ -244,7 +245,8 @@ class LiqiModify:
                             person['character']['exp'] = 0
                             person['character']['isUpgraded'] = True
                             person['title'] = self.current_title
-                            person['avatarFrame'] = self.current_frame  
+                            if self.current_frame is not None:
+                                person['avatarFrame'] = self.current_frame
 
             # Request from client, drop it or fake a response to avoid Majsoul found we cheat
             if msg['type'] == MsgType.Req:
@@ -258,7 +260,7 @@ class LiqiModify:
                     self.current_character = msg['data']['characterId']
                     with open('./id/CharacterId.json', 'r', encoding='utf-8') as f:
                         characterId = json.load(f)
-                        self.current_skin = characterId[str(self.current_character)]['init_skin']
+                        self.current_skin = characterId[str(self.current_character)]['init_skin ']
                 if msg['method'] == '.lq.Lobby.changeCharacterSkin':
                     action = 'drop'
                     with open('./id/CharacterId.json', 'r', encoding='utf-8') as f:
@@ -275,9 +277,13 @@ class LiqiModify:
                         'method': '.lq.Lobby.saveCommonViews',
                         'data': {}
                     }
+                    set_frame = False
                     for view in msg['data']['views']:
                         if view['slot'] == 5:
                             self.current_frame = view['itemId']
+                            set_frame = True
+                    if not set_frame:
+                        self.current_frame = None
                     with open('./settings.json', 'r', encoding='utf-8') as f:
                         settings = json.load(f)
                         settings['views'] = modify_msg['data']['views']
@@ -307,12 +313,14 @@ class LiqiModify:
                         if person['accountId'] == self.accountId:
                             person['avatarId'] = self.current_skin
                             person['title'] = self.current_title
-                            person['avatarFrame'] = self.current_frame
+                            if self.current_frame is not None:
+                                person['avatarFrame'] = self.current_frame
                     for person in modify_msg['data']['playerList']:
                         if person['accountId'] == self.accountId:
                             person['avatarId'] = self.current_skin
                             person['title'] = self.current_title
-                            person['avatarFrame'] = self.current_frame
+                            if self.current_frame is not None:
+                                person['avatarFrame'] = self.current_frame
 
         return action, modify_msg
 
