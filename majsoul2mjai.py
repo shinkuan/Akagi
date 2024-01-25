@@ -293,7 +293,7 @@ class MajsoulBridge:
                             for pai in consumed:
                                 self.my_tehais.remove(pai)
                                 self.my_tehais.append("?")
-                            self.my_tehais.pop("?")
+                            self.my_tehais.remove("?")
                             self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
                     case OperationAnGangAddGang.AddGang:
                         pai = MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']]
