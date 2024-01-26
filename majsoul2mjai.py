@@ -48,7 +48,7 @@ class MajsoulBridge:
 
     def input(self, mjai_client: list[MjaiPlayerClient], parse_msg: dict) -> dict | None:
         # TODO SyncGame
-        if parse_msg['method'] == '.lq.FastTest.syncGame':
+        if parse_msg['method'] == '.lq.FastTest.syncGame' or parse_msg['method'] == '.lq.FastTest.enterGame':
             self.syncing = True
             syncGame_msgs = LiqiProto().parse_syncGame(parse_msg)
             reacts = []
