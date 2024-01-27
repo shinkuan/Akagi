@@ -81,7 +81,7 @@ async def start_proxy(host, port, enable_unlocker, v10):
 
 # Create a XMLRPC server
 class LiqiServer:
-    _rpc_methods_ = ['get_activated_flows', 'get_messages', 'reset_message_idx', 'page_clicker']
+    _rpc_methods_ = ['get_activated_flows', 'get_messages', 'reset_message_idx', 'page_clicker', 'do_autohu']
     def __init__(self, host, port):
         self.host = host
         self.port = port
@@ -112,6 +112,11 @@ class LiqiServer:
     def page_clicker(self, xy):
         global click_list
         click_list.append(xy)
+        return True
+
+    def do_autohu(self):
+        global do_autohu
+        do_autohu = True
         return True
 
     def serve_forever(self):
@@ -191,6 +196,7 @@ if __name__ == '__main__':
         print(f'go to page success, url: {page.url}')
 
     click_list = []
+    do_autohu = False
     # On Ctrl+C, stop the other threads
     try:
         while True:
@@ -202,8 +208,11 @@ if __name__ == '__main__':
                     page.mouse.move(x=xy_scale["x"], y=xy_scale["y"])
                     time.sleep(0.1)
                     page.mouse.click(x=xy_scale["x"], y=xy_scale["y"], delay=100)
-
+                if do_autohu:
+                    print(f"do_autohu")
+                    page.evaluate("() => view.DesktopMgr.Inst.setAutoHule(true)")
                     # page.locator("#layaCanvas").click(position=xy_scale)
+                    do_autohu = False
             time.sleep(1)  # main thread will block here
     except KeyboardInterrupt:
         # On Ctrl+C, stop the other threads

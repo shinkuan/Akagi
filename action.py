@@ -105,6 +105,9 @@ class Action:
     def page_clicker(self, coord: tuple[float, float]):
         self.rpc_server.page_clicker(coord)
 
+    def do_autohu(self):
+        self.rpc_server.do_autohu()
+
     def decide_random_time(self):
         if self.isNewRound:
             return random.uniform(2.3, 2.5)
@@ -254,6 +257,7 @@ class Action:
                 if dahai == temp_tehai[i]:
                     pai_coord = self.get_pai_coord(i, temp_tehai)
                     self.page_clicker(pai_coord)
+                    self.do_autohu()
                     self.isNewRound = False
                     return
         if tsumohai != '?':
