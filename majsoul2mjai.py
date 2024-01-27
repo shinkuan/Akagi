@@ -48,7 +48,7 @@ class MajsoulBridge:
 
     def input(self, mjai_client: list[MjaiPlayerClient], parse_msg: dict) -> dict | None:
         # TODO SyncGame
-        if parse_msg['method'] == '.lq.FastTest.syncGame':
+        if parse_msg['method'] == '.lq.FastTest.syncGame' or parse_msg['method'] == '.lq.FastTest.enterGame':
             self.syncing = True
             syncGame_msgs = LiqiProto().parse_syncGame(parse_msg)
             reacts = []
@@ -293,6 +293,7 @@ class MajsoulBridge:
                             for pai in consumed:
                                 self.my_tehais.remove(pai)
                                 self.my_tehais.append("?")
+                            self.my_tehais.remove("?")
                             self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
                     case OperationAnGangAddGang.AddGang:
                         pai = MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']]
@@ -314,7 +315,6 @@ class MajsoulBridge:
                             else:
                                 self.my_tehais.append("?")
                             self.my_tehais.remove(pai)
-                            self.my_tehais.append("?")
                             self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
             # hora
             if parse_msg['data']['name'] == 'ActionHule':

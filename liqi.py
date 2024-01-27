@@ -117,7 +117,7 @@ class LiqiProto:
         return result
     
     def parse_syncGame(self, syncGame):
-        assert syncGame['method'] == '.lq.FastTest.syncGame'
+        assert syncGame['method'] == '.lq.FastTest.syncGame' or syncGame['method'] == '.lq.FastTest.enterGame'
         msgs = []
         if 'gameRestore' in syncGame['data']:
             for action in syncGame['data']['gameRestore']['actions']:
