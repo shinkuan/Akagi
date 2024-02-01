@@ -6,6 +6,7 @@ from liqi import MsgType
 from convert import MS_TILE_2_MJAI_TILE, MJAI_TILE_2_MS_TILE
 from liqi import LiqiProto
 from functools import cmp_to_key
+from loguru import logger
 
 class Operation:
     NoEffect = 0
@@ -44,6 +45,8 @@ class MajsoulBridge:
         self.my_tehais = ["?"]*13
         self.my_tsumohai = "?"
         self.syncing = False
+
+        self.is_3p = False
         pass
 
     def input(self, mjai_client: list[MjaiPlayerClient], parse_msg: dict) -> dict | None:
@@ -70,6 +73,8 @@ class MajsoulBridge:
             self.__init__()
             self.accountId = parse_msg['data']['accountId']
         if parse_msg['method'] == '.lq.FastTest.authGame' and parse_msg['type'] == MsgType.Res:
+            self.is_3p = len(parse_msg['data']['seatList']) == 3
+
             seatList = parse_msg['data']['seatList']
             self.seat = seatList.index(self.accountId)
             # mjai_client.launch_container(self.seat)
@@ -93,6 +98,8 @@ class MajsoulBridge:
                 kyoku = oya + 1
                 kyotaku = parse_msg['data']['data']['liqibang']
                 scores = parse_msg['data']['data']['scores']
+                if self.is_3p:
+                    scores = scores + [0]
                 tehais = [['?']*13]*4
                 my_tehais = ['?']*13
                 for hai in range(13):
@@ -316,6 +323,25 @@ class MajsoulBridge:
                                 self.my_tehais.append("?")
                             self.my_tehais.remove(pai)
                             self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
+
+            if parse_msg['data']['name'] == 'ActionBaBei':
+                actor = parse_msg['data']['data']['seat']
+                self.mjai_message.append(
+                    {
+                        'type': 'nukidora',
+                        'actor': actor,
+                        'pai': 'N'
+                    }
+                )
+                if actor == self.seat:
+                    if self.my_tsumohai != "?":
+                        self.my_tehais.append(self.my_tsumohai)
+                        self.my_tsumohai = "?"
+                    else:
+                        self.my_tehais.append("?")
+                    self.my_tehais.remove("N")
+                    self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
+
             # hora
             if parse_msg['data']['name'] == 'ActionHule':
                 # actor = parse_msg['data']['hules']['seat']
@@ -390,6 +416,10 @@ class MajsoulBridge:
         return None
 
     def react(self, mjai_client: MjaiPlayerClient, overwrite: str|None=None) -> dict:
+        if self.is_3p:
+            logger.info(self.mjai_message)
+            self.mjai_message = []
+            return None
         if overwrite is not None:
             # print(f"<- {overwrite}")
             out = mjai_client.react(str(overwrite).replace("\'", "\"").replace("True", "true").replace("False", "false"))
