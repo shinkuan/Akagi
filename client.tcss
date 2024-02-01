@@ -249,6 +249,33 @@ Button.action_ryukyoku.-active {
     border-top: tall $ryukyoku-darken-3;
 }
 
+$nukidora: #d5508d;
+$nukidora-lighten-1: #df79a8;
+$nukidora-lighten-2: #e9a2c3;
+$nukidora-lighten-3: #f3cbdd;
+$nukidora-darken-1: #c32f73;
+$nukidora-darken-2: #9a255b;
+$nukidora-darken-3: #711b42;
+
+Button.action_nukidora {
+    background: $nukidora;
+    color: $text;
+    border-top: tall $nukidora-lighten-3;
+    border-bottom: tall $nukidora-darken-3;
+}
+
+Button.action_nukidora:hover {
+    background: $nukidora-darken-2;
+    color: $text;
+    border-top: tall $nukidora;
+}
+
+Button.action_nukidora.-active {
+    background: $nukidora;
+    border-bottom: tall $nukidora-lighten-3;
+    border-top: tall $nukidora-darken-3;
+}
+
 #bottom_container {
     width: 1fr;
     height: 8;
