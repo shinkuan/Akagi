@@ -162,7 +162,7 @@ if __name__ == '__main__':
 
     with open("mhmp.json", "r") as f:
         mhmp = json.load(f)
-        mhmp["mitmdump"]["mode"] = f"regular@{mitm_port}"
+        mhmp["mitmdump"]["mode"] = [f"regular@{mitm_port}"]
         mhmp["hook"]["enable_aider"] = enable_helper
     with open("mhmp.json", "w") as f:
         json.dump(mhmp, f, indent=4)
