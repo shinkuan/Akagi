@@ -9,6 +9,7 @@ import mitmproxy.http
 import mitmproxy.log
 import mitmproxy.tcp
 import mitmproxy.websocket
+import mhm
 from pathlib import Path
 from optparse import OptionParser
 from mitmproxy import proxy, options, ctx
@@ -152,6 +153,9 @@ if __name__ == '__main__':
         rpc_port = int(opts.rpc_port)
     if opts.unlocker is not None:
         enable_unlocker = bool(opts.unlocker)
+
+    print("fetching resver...")
+    mhm.fetch_resver()
 
     with open("mhmp.json", "r") as f:
         mhmp = json.load(f)
