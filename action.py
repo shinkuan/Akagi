@@ -149,6 +149,8 @@ class Action:
         for idx, operation in enumerate(latest_operation_list_temp):
             if operation['type'] == ACTION2TYPE[mjai_msg['type']]:
                 self.page_clicker(LOCATION['actions'][idx])
+                self.do_autohu()
+                self.isNewRound = False
                 break
 
         if mjai_msg['type'] == 'reach':
