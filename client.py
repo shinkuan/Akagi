@@ -6,7 +6,6 @@ os.environ["LOGURU_AUTOINIT"] = "False"
 
 from typing import Any, Coroutine
 from xmlrpc.client import ServerProxy
-import docker
 import json
 from loguru import logger
 
@@ -36,18 +35,6 @@ with open("settings.json", "r") as f:
     PORT_NUM = settings["Port"]["MJAI"]
     AUTOPLAY = settings["Autoplay"]
     ENABLE_PLAYWRIGHT = settings["Playwright"]["enable"]
-
-def get_container_ports():
-    client = docker.from_env()
-    containers = client.containers.list()
-    used_port_list = []
-    for container in containers:
-        ports = container.ports
-        for _, bindings in ports.items():
-            if bindings is not None:
-                used_port_list.append(bindings[0]['HostPort'])
-    used_port_list = [int(p) for p in used_port_list]
-    return used_port_list
 
 
 class FlowScreen(Screen):
@@ -390,14 +377,6 @@ class Akagi(App):
         self.akagi_log_dict= dict() # flow.id -> List[akagi_log]
         self.loguru_log = [] # List[loguru_log]
 
-        used_port = get_container_ports()
-        port_num = PORT_NUM
-        four_port_num = []
-        for i in range(4):
-            while port_num in used_port:
-                port_num+=1
-            four_port_num.append(port_num)
-            used_port.append(port_num)
             
 
     def on_mount(self) -> None:
@@ -431,10 +410,6 @@ class Akagi(App):
                 self.liqi_msg_dict[flow_id] = []
                 self.mjai_msg_dict[flow_id] = []
                 self.akagi_log_dict[flow_id] = []
-                used_port = get_container_ports()
-                port_num = PORT_NUM
-                while port_num in used_port:
-                    port_num+=1
                 self.liqi[flow_id] = LiqiProto()
                 self.bridge[flow_id] = MajsoulBridge()
 
@@ -484,11 +459,6 @@ class Akagi(App):
         pass
 
 def exit_handler():
-    containers = docker.from_env().containers.list()
-    for container in containers:
-        if container.image.tags[0] == 'smly/mjai-client:v3':
-            container.stop()
-            container.remove()
     pass
 
 if __name__ == '__main__':
