@@ -35,58 +35,23 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ### 安裝
 
-[點我到Youtube觀看安裝影片](https://youtu.be/ZN3qbMyZeus)
+[點我到Youtube觀看安裝影片](https://youtu.be/70m67GezilY)
 
 在開始前，你需要以下東西:
-1. Docker
-2. Proxifier或任何可以將雀魂連線導向到MITM Proxy的工具。
-   1. __記得要信任mitmproxy的憑證!!!__ 不要問我怎麼做。去問Google。
-3. 一個`bot.zip`。 [Examples](https://github.com/smly/mjai.app/tree/main/examples)
-4. (Optional) 推薦使用Windows Terminal，以獲得預期中的UI效果。
+1. `mortal.pth` [(如果你沒有的話，到Discord去下載)](https://discord.gg/Z2wjXUK8bN)
+2. (Optional) 推薦使用Windows Terminal，以獲得預期中的UI效果。
+3. (Optional) 如果你要使用Steam或Majsoul Plus之類的，請使用類似Proxifier的軟體將連線導向至MITM
 
-__不知道如何製作bot.zip嗎？不用擔心！__
+__到[Discord](https://discord.gg/Z2wjXUK8bN)下載我提供的mortal.pth__
+1. 到 #verify 頻道點擊 ✅ 驗證身分.
+2. 到 #bot-zip
+3. 選一個你喜歡的bot下載
+4. 解壓縮
 
-__到[Discord](https://discord.gg/Z2wjXUK8bN)下載我提供的bot.zip__
-
-Docker:
-1. 安裝Docker Desktop
-2. 在cmd輸入`docker pull smly/mjai-client:v3`
-
-Akagi:
-
-### 影片部分內容已過時:
-- 現在已經有自動化安裝 `install_akagi.ps1`
-- 現在你不再需要安裝mjai
-- 如果你想使用playwright記得安裝chromium: `playwright install chromium`
+### Akagi:
 
 到[Release](https://github.com/shinkuan/Akagi/releases/latest)下載`install_akagi.ps1` 
 
-1. 把`install_akagi.ps1`放到你想安裝的位置
-2. 以管理員開啟Powershell
-3. cd到安裝位置
-4. 有些電腦會限制Powershell腳本的執行，這也是為什麼我們需要管理員權限，執行以下指令以讓腳本能夠運行：
-  - `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
-5. 執行 `install_akagi.ps1`
-6. 將`bot.zip`放入 ./players
-
-### 如果 `install_akagi.ps1` 有問題：
-
-建議你跟著[影片](https://youtu.be/ZN3qbMyZeus)中的教學安裝。
-
-1. 下載這個Repo到你電腦內，或在cmd輸入`git clone <repo>`
-2. 在cmd輸入`cd Akagi`進到資料夾
-3. 創建一個Python venv `python -m venv venv`
-4. 啟動它. `.\venv\Scripts\activate`
-5. `pip install -r requirement.txt`
-6. `playwright install chromium`
-7. put `bot.zip` into ./players folder
-
-### 執行
-
-在**啟動venv**後:
-1. 在`setting.json`調整設定
-2. `python mitm_playwright.py` or `python mitm.py`
-3. `python client.py`
 
 ### settings.json
 
@@ -146,7 +111,8 @@ LiqiProto訊息隨後被轉錄為mjai格式並發送給機器人。
 ### 目前沒有任何辦法保證完全不封號。
 
 # TODO
-
+ - [x] 三麻模式
+   - 已完成，但尚未決定公布。
  - [x] 在應用程式內更改Setting。
  - [x] 自動打牌 - （能運作，但 __不__ 穩定）
    - [ ] 自動使用貼圖，讓對手認為我們不是機器人。
@@ -181,17 +147,11 @@ LiqiProto訊息隨後被轉錄為mjai格式並發送給機器人。
 
 ETH Mainnet: 0x83095C4355E43bDFe9cEf2e439F371900664D41F
 
-Paypal或其他: Maybe? Contact me.
+Paypal或其他: 到Discord找我
 
 You can find me at [Discord](https://discord.gg/Z2wjXUK8bN).
 
-### 斗內後我能得到什麼？
-
-首先，非常感謝您願意支持作者。
-
-我會優先考慮捐款者的意見，比如功能要求和錯誤修復。
-
-接下來，您可以在Discord上找到我，我會給您指定一個捐款者身分組。
+![image](https://github.com/shinkuan/RandomStuff/assets/35415788/2b500d5c-21cd-422c-9684-50477835fe13)
 
 <!-- 未來計劃：
 
@@ -207,7 +167,11 @@ You can find me at [Discord](https://discord.gg/Z2wjXUK8bN).
 
 # Special Thanks
 
+[Equim-chan/Mortal](https://github.com/Equim-chan/Mortal)
+
 [Majsoul Mod Plus](https://github.com/Avenshy/majsoul_mod_plus)
+
+[mahjong-helper](https://github.com/EndlessCheng/mahjong-helper)
 
 [MahjongRepository/mahjong_soul_api](https://github.com/MahjongRepository/mahjong_soul_api)
 
