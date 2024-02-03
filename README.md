@@ -35,65 +35,48 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ## Setup
 
-### Installation, I suggest you watch the video.
+### Installation.
 
-### Some content are outdated:
-- You don't need to install mjai now.
-- You need to install chromium if you want to use playwright: `playwright install chromium`
-
-[YouTube Video for you to follow.](https://youtu.be/ZN3qbMyZeus)
+[YouTube Video for you to follow.](https://youtu.be/NdAULJgBJ-U)
 
 ### You will need:
-1. Docker
-2. Proxifier or something that can redirect connection to mitmproxy.
-   1. __Remember to trust mitmproxy's Certificate!!!__ Don't know how? Google it.
-3. A `bot.zip` that contains the AI. [Examples](https://github.com/smly/mjai.app/tree/main/examples)
-4. (Optional, Recommend) Use Windows Terminal to open client.py for a nice looking TUI.
+1. A `mortal.pth`. [(Get one from Discord server if you don't have one.)](https://discord.gg/Z2wjXUK8bN)
+2. A `libriichi` that match your system. [(Get it here)](https://github.com/shinkuan/Akagi/releases/tag/v0.1.0-libriichi)
+3. (Optional, Recommend) Use Windows Terminal to open client.py for a nice looking TUI.
+4. (Optional) If you want to use Steam, Majsoul Plus, or anything other client, proxy the client using tools like proxifier.
 
-__Don't know how to make a bot.zip yourself? Don't worry!__
+__Get mortal.pth at [Discord](https://discord.gg/Z2wjXUK8bN)__
+1. Go to #verify and click the ✅ reaction.
+2. Go to #bot-zip
+3. Download a bot you like.
+4. Extract the zip.
+5. And mortal.pth is there.
 
-__Get bot.zip at [Discord](https://discord.gg/Z2wjXUK8bN)__
-
-### Docker:
-1. Install Docker on your PC
-2. `docker pull smly/mjai-client:v3`
+If you are on MacOSX or Linux, try [libriichi builds](https://github.com/shinkuan/Akagi/blob/main/mjai/bot/libriichi_builds) for your platform.
 
 ### Akagi:
 
 Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/releases/latest)
 
-1. Place `install_akagi.ps1` at the folder you want to install Akagi.
-2. Open Powershell as admin.
-3. Go to the folder.
-4. To prevent your PC restrict from executing powershell script, run:
-  - `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
-5. Run `install_akagi.ps1`
-6. put `bot.zip` into ./players folder
-
-### if `install_akagi.ps1` not working for you:
-
-Follow the [video](https://youtu.be/ZN3qbMyZeus).
-
-1. `git clone this`
-2. `cd into this repo`
-3. Create a Python Virtual Env `python -m venv venv`
-4. Activate it. `.\venv\Scripts\activate`
-5. `pip install -r requirement.txt`
-6. `playwright install chromium`
-7. put `bot.zip` into ./players folder
-
-### Run
-
-After you __activate the venv__:
-1. Configure your setting at `setting.json`
-2. `python mitm_playwright.py` or `python mitm.py`
-3. `python client.py`
+1. Put `install_akagi.ps1` at the location you want to install Akagi.
+2. Open **Powershell** as **Administrator**
+3. cd in to the directory
+4. Run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+5. Run: `install_akagi.ps1`
+6. Open mitmproxy if this is your first time using it.
+7. Close it.
+8. Go to your user home directory `~/.mitmproxy`
+9. Install the certificate.
+10. Put `libriichi` into `./Akagi/mjai/bot` and rename it as `libriichi`
+11. Put `mortal.pth` into `./Akagi/mjai/bot`
 
 ### settings.json
 
  - `Unlocker`: Decide to use [MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker) or not.
  - `v10`: If your Majsoul client in still in v0.10.x and you want to use MajsoulUnlocker, set it to true.
  - `Autoplay`: Autoplay.
+ - `Helper`: To use [mahjong-helper](https://github.com/EndlessCheng/mahjong-helper) or not
+ - `Autohu`: Auto Ron.
  - `Port`:
    - `MITM`: The MITM Port, you should redirect Majsoul connection to this port.
    - `XMLRPC`: The XMLRPC Port.
@@ -126,7 +109,7 @@ On top right is the MJAI Messages, this is the message our bot sent back to us, 
 
 Then below is our tehai, it is composed using unicode characters.
 
-Bottom left is the settings. (WIP, currently you should change settings via settings.json)
+Bottom left is the settings. 
 
 Bottom right is the bot's action.
 
@@ -145,6 +128,8 @@ Following guide can minimum the probility of account suspension.
 ### There is no way to guarantee 100% no account suspension currently.
 
 # TODO
+ - [x] 3 Player Mahjong
+   - Already done, but not planned to release yet.
  - [x] Change Setting inside application.
  - [x] Autoplay
    - [ ] Auto use stickers to make opponent think we are not a bot.
@@ -179,7 +164,7 @@ Following guide can minimum the probility of account suspension.
 
 ETH Mainnet: 0x83095C4355E43bDFe9cEf2e439F371900664D41F
 
-Paypal or Others: Maybe? Contact me.
+Paypal or Others: Contact me on Discord.
 
 You can find me at [Discord](https://discord.gg/Z2wjXUK8bN).
 
@@ -204,7 +189,11 @@ Next, you can find me on Discord, where I will assign you a donor role.
 
 # Special Thanks
 
+[Equim-chan/Mortal](https://github.com/Equim-chan/Mortal)
+
 [Majsoul Mod Plus](https://github.com/Avenshy/majsoul_mod_plus)
+
+[mahjong-helper](https://github.com/EndlessCheng/mahjong-helper)
 
 [MahjongRepository/mahjong_soul_api](https://github.com/MahjongRepository/mahjong_soul_api)
 

@@ -38,6 +38,7 @@ class MajsoulBridge:
         self.mjai_message = []
         self.lastDiscard = None
         self.reach = False
+        self.accept_reach = None
         self.operation = {}
         self.AllReady = False
         self.temp = {}
@@ -46,17 +47,18 @@ class MajsoulBridge:
         self.my_tsumohai = "?"
         self.syncing = False
 
+        self.mjai_client = MjaiPlayerClient()
         self.is_3p = False
         pass
 
-    def input(self, mjai_client: list[MjaiPlayerClient], parse_msg: dict) -> dict | None:
+    def input(self, parse_msg: dict) -> dict | None:
         # TODO SyncGame
         if parse_msg['method'] == '.lq.FastTest.syncGame' or parse_msg['method'] == '.lq.FastTest.enterGame':
             self.syncing = True
             syncGame_msgs = LiqiProto().parse_syncGame(parse_msg)
             reacts = []
             for msg in syncGame_msgs:
-                reacts.append(self.input(mjai_client, msg))
+                reacts.append(self.input(msg))
             if len(reacts)>=1:
                 self.syncing = False
                 return reacts[-1]
@@ -77,14 +79,14 @@ class MajsoulBridge:
 
             seatList = parse_msg['data']['seatList']
             self.seat = seatList.index(self.accountId)
-            # mjai_client.launch_container(self.seat)
+            self.mjai_client.launch_bot(self.seat, self.is_3p)
             self.mjai_message.append(
                 {
                     'type': 'start_game',
                     'id': self.seat
                 }
             )
-            self.react(mjai_client[self.seat])
+            self.react(self.mjai_client)
             return None
         if parse_msg['method'] == '.lq.ActionPrototype':
             # start_kyoku
@@ -148,6 +150,10 @@ class MajsoulBridge:
                 else:
                     raise
 
+            if self.accept_reach is not None:
+                self.mjai_message.append(self.accept_reach)
+                self.accept_reach = None
+
             # According to mjai.app, in the case of an ankan, the dora event comes first, followed by the tsumo event.
             if 'data' in parse_msg['data']:
                 if 'doras' in parse_msg['data']['data']:
@@ -200,12 +206,10 @@ class MajsoulBridge:
                     }
                 )
                 if parse_msg['data']['data']['isLiqi']:
-                    self.mjai_message.append(
-                        {
-                            'type': 'reach_accepted',
-                            'actor': actor
-                        }
-                    )
+                    self.accept_reach = {
+                                            'type': 'reach_accepted',
+                                            'actor': actor
+                                        }
                 if actor == self.seat:
                     if self.my_tsumohai != "?":
                         self.my_tehais.append(self.my_tsumohai)
@@ -281,7 +285,7 @@ class MajsoulBridge:
                 actor = parse_msg['data']['data']['seat']
                 match parse_msg['data']['data']['type']:
                     case OperationAnGangAddGang.AnGang:
-                        consumed = [MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']]]*4
+                        consumed = [MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']].replace("r","")]*4
                         if parse_msg['data']['data']['tiles'][0] == '5' and parse_msg['data']['data']['tiles'][1] != 'z':
                             consumed[0] += 'r'
                         self.mjai_message.append(
@@ -365,7 +369,7 @@ class MajsoulBridge:
                 )
                 self.my_tehais = ["?"]*13
                 self.my_tsumohai = "?"
-                self.react(mjai_client[self.seat])
+                self.react(self.mjai_client)
                 return None
             # notile
             if parse_msg['data']['name'] == 'ActionNoTile':
@@ -377,7 +381,7 @@ class MajsoulBridge:
                 )
                 self.my_tehais = ["?"]*13
                 self.my_tsumohai = "?"
-                self.react(mjai_client[self.seat])
+                self.react(self.mjai_client)
                 return None
             # ryukyoku
             if parse_msg['data']['name'] == 'ActionLiuJu':
@@ -394,13 +398,13 @@ class MajsoulBridge:
                 )
                 self.my_tehais = ["?"]*13
                 self.my_tsumohai = "?"
-                self.react(mjai_client[self.seat])
+                self.react(self.mjai_client)
                 return None
             
             if 'data' in parse_msg['data']:
                 if 'operation' in parse_msg['data']['data']:
                     self.operation = parse_msg['data']['data']['operation']
-                    return self.react(mjai_client[self.seat])
+                    return self.react(self.mjai_client)
         # end_game
         if parse_msg['method'] == '.lq.NotifyGameEndResult' or parse_msg['method'] == '.lq.NotifyGameTerminate':
             self.mjai_message.append(
@@ -410,16 +414,12 @@ class MajsoulBridge:
             )
             self.my_tehais = ["?"]*13
             self.my_tsumohai = "?"
-            self.react(mjai_client[self.seat])
-            mjai_client[self.seat].restart_container(self.seat)
+            self.react(self.mjai_client)
+            self.mjai_client.restart_bot(self.seat)
             return None
         return None
 
     def react(self, mjai_client: MjaiPlayerClient, overwrite: str|None=None) -> dict:
-        if self.is_3p:
-            logger.info(self.mjai_message)
-            self.mjai_message = []
-            return None
         if overwrite is not None:
             # print(f"<- {overwrite}")
             out = mjai_client.react(str(overwrite).replace("\'", "\"").replace("True", "true").replace("False", "false"))

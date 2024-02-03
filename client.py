@@ -6,7 +6,6 @@ os.environ["LOGURU_AUTOINIT"] = "False"
 
 from typing import Any, Coroutine
 from xmlrpc.client import ServerProxy
-import docker
 import json
 from loguru import logger
 
@@ -36,18 +35,6 @@ with open("settings.json", "r") as f:
     PORT_NUM = settings["Port"]["MJAI"]
     AUTOPLAY = settings["Autoplay"]
     ENABLE_PLAYWRIGHT = settings["Playwright"]["enable"]
-
-def get_container_ports():
-    client = docker.from_env()
-    containers = client.containers.list()
-    used_port_list = []
-    for container in containers:
-        ports = container.ports
-        for _, bindings in ports.items():
-            if bindings is not None:
-                used_port_list.append(bindings[0]['HostPort'])
-    used_port_list = [int(p) for p in used_port_list]
-    return used_port_list
 
 
 class FlowScreen(Screen):
@@ -154,6 +141,7 @@ class FlowScreen(Screen):
                                 self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
                         if liqi_msg['data']['name'] == 'ActionDiscardTile':
                             self.action.isNewRound = False
+                            pass
                         if liqi_msg['data']['name'] == 'ActionNewRound':
                             self.action.isNewRound = True
                             self.action.reached = False
@@ -380,7 +368,6 @@ class Akagi(App):
     def __init__(self, rpc_server, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.rpc_server = rpc_server
-        self.mjai_client: dict[str, MjaiPlayerClient]={}
         self.liqi: dict[str, LiqiProto]={}
         self.bridge: dict[str, MajsoulBridge]={}
         self.active_flows = []
@@ -390,25 +377,7 @@ class Akagi(App):
         self.akagi_log_dict= dict() # flow.id -> List[akagi_log]
         self.loguru_log = [] # List[loguru_log]
 
-        self.four_mjai_client = []
-        used_port = get_container_ports()
-        port_num = PORT_NUM
-        four_port_num = []
-        for i in range(4):
-            while port_num in used_port:
-                port_num+=1
-            four_port_num.append(port_num)
-            used_port.append(port_num)
             
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(self.launch_client, i, four_port_num[i], submission) for i in range(4)}
-            self.four_mjai_client = [future.result() for future in futures]
-        self.four_mjai_client.sort(key=lambda x: x.player_id)
-        
-    def launch_client(self, i, port_num, submission):
-        client = MjaiPlayerClient(submission, timeout=15, port_num=port_num)
-        client.launch_container(i)
-        return client
 
     def on_mount(self) -> None:
         self.update_flow = self.set_interval(1, self.refresh_flow)
@@ -427,7 +396,6 @@ class Akagi(App):
                 self.liqi_msg_dict.pop(flow_id)
                 self.mjai_msg_dict.pop(flow_id)
                 self.akagi_log_dict.pop(flow_id)
-                self.mjai_client[flow_id].delete_container()
         for flow_id in flows:
             try:
                 self.query_one("#FlowContainer")
@@ -442,15 +410,6 @@ class Akagi(App):
                 self.liqi_msg_dict[flow_id] = []
                 self.mjai_msg_dict[flow_id] = []
                 self.akagi_log_dict[flow_id] = []
-                used_port = get_container_ports()
-                port_num = PORT_NUM
-                while port_num in used_port:
-                    port_num+=1
-                self.mjai_client[flow_id] = MjaiPlayerClient(
-                    submission,
-                    timeout=15,
-                    port_num=port_num
-                )
                 self.liqi[flow_id] = LiqiProto()
                 self.bridge[flow_id] = MajsoulBridge()
 
@@ -469,7 +428,7 @@ class Akagi(App):
                     if liqi_msg['method'] == '.lq.FastTest.authGame' and liqi_msg['type'] == MsgType.Req:
                         self.app.push_screen(FlowScreen(flow_id))
                         pass
-                    mjai_msg = self.bridge[flow_id].input(self.four_mjai_client, liqi_msg)
+                    mjai_msg = self.bridge[flow_id].input(liqi_msg)
                     if mjai_msg is not None:
                         if self.bridge[flow_id].reach and mjai_msg["type"] == "dahai":
                             mjai_msg["type"] = "reach"
@@ -492,11 +451,7 @@ class Akagi(App):
     def action_quit(self) -> None:
         self.update_flow.stop()
         self.get_messages_flow.stop()
-        self.rpc_server.reset_message_idx()
-        for flow_id in self.active_flows:
-            self.mjai_client[flow_id].delete_container()
-        for mjai_client in self.four_mjai_client:
-            mjai_client.delete_container()
+        self.rpc_server.reset_message_idx() 
         self.exit()
 
     def action_settings(self) -> None:
@@ -504,11 +459,6 @@ class Akagi(App):
         pass
 
 def exit_handler():
-    containers = docker.from_env().containers.list()
-    for container in containers:
-        if container.image.tags[0] == 'smly/mjai-client:v3':
-            container.stop()
-            container.remove()
     pass
 
 if __name__ == '__main__':
