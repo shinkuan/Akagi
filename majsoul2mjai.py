@@ -38,6 +38,7 @@ class MajsoulBridge:
         self.mjai_message = []
         self.lastDiscard = None
         self.reach = False
+        self.accept_reach = None
         self.operation = {}
         self.AllReady = False
         self.temp = {}
@@ -149,6 +150,10 @@ class MajsoulBridge:
                 else:
                     raise
 
+            if self.accept_reach is not None:
+                self.mjai_message.append(self.accept_reach)
+                self.accept_reach = None
+
             # According to mjai.app, in the case of an ankan, the dora event comes first, followed by the tsumo event.
             if 'data' in parse_msg['data']:
                 if 'doras' in parse_msg['data']['data']:
@@ -201,12 +206,10 @@ class MajsoulBridge:
                     }
                 )
                 if parse_msg['data']['data']['isLiqi']:
-                    self.mjai_message.append(
-                        {
-                            'type': 'reach_accepted',
-                            'actor': actor
-                        }
-                    )
+                    self.accept_reach = {
+                                            'type': 'reach_accepted',
+                                            'actor': actor
+                                        }
                 if actor == self.seat:
                     if self.my_tsumohai != "?":
                         self.my_tehais.append(self.my_tsumohai)
@@ -282,7 +285,7 @@ class MajsoulBridge:
                 actor = parse_msg['data']['data']['seat']
                 match parse_msg['data']['data']['type']:
                     case OperationAnGangAddGang.AnGang:
-                        consumed = [MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']]]*4
+                        consumed = [MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']].replace("r","")]*4
                         if parse_msg['data']['data']['tiles'][0] == '5' and parse_msg['data']['data']['tiles'][1] != 'z':
                             consumed[0] += 'r'
                         self.mjai_message.append(
