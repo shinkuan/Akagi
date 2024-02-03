@@ -48,6 +48,8 @@ __到[Discord](https://discord.gg/Z2wjXUK8bN)下載我提供的mortal.pth__
 3. 選一個你喜歡的bot下載
 4. 解壓縮
 
+If you are on MacOSX or Linux, try [libriichi builds](https://github.com/shinkuan/Akagi/blob/main/mjai/bot/libriichi_builds) for your platform.
+
 ### Akagi:
 
 到[Release](https://github.com/shinkuan/Akagi/releases/latest)下載`install_akagi.ps1` 
@@ -90,7 +92,7 @@ LiqiProto訊息隨後被轉錄為mjai格式並發送給機器人。
 
 然後下方是我們的手牌，它是使用Unicode字符組成的。
 
-左下角是設置。（目前還未完成，你應該通過settings.json來更改設置）
+左下角是設置。
 
 右下角是機器人的動作。
 
@@ -114,7 +116,7 @@ LiqiProto訊息隨後被轉錄為mjai格式並發送給機器人。
  - [x] 三麻模式
    - 已完成，但尚未決定公布。
  - [x] 在應用程式內更改Setting。
- - [x] 自動打牌 - （能運作，但 __不__ 穩定）
+ - [x] 自動打牌
    - [ ] 自動使用貼圖，讓對手認為我們不是機器人。
    - [ ] 在settings.json中添加隨機時間，讓用戶選擇他們想要的時間。
  - [ ] 混合多個AI的決策，讓我們看起來更像人類，而不是完美的機器人。

@@ -51,6 +51,8 @@ __Get mortal.pth at [Discord](https://discord.gg/Z2wjXUK8bN)__
 4. Extract the zip.
 5. And mortal.pth is there.
 
+If you are on MacOSX or Linux, try [libriichi builds](https://github.com/shinkuan/Akagi/blob/main/mjai/bot/libriichi_builds) for your platform.
+
 ### Akagi:
 
 Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/releases/latest)
@@ -93,7 +95,7 @@ On top right is the MJAI Messages, this is the message our bot sent back to us, 
 
 Then below is our tehai, it is composed using unicode characters.
 
-Bottom left is the settings. (WIP, currently you should change settings via settings.json)
+Bottom left is the settings. 
 
 Bottom right is the bot's action.
 
