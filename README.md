@@ -37,7 +37,7 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ### Installation.
 
-[YouTube Video for you to follow.](https://youtu.be/70m67GezilY)
+[YouTube Video for you to follow.](https://youtu.be/NdAULJgBJ-U)
 
 ### You will need:
 1. A `mortal.pth`. [(Get one from Discord server if you don't have one.)](https://discord.gg/Z2wjXUK8bN)
