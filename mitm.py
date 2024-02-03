@@ -131,6 +131,7 @@ if __name__ == '__main__':
         enable_playwright = settings["Playwright"]["enable"]
         playwright_width = settings["Playwright"]["width"]
         playwright_height = settings["Playwright"]["height"]
+        autohu = settings["Autohu"]
         scale = playwright_width / 16
 
     mitm_host="127.0.0.1"
@@ -205,7 +206,7 @@ if __name__ == '__main__':
                     page.mouse.move(x=xy_scale["x"], y=xy_scale["y"])
                     time.sleep(0.1)
                     page.mouse.click(x=xy_scale["x"], y=xy_scale["y"], delay=100)
-                if do_autohu:
+                if do_autohu and autohu:
                     print(f"do_autohu")
                     page.evaluate("() => view.DesktopMgr.Inst.setAutoHule(true)")
                     # page.locator("#layaCanvas").click(position=xy_scale)
