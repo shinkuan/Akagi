@@ -140,7 +140,7 @@ class FlowScreen(Screen):
                             if 'operationList' in liqi_msg['data']['data']['operation']:
                                 self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
                         if liqi_msg['data']['name'] == 'ActionDiscardTile':
-                            # self.action.isNewRound = False
+                            self.action.isNewRound = False
                             pass
                         if liqi_msg['data']['name'] == 'ActionNewRound':
                             self.action.isNewRound = True
