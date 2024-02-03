@@ -54,6 +54,17 @@ If you are on MacOSX or Linux, try [libriichi builds](https://github.com/shinkua
 
 到[Release](https://github.com/shinkuan/Akagi/releases/latest)下載`install_akagi.ps1` 
 
+1. 將 `install_akagi.ps1` 放在您想安裝Akagi的位置。
+2. 以**管理員**身份打開 **Powershell**
+3. cd 到該目錄
+4. 執行： `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+5. 執行： `install_akagi.ps1`
+6. 如果這是您第一次使用mitmproxy，請打開它。
+7. 關閉它。
+8. cd 到用戶主目錄 `~/.mitmproxy`
+9. 安裝證書。
+10. 將 `libriichi` 放入 `./Akagi/mjai/bot` 並將其重新命名為 `libriichi`
+11. 將 `mortal.pth` 放入 `./Akagi/mjai/bot`
 
 ### settings.json
 

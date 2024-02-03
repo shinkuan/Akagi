@@ -41,8 +41,9 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ### You will need:
 1. A `mortal.pth`. [(Get one from Discord server if you don't have one.)](https://discord.gg/Z2wjXUK8bN)
-2. (Optional, Recommend) Use Windows Terminal to open client.py for a nice looking TUI.
-3. (Optional) If you want to use Steam, Majsoul Plus, or anything other client, proxy the client using tools like proxifier.
+2. A `libriichi` that match your system. [(Get it here)](https://github.com/shinkuan/Akagi/releases/tag/v0.1.0-libriichi)
+3. (Optional, Recommend) Use Windows Terminal to open client.py for a nice looking TUI.
+4. (Optional) If you want to use Steam, Majsoul Plus, or anything other client, proxy the client using tools like proxifier.
 
 __Get mortal.pth at [Discord](https://discord.gg/Z2wjXUK8bN)__
 1. Go to #verify and click the ✅ reaction.
@@ -56,6 +57,18 @@ If you are on MacOSX or Linux, try [libriichi builds](https://github.com/shinkua
 ### Akagi:
 
 Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/releases/latest)
+
+1. Put `install_akagi.ps1` at the location you want to install Akagi.
+2. Open **Powershell** as **Administrator**
+3. cd in to the directory
+4. Run: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+5. Run: `install_akagi.ps1`
+6. Open mitmproxy if this is your first time using it.
+7. Close it.
+8. Go to your user home directory `~/.mitmproxy`
+9. Install the certificate.
+10. Put `libriichi` into `./Akagi/mjai/bot` and rename it as `libriichi`
+11. Put `mortal.pth` into `./Akagi/mjai/bot`
 
 ### settings.json
 
