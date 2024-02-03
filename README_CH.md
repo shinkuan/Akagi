@@ -39,8 +39,9 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 在開始前，你需要以下東西:
 1. `mortal.pth` [(如果你沒有的話，到Discord去下載)](https://discord.gg/Z2wjXUK8bN)
-2. (Optional) 推薦使用Windows Terminal，以獲得預期中的UI效果。
-3. (Optional) 如果你要使用Steam或Majsoul Plus之類的，請使用類似Proxifier的軟體將連線導向至MITM
+2. `libriichi` [(到這邊根據你的平台下載對應版本)](https://github.com/shinkuan/Akagi/releases/tag/v0.1.0-libriichi)
+3. (Optional) 推薦使用Windows Terminal，以獲得預期中的UI效果。
+4. (Optional) 如果你要使用Steam或Majsoul Plus之類的，請使用類似Proxifier的軟體將連線導向至MITM
 
 __到[Discord](https://discord.gg/Z2wjXUK8bN)下載我提供的mortal.pth__
 1. 到 #verify 頻道點擊 ✅ 驗證身分.
