@@ -63,6 +63,7 @@ Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/rele
  - `v10`: If your Majsoul client in still in v0.10.x and you want to use MajsoulUnlocker, set it to true.
  - `Autoplay`: Autoplay.
  - `Helper`: To use [mahjong-helper](https://github.com/EndlessCheng/mahjong-helper) or not
+ - `Autohu`: Auto Ron.
  - `Port`:
    - `MITM`: The MITM Port, you should redirect Majsoul connection to this port.
    - `XMLRPC`: The XMLRPC Port.

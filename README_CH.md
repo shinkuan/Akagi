@@ -60,6 +60,8 @@ If you are on MacOSX or Linux, try [libriichi builds](https://github.com/shinkua
  - `Unlocker`: 使用 [MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker)
  - `v10`: 如果你的客戶端還在v0.10.x版本而且你想要使用MajsoulUnlocker，設為true
  - `Autoplay`: 自動打牌.
+ - `Helper`: [mahjong-helper](https://github.com/EndlessCheng/mahjong-helper)
+ - `Autohu`: Auto Ron.
  - `Port`:
    - `MITM`: MITM Port, 你應該將雀魂連線導向到這個Port.
    - `XMLRPC`: The XMLRPC Port.
