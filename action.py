@@ -115,8 +115,8 @@ class Action:
 
     def decide_random_time(self):
         if self.isNewRound:
-            return random.uniform(3.0, 3.5)
-        return random.uniform(0.3, 1.2)
+            return random.uniform(3.5, 4.5)
+        return random.uniform(1.0, 3.2)
 
 
     def click_chiponkan(self, mjai_msg: dict | None, tehai: list[str], tsumohai: str | None):

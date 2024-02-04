@@ -49,8 +49,6 @@ __到[Discord](https://discord.gg/Z2wjXUK8bN)下載我提供的mortal.pth__
 3. 選一個你喜歡的bot下載
 4. 解壓縮
 
-If you are on MacOSX or Linux, try [libriichi builds](https://github.com/shinkuan/Akagi/blob/main/mjai/bot/libriichi_builds) for your platform.
-
 ### Akagi:
 
 到[Release](https://github.com/shinkuan/Akagi/releases/latest)下載`install_akagi.ps1` 
