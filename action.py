@@ -34,6 +34,9 @@ LOCATION = {
         (10.875, 5.9),           #   2   1   0
         (8.6375, 5.9),           #
         (6.4   , 5.9),
+        (10.875, 4.8),           # Not used
+        (8.6375, 4.8),           # Not used
+        (6.4   , 4.8),           # Not used
     ],
     "candidates": [
         (3.6625,  6.3),         # (-(len/2)+idx+0.5)*2+5
@@ -71,7 +74,8 @@ ACTION_PIORITY = [
     2,  # Reach     # Self Discard
     1,  # Zimo      # Self Discard
     1,  # Rong      # Opponent Discard
-    4,  # Ryukyoku  # Self Discard
+    5,  # Ryukyoku  # Self Discard
+    4,  # Nukidora  # Self Discard
 ]
 
 ACTION2TYPE = {
@@ -82,6 +86,7 @@ ACTION2TYPE = {
     "hora": 9,
     #^^^^^^^^^^^^^^^^Opponent Discard^^^^^^^^^^^^^^^^
     "ryukyoku": 10,
+    "nukidora": 11,
     "ankan": 4,
     "kakan": 6,
     "reach": 7,
@@ -110,8 +115,8 @@ class Action:
 
     def decide_random_time(self):
         if self.isNewRound:
-            return random.uniform(2.3, 2.5)
-        return random.uniform(0.3, 1.2)
+            return random.uniform(3.5, 4.5)
+        return random.uniform(1.0, 3.2)
 
 
     def click_chiponkan(self, mjai_msg: dict | None, tehai: list[str], tsumohai: str | None):
@@ -144,6 +149,8 @@ class Action:
         for idx, operation in enumerate(latest_operation_list_temp):
             if operation['type'] == ACTION2TYPE[mjai_msg['type']]:
                 self.page_clicker(LOCATION['actions'][idx])
+                self.do_autohu()
+                self.isNewRound = False
                 break
 
         if mjai_msg['type'] == 'reach':
@@ -280,7 +287,7 @@ class Action:
             time.sleep(dahai_delay)
             self.click_dahai(mjai_msg, tehai, tsumohai)
             return
-        if mjai_msg['type'] in ['none', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan', 'hora', 'reach', 'ryukyoku']:
+        if mjai_msg['type'] in ['none', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan', 'hora', 'reach', 'ryukyoku', 'nukidora']:
             time.sleep(2)
             self.click_chiponkan(mjai_msg, tehai, tsumohai)
             # kan can have multiple candidates too! ex: tehai=1111m 1111p 111s 11z, tsumohai=1s

@@ -3,6 +3,7 @@
     "v10": false,
     "Autoplay": true,
     "Helper": true,
+    "Autohu": true,
     "Port": {
         "MITM": 7878,
         "XMLRPC": 7879,

@@ -9,6 +9,7 @@ import mitmproxy.http
 import mitmproxy.log
 import mitmproxy.tcp
 import mitmproxy.websocket
+import mhm
 from pathlib import Path
 from optparse import OptionParser
 from mitmproxy import proxy, options, ctx
@@ -60,7 +61,7 @@ class ClientHTTP:
             elif re.search(r'^https://mahjongsoul\.game\.yo-star\.com/v[0-9\.]+\.w/code\.js$', flow.request.url):
                 flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
 
-async def start_proxy(host, port, enable_unlocker, v10):
+async def start_proxy(host, port, enable_unlocker):
     opts = options.Options(listen_host=host, listen_port=port)
 
     master = DumpMaster(
@@ -71,10 +72,7 @@ async def start_proxy(host, port, enable_unlocker, v10):
     master.addons.add(ClientWebSocket())
     master.addons.add(ClientHTTP())
     if enable_unlocker:
-        if v10:
-            from unlocker_v10 import Unlocker
-        else:
-            from mhm.addons import WebSocketAddon as Unlocker
+        from mhm.addons import WebSocketAddon as Unlocker
         master.addons.add(Unlocker())
     await master.run()
     return master
@@ -129,11 +127,11 @@ if __name__ == '__main__':
         mitm_port = settings["Port"]["MITM"]
         rpc_port = settings["Port"]["XMLRPC"]
         enable_unlocker = settings["Unlocker"]
-        v10 = settings["v10"]
         enable_helper = settings["Helper"]
         enable_playwright = settings["Playwright"]["enable"]
         playwright_width = settings["Playwright"]["width"]
         playwright_height = settings["Playwright"]["height"]
+        autohu = settings["Autohu"]
         scale = playwright_width / 16
 
     mitm_host="127.0.0.1"
@@ -145,7 +143,6 @@ if __name__ == '__main__':
     p.add_option("--rpc-host", default=None)
     p.add_option("--rpc-port", default=None)
     p.add_option("--unlocker", default=None)
-    p.add_option("--v10", default=None)
     opts, arguments = p.parse_args()
     if opts.mitm_host is not None:
         mitm_host = opts.mitm_host
@@ -157,17 +154,18 @@ if __name__ == '__main__':
         rpc_port = int(opts.rpc_port)
     if opts.unlocker is not None:
         enable_unlocker = bool(opts.unlocker)
-    if opts.v10 is not None:
-        v10 = bool(opts.v10)
+
+    print("fetching resver...")
+    mhm.fetch_resver()
 
     with open("mhmp.json", "r") as f:
         mhmp = json.load(f)
-        mhmp["mitmdump"]["mode"] = f"regular@{mitm_port}"
+        mhmp["mitmdump"]["mode"] = [f"regular@{mitm_port}"]
         mhmp["hook"]["enable_aider"] = enable_helper
     with open("mhmp.json", "w") as f:
         json.dump(mhmp, f, indent=4)
     # Create and start the proxy server thread
-    proxy_thread = threading.Thread(target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker, v10)))
+    proxy_thread = threading.Thread(target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker)))
     proxy_thread.start()
 
     liqiServer = LiqiServer(rpc_host, rpc_port)
@@ -208,7 +206,7 @@ if __name__ == '__main__':
                     page.mouse.move(x=xy_scale["x"], y=xy_scale["y"])
                     time.sleep(0.1)
                     page.mouse.click(x=xy_scale["x"], y=xy_scale["y"], delay=100)
-                if do_autohu:
+                if do_autohu and autohu:
                     print(f"do_autohu")
                     page.evaluate("() => view.DesktopMgr.Inst.setAutoHule(true)")
                     # page.locator("#layaCanvas").click(position=xy_scale)
@@ -228,12 +226,8 @@ with open("settings.json", "r") as f:
     mitm_port = settings["Port"]["MITM"]
     rpc_port = settings["Port"]["XMLRPC"]
     enable_unlocker = settings["Unlocker"]
-    v10 = settings["v10"]
 if enable_unlocker:
-    if v10:
-        from unlocker_v10 import Unlocker
-    else:
-        from mhm.addons import WebSocketAddon as Unlocker
+    from mhm.addons import WebSocketAddon as Unlocker
     addons = [ClientWebSocket(), Unlocker()]
 else:
     addons = [ClientWebSocket()]
