@@ -285,8 +285,9 @@ class MajsoulBridge:
                 actor = parse_msg['data']['data']['seat']
                 match parse_msg['data']['data']['type']:
                     case OperationAnGangAddGang.AnGang:
-                        consumed = [MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']].replace("r","")]*4
-                        if parse_msg['data']['data']['tiles'][0] == '5' and parse_msg['data']['data']['tiles'][1] != 'z':
+                        pai = MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']]
+                        consumed = [pai.replace("r", "")]*4
+                        if pai[0] == '5' and pai[1] != 'z':
                             consumed[0] += 'r'
                         self.mjai_message.append(
                             {
