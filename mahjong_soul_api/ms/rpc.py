@@ -307,6 +307,14 @@ class Lobby(MSRPCService):
         'combiningRecycleCraft': pb.ReqCombiningRecycleCraft,
         'recoverCombiningRecycle': pb.ReqRecoverCombiningRecycle,
         'finishCombiningOrder': pb.ReqFinishCombiningOrder,
+        'upgradeVillageBuilding': pb.ReqUpgradeVillageBuilding,
+        'receiveVillageBuildingReward': pb.ReqReceiveVillageBuildingReward,
+        'startVillageTrip': pb.ReqStartVillageTrip,
+        'receiveVillageTripReward': pb.ReqReceiveVillageTripReward,
+        'completeVillageTask': pb.ReqCompleteVillageTask,
+        'getFriendVillageData': pb.ReqGetFriendVillageData,
+        'setVillageWorker': pb.ReqSetVillageWorker,
+        'nextRoundVillage': pb.ReqNextRoundVillage,
     }
     _res = {
         'fetchConnectionInfo': pb.ResConnectionInfo,
@@ -607,6 +615,14 @@ class Lobby(MSRPCService):
         'combiningRecycleCraft': pb.ResCombiningRecycleCraft,
         'recoverCombiningRecycle': pb.ResRecoverCombiningRecycle,
         'finishCombiningOrder': pb.ResFinishCombiningOrder,
+        'upgradeVillageBuilding': pb.ResCommon,
+        'receiveVillageBuildingReward': pb.ResReceiveVillageBuildingReward,
+        'startVillageTrip': pb.ResCommon,
+        'receiveVillageTripReward': pb.ResReceiveVillageTripReward,
+        'completeVillageTask': pb.ResCompleteVillageTask,
+        'getFriendVillageData': pb.ResGetFriendVillageData,
+        'setVillageWorker': pb.ResSetVillageWorker,
+        'nextRoundVillage': pb.ResNextRoundVillage,
     }
 
     def get_package_name(self):
@@ -1514,6 +1530,30 @@ class Lobby(MSRPCService):
 
     async def finish_combining_order(self, req):
         return await self.call_method('finishCombiningOrder', req)
+
+    async def upgrade_village_building(self, req):
+        return await self.call_method('upgradeVillageBuilding', req)
+
+    async def receive_village_building_reward(self, req):
+        return await self.call_method('receiveVillageBuildingReward', req)
+
+    async def start_village_trip(self, req):
+        return await self.call_method('startVillageTrip', req)
+
+    async def receive_village_trip_reward(self, req):
+        return await self.call_method('receiveVillageTripReward', req)
+
+    async def complete_village_task(self, req):
+        return await self.call_method('completeVillageTask', req)
+
+    async def get_friend_village_data(self, req):
+        return await self.call_method('getFriendVillageData', req)
+
+    async def set_village_worker(self, req):
+        return await self.call_method('setVillageWorker', req)
+
+    async def next_round_village(self, req):
+        return await self.call_method('nextRoundVillage', req)
 
 
 class FastTest(MSRPCService):
