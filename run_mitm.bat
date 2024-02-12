@@ -1,3 +1,3 @@
 CALL venv\Scripts\activate.bat
-python mitm.py
+echo "Please start MITM from Akagi."
 pause >nul
