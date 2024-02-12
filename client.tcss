@@ -1,3 +1,9 @@
+#start_mitm_button {
+    width: 1fr;
+    align: center top;
+    margin: 1 1;
+}
+
 #log_container {
     width: 1fr;
     height: 2fr;
@@ -465,6 +471,29 @@ Button.action_nukidora.-active {
     border-title-align: center;
 }
 
+#helper_setting_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#helper_setting_checkbox {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#helper_setting_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+    border: round $accent;
+    border-title-align: center;
+}
+
 #port_setting_mitm_label {
     padding: 1 0;
     width: 11;
@@ -514,4 +543,33 @@ Button.action_nukidora.-active {
     margin: 0;
     border: round $accent;
     border-title-align: center;
+}
+
+#remove_this_you_die {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 1;
+}
+
+#setting_save_button {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 1;
+}
+
+#setting_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+}
+
+.hover-link {
+    border: double $accent;
+    text-align: center;
+}
+
+.hover-link:hover {
+    border: double $secondary;
 }

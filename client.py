@@ -4,6 +4,11 @@ from pathlib import Path
 import time
 os.environ["LOGURU_AUTOINIT"] = "False"
 
+import pathlib
+import webbrowser
+from sys import executable
+from subprocess import Popen, CREATE_NEW_CONSOLE
+
 from typing import Any, Coroutine
 from xmlrpc.client import ServerProxy
 import json
@@ -40,9 +45,6 @@ with open("settings.json", "r") as f:
 class FlowScreen(Screen):
 
     BINDINGS = [
-        # ("d", "toggle_dark", "Toggle dark mode"),
-        # ("a", "add_stopwatch", "Add"),
-        # ("r", "remove_stopwatch", "Remove"),
         ("ctrl+q", "quit", "Quit"),
     ]
 
@@ -225,13 +227,20 @@ class FlowDisplay(Static):
         self.app.push_screen(FlowScreen(self.flow_id))
         self.app.update_flow.pause()
 
+class HoverLink(Static):
+    def __init__(self, text, url, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.renderable = text
+        self.url = url
+        self.add_class("hover-link")
+        self.border_title = self.url
+        self.border_subtitle = "Click to open link"
 
-class SettingsScreen(Screen):
-    
-    BINDINGS = [
-        ("ctrl+q", "quit_setting", "Quit Settings"),
-        ("ctrl+s", "quit_setting", "Quit Settings"),
-    ]
+    def on_click(self, event):
+        webbrowser.open_new_tab(self.url)
+        pass
+
+class SettingsScreen(Static):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -241,6 +250,7 @@ class SettingsScreen(Screen):
             self.value_port_setting_xmlrpc_input = settings["Port"]["XMLRPC"]
             self.value_unlocker_setting_enable_checkbox = settings["Unlocker"]
             self.value_unlocker_setting_v10_checkbox = settings["v10"]
+            self.value_helper_setting_checkbox = settings["Helper"]
             self.value_autoplay_setting_enable_checkbox = settings["Autoplay"]
             # self.value_autoplay_setting_random_time_min_input = settings["Autoplay"]["Random Time"]["Min"]
             # self.value_autoplay_setting_random_time_max_input = settings["Autoplay"]["Random Time"]["Max"]
@@ -264,6 +274,11 @@ class SettingsScreen(Screen):
         self.unlocker_setting_container = Horizontal(self.unlocker_setting_label, self.unlocker_setting_enable_checkbox, self.unlocker_setting_v10_checkbox, id="unlocker_setting_container")
         self.unlocker_setting_container.border_title = "Unlocker"
 
+        self.helper_setting_label = Label("Helper", id="helper_setting_label")
+        self.helper_setting_checkbox = Checkbox("Enable", id="helper_setting_checkbox", classes="short", value=self.value_helper_setting_checkbox)
+        self.helper_setting_container = Horizontal(self.helper_setting_label, self.helper_setting_checkbox, id="helper_setting_container")
+        self.helper_setting_container.border_title = "Helper"
+
         self.autoplay_setting_enable_label = Label("Enable", id="autoplay_setting_enable_label")
         self.autoplay_setting_enable_checkbox = Checkbox("Enable", id="autoplay_setting_enable_checkbox", classes="short", value=self.value_autoplay_setting_enable_checkbox)
         self.autoplay_setting_enable_container = Horizontal(self.autoplay_setting_enable_label, self.autoplay_setting_enable_checkbox, id="autoplay_setting_enable_container")
@@ -284,13 +299,22 @@ class SettingsScreen(Screen):
         self.playwright_setting_container = Vertical(self.playwright_setting_enable_container, self.playwright_setting_resolution_container, id="playwright_setting_container")
         self.playwright_setting_container.border_title = "Playwright"
 
-        yield Header()
-        yield Markdown("# Settings")
-        yield self.port_setting_container
-        yield self.unlocker_setting_container
-        yield self.autoplay_setting_container
-        yield self.playwright_setting_container
-        yield Footer()
+        self.setting_save_button = Button("Save", variant="warning", id="setting_save_button")
+
+        self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die = HoverLink("Akagi is developed by shinkuan, and is Free and Open Sourced on GitHub.\n本程式Akagi由shinkuan開發，在GitHub上完全開源且免費。如果你是付費取得的，你已經被倒賣的騙了，請立即舉報、差評、退款。", "https://github.com/shinkuan/Akagi", id="remove_this_you_die")
+
+        self.setting_container = ScrollableContainer(
+                                                     self.port_setting_container, 
+                                                     self.unlocker_setting_container, 
+                                                     self.helper_setting_container,
+                                                     self.autoplay_setting_container,
+                                                     self.playwright_setting_container,
+                                                     self.setting_save_button,
+                                                     self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die,
+                                                     id="setting_container"
+                                                    )
+
+        yield self.setting_container
 
     @on(Input.Changed, "#port_setting_mitm_input")
     def port_setting_mitm_input_changed(self, event: Input.Changed) -> None:
@@ -303,6 +327,10 @@ class SettingsScreen(Screen):
     @on(Checkbox.Changed, "#unlocker_setting_enable_checkbox")
     def unlocker_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
         self.value_unlocker_setting_enable_checkbox = event.value
+
+    @on(Checkbox.Changed, "#helper_setting_checkbox")
+    def helper_setting_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        self.value_helper_setting_checkbox = event.value
 
     @on(Checkbox.Changed, "#unlocker_setting_v10_checkbox")
     def unlocker_setting_v10_checkbox_changed(self, event: Checkbox.Changed) -> None:
@@ -336,13 +364,15 @@ class SettingsScreen(Screen):
     def playwright_setting_height_input_changed(self, event: Input.Changed) -> None:
         self.value_playwright_setting_height_input = int(event.value)
 
-    def action_quit_setting(self) -> None:
+    @on(Button.Pressed, "#setting_save_button")
+    def setting_save_button_pressed(self) -> None:
         with open("settings.json", "r") as f:
             settings = json.load(f)
             settings["Port"]["MITM"] = self.value_port_setting_mitm_input
             settings["Port"]["XMLRPC"] = self.value_port_setting_xmlrpc_input
             settings["Unlocker"] = self.value_unlocker_setting_enable_checkbox
             settings["v10"] = self.value_unlocker_setting_v10_checkbox
+            settings["Helper"] = self.value_helper_setting_checkbox
             settings["Autoplay"] = self.value_autoplay_setting_enable_checkbox
             # settings["Autoplay"]["Random Time"]["Min"] = self.value_autoplay_setting_random_time_min_input
             # settings["Autoplay"]["Random Time"]["Max"] = self.value_autoplay_setting_random_time_max_input
@@ -351,18 +381,13 @@ class SettingsScreen(Screen):
             settings["Playwright"]["height"] = self.value_playwright_setting_height_input
         with open("settings.json", "w") as f:
             json.dump(settings, f, indent=4)
-        self.app.pop_screen()
 
 
 class Akagi(App):
     CSS_PATH = "client.tcss"
 
     BINDINGS = [
-        # ("d", "toggle_dark", "Toggle dark mode"),
-        # ("a", "add_stopwatch", "Add"),
-        # ("r", "remove_stopwatch", "Remove"),
         ("ctrl+q", "quit", "Quit"),
-        ("ctrl+s", "settings", "Settings")
     ]
 
     def __init__(self, rpc_server, *args, **kwargs) -> None:
@@ -376,14 +401,15 @@ class Akagi(App):
         self.mjai_msg_dict = dict() # flow.id -> List[mjai_msg]
         self.akagi_log_dict= dict() # flow.id -> List[akagi_log]
         self.loguru_log = [] # List[loguru_log]
-
-            
+        self.mitm_started = False
 
     def on_mount(self) -> None:
         self.update_flow = self.set_interval(1, self.refresh_flow)
         self.get_messages_flow = self.set_interval(0.05, self.get_messages)
 
     def refresh_flow(self) -> None:
+        if not self.mitm_started:
+            return
         flows = self.rpc_server.get_activated_flows()
         for flow_id in self.active_flows:
             if flow_id not in flows:
@@ -414,6 +440,8 @@ class Akagi(App):
                 self.bridge[flow_id] = MajsoulBridge()
 
     def get_messages(self):
+        if not self.mitm_started:
+            return
         for flow_id in self.active_flows:
             messages = self.rpc_server.get_messages(flow_id)
             if messages is not None:
@@ -438,12 +466,26 @@ class Akagi(App):
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
         yield Header()
-        yield Footer()
+        yield Button(label="Start MITM", variant="success", id="start_mitm_button")
+        yield SettingsScreen(id="settings_screen")
         yield ScrollableContainer(id="FlowContainer")
+        yield Footer()
 
     def on_event(self, event: Event) -> Coroutine[Any, Any, None]:
         return super().on_event(event)
-    
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "start_mitm_button":
+            self.query_one("#settings_screen").remove()
+            start_mitm()
+            event.button.variant = "default"
+            event.button.disabled = True
+            self.set_timer(5, self.mitm_connected)
+        pass
+
+    def mitm_connected(self):
+        self.mitm_started = True
+
     def my_sink(self, message) -> None:
         record = message.record
         self.loguru_log.append(f"{record['time'].strftime('%H:%M:%S')} | {record['level'].name}\t | {record['message']}")
@@ -451,14 +493,20 @@ class Akagi(App):
     def action_quit(self) -> None:
         self.update_flow.stop()
         self.get_messages_flow.stop()
-        self.rpc_server.reset_message_idx() 
         self.exit()
 
-    def action_settings(self) -> None:
-        self.push_screen(SettingsScreen())
-        pass
 
 def exit_handler():
+    global mitm_exec
+    try:
+        mitm_exec.kill()
+    except:
+        pass
+    pass
+
+def start_mitm():
+    global mitm_exec
+    mitm_exec = Popen([executable, pathlib.Path(__file__).parent / "mitm.py"], creationflags=CREATE_NEW_CONSOLE)
     pass
 
 if __name__ == '__main__':
@@ -467,7 +515,6 @@ if __name__ == '__main__':
         rpc_port = settings["Port"]["XMLRPC"] 
     rpc_host = "127.0.0.1"
     s = ServerProxy(f"http://{rpc_host}:{rpc_port}", allow_none=True)
-    s.reset_message_idx()
     logger.level("CLICK", no=10, icon="CLICK")
     logger.add("akagi.log")
     app = Akagi(rpc_server=s)
