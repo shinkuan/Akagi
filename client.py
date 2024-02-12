@@ -301,7 +301,7 @@ class SettingsScreen(Static):
 
         self.setting_save_button = Button("Save", variant="warning", id="setting_save_button")
 
-        self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die = HoverLink("Akagi is developed by shinkuan, and is Free and Open Sourced on GitHub.\n本程式Akagi由shinkuan開發，在GitHub上完全開源且免費。如果你是付費取得的，你已經被倒賣的騙了，請立即舉報、差評、退款。", "https://github.com/shinkuan/Akagi", id="remove_this_you_die")
+        self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die = HoverLink("Akagi is developed by shinkuan, and it's Free and Open Sourced on GitHub.\n本程式Akagi由shinkuan開發，在GitHub上完全開源且免費。如果你是付費取得的，你已經被倒賣的騙了，請立即舉報、差評、退款。", "https://github.com/shinkuan/Akagi", id="remove_this_you_die")
 
         self.setting_container = ScrollableContainer(
                                                      self.port_setting_container, 
