@@ -3099,6 +3099,11 @@
                             "rule": "repeated",
                             "type": "ActivityCombiningLQData",
                             "id": 9
+                        },
+                        "village_data": {
+                            "rule": "repeated",
+                            "type": "lq.ActivityVillageData",
+                            "id": 10
                         }
                     }
                 },
@@ -3260,6 +3265,124 @@
                                     "id": 2
                                 }
                             }
+                        }
+                    }
+                },
+                "VillageReward": {
+                    "fields": {
+                        "id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "count": {
+                            "type": "uint32",
+                            "id": 2
+                        }
+                    }
+                },
+                "VillageBuildingData": {
+                    "fields": {
+                        "id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "reward": {
+                            "rule": "repeated",
+                            "type": "VillageReward",
+                            "id": 3
+                        },
+                        "workers": {
+                            "rule": "repeated",
+                            "type": "uint32",
+                            "id": 4
+                        }
+                    }
+                },
+                "VillageTripData": {
+                    "fields": {
+                        "start_round": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "dest_id": {
+                            "type": "uint32",
+                            "id": 2
+                        },
+                        "reward": {
+                            "rule": "repeated",
+                            "type": "VillageReward",
+                            "id": 3
+                        },
+                        "level": {
+                            "type": "uint32",
+                            "id": 4
+                        },
+                        "info": {
+                            "type": "VillageTargetInfo",
+                            "id": 5
+                        }
+                    }
+                },
+                "VillageTaskData": {
+                    "fields": {
+                        "id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "completed_count": {
+                            "type": "uint32",
+                            "id": 2
+                        }
+                    }
+                },
+                "VillageTargetInfo": {
+                    "fields": {
+                        "nickname": {
+                            "type": "string",
+                            "id": 1
+                        },
+                        "avatar": {
+                            "type": "uint32",
+                            "id": 2
+                        },
+                        "avatar_frame": {
+                            "type": "uint32",
+                            "id": 3
+                        },
+                        "title": {
+                            "type": "uint32",
+                            "id": 4
+                        },
+                        "verified": {
+                            "type": "uint32",
+                            "id": 5
+                        }
+                    }
+                },
+                "ActivityVillageData": {
+                    "fields": {
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "buildings": {
+                            "rule": "repeated",
+                            "type": "VillageBuildingData",
+                            "id": 2
+                        },
+                        "trip": {
+                            "rule": "repeated",
+                            "type": "VillageTripData",
+                            "id": 3
+                        },
+                        "tasks": {
+                            "rule": "repeated",
+                            "type": "VillageTaskData",
+                            "id": 6
+                        },
+                        "round": {
+                            "type": "uint32",
+                            "id": 7
                         }
                     }
                 },
@@ -7266,6 +7389,38 @@
                         "finishCombiningOrder": {
                             "requestType": "ReqFinishCombiningOrder",
                             "responseType": "ResFinishCombiningOrder"
+                        },
+                        "upgradeVillageBuilding": {
+                            "requestType": "ReqUpgradeVillageBuilding",
+                            "responseType": "ResCommon"
+                        },
+                        "receiveVillageBuildingReward": {
+                            "requestType": "ReqReceiveVillageBuildingReward",
+                            "responseType": "ResReceiveVillageBuildingReward"
+                        },
+                        "startVillageTrip": {
+                            "requestType": "ReqStartVillageTrip",
+                            "responseType": "ResCommon"
+                        },
+                        "receiveVillageTripReward": {
+                            "requestType": "ReqReceiveVillageTripReward",
+                            "responseType": "ResReceiveVillageTripReward"
+                        },
+                        "completeVillageTask": {
+                            "requestType": "ReqCompleteVillageTask",
+                            "responseType": "ResCompleteVillageTask"
+                        },
+                        "getFriendVillageData": {
+                            "requestType": "ReqGetFriendVillageData",
+                            "responseType": "ResGetFriendVillageData"
+                        },
+                        "setVillageWorker": {
+                            "requestType": "ReqSetVillageWorker",
+                            "responseType": "ResSetVillageWorker"
+                        },
+                        "nextRoundVillage": {
+                            "requestType": "ReqNextRoundVillage",
+                            "responseType": "ResNextRoundVillage"
                         }
                     }
                 },
@@ -11900,6 +12055,11 @@
                             "rule": "repeated",
                             "type": "lq.ActivityCombiningLQData",
                             "id": 24
+                        },
+                        "village_data": {
+                            "rule": "repeated",
+                            "type": "lq.ActivityVillageData",
+                            "id": 25
                         }
                     },
                     "nested": {
@@ -14200,6 +14360,207 @@
                         "collected_game_record_list": {
                             "type": "ResCollectedGameRecordList",
                             "id": 29
+                        }
+                    }
+                },
+                "ReqUpgradeVillageBuilding": {
+                    "fields": {
+                        "building_id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 2
+                        }
+                    }
+                },
+                "ReqReceiveVillageBuildingReward": {
+                    "fields": {
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "building_id": {
+                            "type": "uint32",
+                            "id": 2
+                        },
+                        "rewards": {
+                            "rule": "repeated",
+                            "type": "RewardSlot",
+                            "id": 3
+                        }
+                    }
+                },
+                "ResReceiveVillageBuildingReward": {
+                    "fields": {
+                        "error": {
+                            "type": "Error",
+                            "id": 1
+                        },
+                        "reward_items": {
+                            "rule": "repeated",
+                            "type": "ExecuteReward",
+                            "id": 2
+                        }
+                    }
+                },
+                "ReqStartVillageTrip": {
+                    "fields": {
+                        "dest": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 2
+                        }
+                    }
+                },
+                "ReqReceiveVillageTripReward": {
+                    "fields": {
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "dest_id": {
+                            "type": "uint32",
+                            "id": 2
+                        },
+                        "rewards": {
+                            "rule": "repeated",
+                            "type": "RewardSlot",
+                            "id": 3
+                        }
+                    }
+                },
+                "ResReceiveVillageTripReward": {
+                    "fields": {
+                        "error": {
+                            "type": "Error",
+                            "id": 1
+                        },
+                        "reward_items": {
+                            "rule": "repeated",
+                            "type": "ExecuteReward",
+                            "id": 2
+                        }
+                    }
+                },
+                "ReqCompleteVillageTask": {
+                    "fields": {
+                        "task_id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 2
+                        }
+                    }
+                },
+                "ResCompleteVillageTask": {
+                    "fields": {
+                        "error": {
+                            "type": "Error",
+                            "id": 1
+                        },
+                        "reward_items": {
+                            "rule": "repeated",
+                            "type": "ExecuteReward",
+                            "id": 2
+                        }
+                    }
+                },
+                "ReqGetFriendVillageData": {
+                    "fields": {
+                        "account_list": {
+                            "rule": "repeated",
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 2
+                        }
+                    }
+                },
+                "ResGetFriendVillageData": {
+                    "fields": {
+                        "error": {
+                            "type": "Error",
+                            "id": 1
+                        },
+                        "list": {
+                            "rule": "repeated",
+                            "type": "FriendVillageData",
+                            "id": 2
+                        }
+                    },
+                    "nested": {
+                        "FriendVillageData": {
+                            "fields": {
+                                "account_id": {
+                                    "type": "uint32",
+                                    "id": 1
+                                },
+                                "level": {
+                                    "type": "uint32",
+                                    "id": 2
+                                }
+                            }
+                        }
+                    }
+                },
+                "ReqSetVillageWorker": {
+                    "fields": {
+                        "building_id": {
+                            "type": "uint32",
+                            "id": 1
+                        },
+                        "worker_pos": {
+                            "type": "uint32",
+                            "id": 2
+                        },
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 3
+                        }
+                    }
+                },
+                "ResSetVillageWorker": {
+                    "fields": {
+                        "error": {
+                            "type": "Error",
+                            "id": 1
+                        },
+                        "building": {
+                            "type": "VillageBuildingData",
+                            "id": 2
+                        },
+                        "update_time": {
+                            "type": "uint32",
+                            "id": 3
+                        }
+                    }
+                },
+                "ReqNextRoundVillage": {
+                    "fields": {
+                        "activity_id": {
+                            "type": "uint32",
+                            "id": 1
+                        }
+                    }
+                },
+                "ResNextRoundVillage": {
+                    "fields": {
+                        "error": {
+                            "type": "Error",
+                            "id": 1
+                        },
+                        "activity_data": {
+                            "type": "ActivityVillageData",
+                            "id": 2
                         }
                     }
                 },

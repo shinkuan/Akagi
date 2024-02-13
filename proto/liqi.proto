@@ -1044,6 +1044,7 @@ message AccountActivityUpdate {
   repeated lq.ActivityGachaUpdateData gacha_data = 7;
   repeated lq.ActivitySimulationData simulation_data = 8;
   repeated ActivityCombiningLQData combining_data = 9;
+  repeated lq.ActivityVillageData village_data = 10;
 }
 
 message ActivityCombiningWorkbench {
@@ -1097,6 +1098,46 @@ message ActivityCombiningData {
     uint32 update_time = 2;
   }
 
+}
+
+message VillageReward {
+  uint32 id = 1;
+  uint32 count = 2;
+}
+
+message VillageBuildingData {
+  uint32 id = 1;
+  repeated VillageReward reward = 3;
+  repeated uint32 workers = 4;
+}
+
+message VillageTripData {
+  uint32 start_round = 1;
+  uint32 dest_id = 2;
+  repeated VillageReward reward = 3;
+  uint32 level = 4;
+  VillageTargetInfo info = 5;
+}
+
+message VillageTaskData {
+  uint32 id = 1;
+  uint32 completed_count = 2;
+}
+
+message VillageTargetInfo {
+  string nickname = 1;
+  uint32 avatar = 2;
+  uint32 avatar_frame = 3;
+  uint32 title = 4;
+  uint32 verified = 5;
+}
+
+message ActivityVillageData {
+  uint32 activity_id = 1;
+  repeated VillageBuildingData buildings = 2;
+  repeated VillageTripData trip = 3;
+  repeated VillageTaskData tasks = 6;
+  uint32 round = 7;
 }
 
 message ActivityFeedData {
@@ -2320,6 +2361,14 @@ service Lobby {
   rpc combiningRecycleCraft (ReqCombiningRecycleCraft) returns (ResCombiningRecycleCraft);
   rpc recoverCombiningRecycle (ReqRecoverCombiningRecycle) returns (ResRecoverCombiningRecycle);
   rpc finishCombiningOrder (ReqFinishCombiningOrder) returns (ResFinishCombiningOrder);
+  rpc upgradeVillageBuilding (ReqUpgradeVillageBuilding) returns (ResCommon);
+  rpc receiveVillageBuildingReward (ReqReceiveVillageBuildingReward) returns (ResReceiveVillageBuildingReward);
+  rpc startVillageTrip (ReqStartVillageTrip) returns (ResCommon);
+  rpc receiveVillageTripReward (ReqReceiveVillageTripReward) returns (ResReceiveVillageTripReward);
+  rpc completeVillageTask (ReqCompleteVillageTask) returns (ResCompleteVillageTask);
+  rpc getFriendVillageData (ReqGetFriendVillageData) returns (ResGetFriendVillageData);
+  rpc setVillageWorker (ReqSetVillageWorker) returns (ResSetVillageWorker);
+  rpc nextRoundVillage (ReqNextRoundVillage) returns (ResNextRoundVillage);
 }
 
 message ResConnectionInfo {
@@ -4057,6 +4106,7 @@ message ResAccountActivityData {
   repeated lq.ActivityGachaUpdateData gacha_data = 22;
   repeated lq.ActivitySimulationData simulation_data = 23;
   repeated lq.ActivityCombiningLQData combining_data = 24;
+  repeated lq.ActivityVillageData village_data = 25;
   message ActivitySignInData {
     uint32 activity_id = 1;
     uint32 sign_in_count = 2;
@@ -4909,6 +4959,84 @@ message ResFetchInfo {
   ResCharacterInfo character_info = 27;
   ResAllcommonViews all_common_views = 28;
   ResCollectedGameRecordList collected_game_record_list = 29;
+}
+
+message ReqUpgradeVillageBuilding {
+  uint32 building_id = 1;
+  uint32 activity_id = 2;
+}
+
+message ReqReceiveVillageBuildingReward {
+  uint32 activity_id = 1;
+  uint32 building_id = 2;
+  repeated RewardSlot rewards = 3;
+}
+
+message ResReceiveVillageBuildingReward {
+  Error error = 1;
+  repeated ExecuteReward reward_items = 2;
+}
+
+message ReqStartVillageTrip {
+  uint32 dest = 1;
+  uint32 activity_id = 2;
+}
+
+message ReqReceiveVillageTripReward {
+  uint32 activity_id = 1;
+  uint32 dest_id = 2;
+  repeated RewardSlot rewards = 3;
+}
+
+message ResReceiveVillageTripReward {
+  Error error = 1;
+  repeated ExecuteReward reward_items = 2;
+}
+
+message ReqCompleteVillageTask {
+  uint32 task_id = 1;
+  uint32 activity_id = 2;
+}
+
+message ResCompleteVillageTask {
+  Error error = 1;
+  repeated ExecuteReward reward_items = 2;
+}
+
+message ReqGetFriendVillageData {
+  repeated uint32 account_list = 1;
+  uint32 activity_id = 2;
+}
+
+message ResGetFriendVillageData {
+  Error error = 1;
+  repeated FriendVillageData list = 2;
+  message FriendVillageData {
+    uint32 account_id = 1;
+    uint32 level = 2;
+  }
+
+}
+
+message ReqSetVillageWorker {
+  uint32 building_id = 1;
+  uint32 worker_pos = 2;
+  uint32 activity_id = 3;
+}
+
+message ResSetVillageWorker {
+  Error error = 1;
+  VillageBuildingData building = 2;
+  uint32 update_time = 3;
+}
+
+message ReqNextRoundVillage {
+  uint32 activity_id = 1;
+}
+
+message ResNextRoundVillage {
+  Error error = 1;
+  ActivityVillageData activity_data = 2;
 }
 
 message ActionMJStart {

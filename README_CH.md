@@ -35,13 +35,12 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ### 安裝
 
-[點我到Youtube觀看安裝影片](https://youtu.be/NdAULJgBJ-U)
+[點我到Youtube觀看安裝影片](https://youtu.be/V7NMNsZ3Ut8)
 
 在開始前，你需要以下東西:
 1. `mortal.pth` [(如果你沒有的話，到Discord去下載)](https://discord.gg/Z2wjXUK8bN)
-2. `libriichi` [(到這邊根據你的平台下載對應版本)](https://github.com/shinkuan/Akagi/releases/tag/v0.1.0-libriichi)
-3. (Optional) 推薦使用Windows Terminal，以獲得預期中的UI效果。
-4. (Optional) 如果你要使用Steam或Majsoul Plus之類的，請使用類似Proxifier的軟體將連線導向至MITM
+2. (Optional) 推薦使用Windows Terminal，以獲得預期中的UI效果。
+3. (Optional) 如果你要使用Steam或Majsoul Plus之類的，請使用類似Proxifier的軟體將連線導向至MITM
 
 __到[Discord](https://discord.gg/Z2wjXUK8bN)下載我提供的mortal.pth__
 1. 到 #verify 頻道點擊 ✅ 驗證身分.
@@ -60,10 +59,9 @@ __到[Discord](https://discord.gg/Z2wjXUK8bN)下載我提供的mortal.pth__
 5. 執行： `install_akagi.ps1`
 6. 如果這是您第一次使用mitmproxy，請打開它。
 7. 關閉它。
-8. cd 到用戶主目錄 `~/.mitmproxy`
+8. 到使用者主目錄 `~/.mitmproxy`
 9. 安裝證書。
-10. 將 `libriichi` 放入 `./Akagi/mjai/bot` 並將其重新命名為 `libriichi`
-11. 將 `mortal.pth` 放入 `./Akagi/mjai/bot`
+10. 將 `mortal.pth` 放入 `./Akagi/mjai/bot`
 
 ### settings.json
 

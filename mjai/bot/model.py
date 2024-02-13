@@ -8,8 +8,7 @@ from torch.distributions import Normal, Categorical
 from typing import *
 from functools import partial
 from itertools import permutations
-from .libriichi.mjai import Bot
-from .libriichi.consts import obs_shape, oracle_obs_shape, ACTION_SPACE, GRP_SIZE
+import riichi
 
 class ChannelAttention(nn.Module):
     def __init__(self, channels, ratio=16, actv_builder=nn.ReLU, bias=True):
@@ -115,9 +114,9 @@ class Brain(nn.Module):
         self.is_oracle = is_oracle
         self.version = version
 
-        in_channels = obs_shape(version)[0]
+        in_channels = riichi.consts.obs_shape(version)[0]
         if is_oracle:
-            in_channels += oracle_obs_shape(version)[0]
+            in_channels += riichi.consts.oracle_obs_shape(version)[0]
 
         norm_builder = partial(nn.BatchNorm1d, conv_channels, momentum=0.01)
         actv_builder = partial(nn.Mish, inplace=True)
@@ -205,7 +204,7 @@ class DQN(nn.Module):
         match version:
             case 1:
                 self.v_head = nn.Linear(512, 1)
-                self.a_head = nn.Linear(512, ACTION_SPACE)
+                self.a_head = nn.Linear(512, riichi.consts.ACTION_SPACE)
             case 2 | 3:
                 hidden_size = 512 if version == 2 else 256
                 self.v_head = nn.Sequential(
@@ -216,15 +215,15 @@ class DQN(nn.Module):
                 self.a_head = nn.Sequential(
                     nn.Linear(1024, hidden_size),
                     nn.Mish(inplace=True),
-                    nn.Linear(hidden_size, ACTION_SPACE),
+                    nn.Linear(hidden_size, riichi.consts.ACTION_SPACE),
                 )
             case 4:
-                self.net = nn.Linear(1024, 1 + ACTION_SPACE)
+                self.net = nn.Linear(1024, 1 + riichi.consts.ACTION_SPACE)
                 nn.init.constant_(self.net.bias, 0)
 
     def forward(self, phi, mask):
         if self.version == 4:
-            v, a = self.net(phi).split((1, ACTION_SPACE), dim=-1)
+            v, a = self.net(phi).split((1, riichi.consts.ACTION_SPACE), dim=-1)
         else:
             v = self.v_head(phi)
             a = self.a_head(phi)
@@ -321,7 +320,7 @@ def sample_top_p(logits, p):
     sampled = probs_idx.gather(-1, probs_sort.multinomial(1)).squeeze(-1)
     return sampled
 
-def load_model(seat: int) -> Bot:
+def load_model(seat: int) -> riichi.mjai.Bot:
 
     # check if GPU is available
     if torch.cuda.is_available():
@@ -356,5 +355,5 @@ def load_model(seat: int) -> Bot:
         version= state['config']['control']['version']
     )
 
-    bot = Bot(engine, seat)
+    bot = riichi.mjai.Bot(engine, seat)
     return bot

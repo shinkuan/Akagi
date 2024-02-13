@@ -1,15 +1,8 @@
 import os
-import sys
-import time
 import json
 import struct
-import pickle
-import random
-import argparse
-from xmlrpc.client import ServerProxy
 import base64
 from enum import Enum
-import importlib
 from typing import List, Tuple, Dict
 
 from google.protobuf.json_format import MessageToDict, ParseDict
@@ -216,10 +209,10 @@ def parseVarint(buf, p):
 
 
 def fromProtobuf(buf) -> List[Dict]:
-    """
-    dump the struct of protobuf,观察报文结构
-    buf: protobuf bytes
-    """
+    # """
+    # dump the struct of protobuf,观察报文结构
+    # buf: protobuf bytes
+    # """
     p = 0
     result = []
     while(p < len(buf)):
@@ -245,9 +238,9 @@ def fromProtobuf(buf) -> List[Dict]:
 
 
 def toProtobuf(data: List[Dict]) -> bytes:
-    """
-    Inverse operation of 'fromProtobuf'
-    """
+    # """
+    # Inverse operation of 'fromProtobuf'
+    # """
     result = b''
     for d in data:
         if d['type'] == 'varint':
