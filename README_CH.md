@@ -35,7 +35,7 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 
 ### 安裝
 
-[點我到Youtube觀看安裝影片](https://youtu.be/NdAULJgBJ-U)
+[點我到Youtube觀看安裝影片](https://youtu.be/V7NMNsZ3Ut8)
 
 在開始前，你需要以下東西:
 1. `mortal.pth` [(如果你沒有的話，到Discord去下載)](https://discord.gg/Z2wjXUK8bN)
