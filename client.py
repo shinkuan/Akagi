@@ -484,7 +484,11 @@ class Akagi(App):
         pass
 
     def mitm_connected(self):
-        self.mitm_started = True
+        try:
+            self.rpc_server.ping()
+            self.mitm_started = True
+        except:
+            self.set_timer(2, self.mitm_connected)
 
     def my_sink(self, message) -> None:
         record = message.record

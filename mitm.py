@@ -79,7 +79,7 @@ async def start_proxy(host, port, enable_unlocker):
 
 # Create a XMLRPC server
 class LiqiServer:
-    _rpc_methods_ = ['get_activated_flows', 'get_messages', 'reset_message_idx', 'page_clicker', 'do_autohu']
+    _rpc_methods_ = ['get_activated_flows', 'get_messages', 'reset_message_idx', 'page_clicker', 'do_autohu', 'ping']
     def __init__(self, host, port):
         self.host = host
         self.port = port
@@ -115,6 +115,9 @@ class LiqiServer:
     def do_autohu(self):
         global do_autohu
         do_autohu = True
+        return True
+
+    def ping(self):
         return True
 
     def serve_forever(self):
