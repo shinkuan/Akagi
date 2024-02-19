@@ -9,7 +9,6 @@ import mitmproxy.http
 import mitmproxy.log
 import mitmproxy.tcp
 import mitmproxy.websocket
-import mhm
 from pathlib import Path
 from optparse import OptionParser
 from mitmproxy import proxy, options, ctx
@@ -26,8 +25,6 @@ activated_flows_instance = []
 messages_dict = dict() # flow.id -> Queue[flow_msg]
 stop = False
 SHOW_LIQI = False
-
-mhm.logger.setLevel("WARNING")
 
 class ClientWebSocket:
     def __init__(self):
@@ -171,9 +168,9 @@ async def start_proxy(host, port, enable_unlocker):
     )
     master.addons.add(ClientWebSocket())
     master.addons.add(ClientHTTP())
-    if enable_unlocker:
-        from mhm.addons import WebSocketAddon as Unlocker
-        master.addons.add(Unlocker())
+    # if enable_unlocker:
+    from mhm.addons import WebSocketAddon as Unlocker
+    master.addons.add(Unlocker())
     await master.run()
     return master
 
@@ -187,17 +184,23 @@ if __name__ == '__main__':
     mitm_host="127.0.0.1"
 
     print("fetching resver...")
-    mhm.fetch_resver()
 
     with open("mhmp.json", "r") as f:
         mhmp = json.load(f)
         mhmp["mitmdump"]["mode"] = [f"regular@{mitm_port}"]
+        mhmp["hook"]["enable_skins"] = enable_unlocker
         mhmp["hook"]["enable_aider"] = enable_helper
     with open("mhmp.json", "w") as f:
         json.dump(mhmp, f, indent=4)
+    import mhm
+    mhm.fetch_resver()
+    mhm.logger.setLevel("WARNING")
+
     # Create and start the proxy server thread
     proxy_thread = threading.Thread(target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker)))
     proxy_thread.start()
+
+
 
     try:
         while True:
