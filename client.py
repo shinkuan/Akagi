@@ -77,7 +77,7 @@ class FlowScreen(Screen):
         tehai_container.mount(tsumohai_label)
         tehai_container.border_title = "Tehai"
         akagi_action = Button("Akagi", id="akagi_action", variant="default")
-        akagi_pai = Button("Pai", id="akagi_pai", variant="default")
+        akagi_pai    = Button("Pai", id="akagi_pai", variant="default")
         pai_unicode_art = Label(TILE_2_UNICODE_ART_RICH["?"], id="pai_unicode_art")
         akagi_container = Horizontal(akagi_action, akagi_pai, pai_unicode_art, id="akagi_container")
         akagi_container.border_title = "Akagi"
