@@ -40,11 +40,13 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 [YouTube Video for you to follow.](https://youtu.be/V7NMNsZ3Ut8)
 
 ### You will need:
+
 1. A `mortal.pth`. [(Get one from Discord server if you don't have one.)](https://discord.gg/Z2wjXUK8bN)
 2. (Optional, Recommend) Use Windows Terminal to open client.py for a nice looking TUI.
 3. (Optional) If you want to use Steam, Majsoul Plus, or anything other client, proxy the client using tools like proxifier.
 
-__Get mortal.pth at [Discord](https://discord.gg/Z2wjXUK8bN)__
+**Get mortal.pth at [Discord](https://discord.gg/Z2wjXUK8bN)**
+
 1. Go to #verify and click the ✅ reaction.
 2. Go to #bot-zip
 3. Download a bot you like.
@@ -52,7 +54,9 @@ __Get mortal.pth at [Discord](https://discord.gg/Z2wjXUK8bN)__
 5. And mortal.pth is there.
 
 ### Akagi:
+
 #### Windows
+
 Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/releases/latest)
 
 1. Put `install_akagi.ps1` at the location you want to install Akagi.
@@ -67,33 +71,35 @@ Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/rele
 10. Put `mortal.pth` into `./Akagi/mjai/bot`
 
 #### Mac
+
 Download `install_akagi.command` from [Release](https://github.com/shinkuan/Akagi/releases/latest)
 
-1. Put `install_akagi.command` in the location where you want to install Akagi.
+1. Place `install_akagi.command` in the location where you want to install Akagi.
 2. Download the latest Python installation package from the [Python official website](https://www.python.org/downloads/) and install it (skip this step if you already have a compatible version of Python installed).
 3. Double-click `install_akagi.command` to automatically install the required dependencies.
-4. If this is your first time using mitmproxy, open it.
-5. Close it.
-6. Go to your user home directory `~/.mitmproxy`
-7. Install the certificate.
-8. Put `mortal.pth` into `./Akagi/mjai/bot`
+4. Double-click `run_agaki.command` to start Akagi.
+5. If you are using mitmproxy for the first time, click on "start mitm".
+6. Close it.
+7. Go to your user home directory `~/.mitmproxy`.
+8. Install the certificate.
+9. Put `mortal.pth` into `./Akagi/mjai/bot`.
 
 ### settings.json
 
- - `Unlocker`: Decide to use [MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker) or not.
- - `v10`: If your Majsoul client in still in v0.10.x and you want to use MajsoulUnlocker, set it to true.
- - `Autoplay`: Autoplay.
- - `Helper`: To use [mahjong-helper](https://github.com/EndlessCheng/mahjong-helper) or not
- - `Autohu`: Auto Ron.
- - `Port`:
-   - `MITM`: The MITM Port, you should redirect Majsoul connection to this port.
-   - `XMLRPC`: The XMLRPC Port.
-   - `MJAI`: The port bind to MJAI bot container.
- - `Playwright`:
-   - `enable`: Enable the playwright
-   - `width`: width of the viewport of playwright
-   - `height`: height of the viewport of playwright
- - The rest are the setting for MajsoulUnlocker.
+- `Unlocker`: Decide to use [MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker) or not.
+- `v10`: If your Majsoul client in still in v0.10.x and you want to use MajsoulUnlocker, set it to true.
+- `Autoplay`: Autoplay.
+- `Helper`: To use [mahjong-helper](https://github.com/EndlessCheng/mahjong-helper) or not
+- `Autohu`: Auto Ron.
+- `Port`:
+  - `MITM`: The MITM Port, you should redirect Majsoul connection to this port.
+  - `XMLRPC`: The XMLRPC Port.
+  - `MJAI`: The port bind to MJAI bot container.
+- `Playwright`:
+  - `enable`: Enable the playwright
+  - `width`: width of the viewport of playwright
+  - `height`: height of the viewport of playwright
+- The rest are the setting for MajsoulUnlocker.
 
 ## Instructions
 
@@ -117,7 +123,7 @@ On top right is the MJAI Messages, this is the message our bot sent back to us, 
 
 Then below is our tehai, it is composed using unicode characters.
 
-Bottom left is the settings. 
+Bottom left is the settings.
 
 Bottom right is the bot's action.
 
@@ -136,23 +142,24 @@ Following guide can minimum the probility of account suspension.
 ### There is no way to guarantee 100% no account suspension currently.
 
 # TODO
- - [x] 3 Player Mahjong
-   - Already done, but not planned to release yet.
- - [x] Change Setting inside application.
- - [x] Autoplay
-   - [ ] Auto use stickers to make opponent think we are not a bot.
-   - [ ] Add random time in settings.json to let user choose time they want.
- - [ ] Mix multiple AI's decision to make we more like a human but not a perfect bot.
- - [x] Reduce Startup time of the bot. (Maybe start it before match begin?)
- - [x] Intergrade with [MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker)
- - [ ] Don't use MITM at all for the gameplay, use image recognition.
-   - [ ] Decide use what model
-   - [ ] Training data generation
-   - [ ] Train it
-   - [ ] Delta Score Recognition.
-   - [ ] Ryukyoku Recognition.
-   - [ ] Implement
- - [x] Easier installation.
+
+- [x] 3 Player Mahjong
+  - Already done, but not planned to release yet.
+- [x] Change Setting inside application.
+- [x] Autoplay
+  - [ ] Auto use stickers to make opponent think we are not a bot.
+  - [ ] Add random time in settings.json to let user choose time they want.
+- [ ] Mix multiple AI's decision to make we more like a human but not a perfect bot.
+- [x] Reduce Startup time of the bot. (Maybe start it before match begin?)
+- [x] Intergrade with [MajsoulUnlocker](https://github.com/shinkuan/MajsoulUnlocker)
+- [ ] Don't use MITM at all for the gameplay, use image recognition.
+  - [ ] Decide use what model
+  - [ ] Training data generation
+  - [ ] Train it
+  - [ ] Delta Score Recognition.
+  - [ ] Ryukyoku Recognition.
+  - [ ] Implement
+- [x] Easier installation.
 
 ## Need Help!
 
@@ -164,7 +171,7 @@ Following guide can minimum the probility of account suspension.
 
 # Authors
 
-* **Shinkuan** - [Shinkuan](https://github.com/shinkuan/)
+- **Shinkuan** - [Shinkuan](https://github.com/shinkuan/)
 
 ## Support me
 
@@ -178,7 +185,7 @@ You can find me at [Discord](https://discord.gg/Z2wjXUK8bN).
 
 ### What can I get after donating?
 
-Firstly, thank you very much for your willingness to support the author. 
+Firstly, thank you very much for your willingness to support the author.
 
 I will prioritize the opinions of donors, such as feature requests and bug fixes.
 

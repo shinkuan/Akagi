@@ -74,7 +74,8 @@ https://github.com/shinkuan/RandomStuff/assets/35415788/ce1b598d-b1d7-49fe-a175-
 1. 将 `install_akagi.command` 放在您想安裝 Akagi 的位置。
 2. 从[Python 官方网站](https://www.python.org/downloads/)下载最新的 Python 安装包并安装（如已安装其他兼容版本的 Python 可以跳过这一步）。
 3. 双击`install_akagi.command`自动安装所需的依赖项。
-4. 如果这是您第一次使用 mitmproxy，请打开它。
+4. 双击run_agaki.command启动agaki。
+5. 如果您是第一次使用mitmproxy，请点击start mitm。
 5. 关闭它。
 6. 到使用者主目录 `~/.mitmproxy`
 7. 安装证书。
