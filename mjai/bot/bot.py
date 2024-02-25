@@ -23,9 +23,10 @@ class Bot:
             return json.dumps({"type":"none"}, separators=(",", ":"))
         else:
             raw_data = json.loads(return_action)
-            del raw_data["meta"]
             return json.dumps(raw_data, separators=(",", ":"))
 
+    def state(self):
+        return self.model.state
 
 def main():
     player_id = int(sys.argv[1])
@@ -40,5 +41,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # debug()
     main()

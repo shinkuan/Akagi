@@ -23,13 +23,10 @@ from textual.css.query import NoMatches
 from textual.screen import Screen
 
 from liqi import LiqiProto, MsgType
-from mjai.player import MjaiPlayerClient
 from majsoul2mjai import MajsoulBridge
+from libriichi_helper import meta_to_recommend, state_to_tehai
 from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
 from action import Action
-from concurrent.futures import ThreadPoolExecutor
-from threading import Thread
-from playwright.sync_api import Playwright, sync_playwright
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
@@ -132,9 +129,6 @@ class FlowScreen(Screen):
                 self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id][-1])
                 self.liqi_log_container.scroll_end()
                 self.liqi_msg_idx += 1
-                for idx, tehai_label in enumerate(self.tehai_labels):
-                    tehai_label.update(TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tehais[idx]])
-                self.tsumohai_label.update(TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tsumohai])
                 liqi_msg = self.app.liqi_msg_dict[self.flow_id][-1]
                 if liqi_msg['type'] == MsgType.Notify:
                     if liqi_msg['method'] == '.lq.ActionPrototype':
@@ -153,46 +147,54 @@ class FlowScreen(Screen):
             elif self.syncing:
                 self.query_one("#loading_indicator").remove()
                 self.syncing = False
-                if AUTOPLAY:
+                if AUTOPLAY and len(self.app.mjai_msg_dict[self.flow_id]) > 0:
                     logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
                     self.app.set_timer(2, self.autoplay)
             if self.mjai_msg_idx < len(self.app.mjai_msg_dict[self.flow_id]):
+                player_state = self.app.bridge[self.flow_id].mjai_client.bot.state()
+                tehai, tsumohai = state_to_tehai(player_state)
+                for idx, tehai_label in enumerate(self.tehai_labels):
+                    tehai_label.update(TILE_2_UNICODE_ART_RICH[tehai[idx]])
+                self.tsumohai_label.update(TILE_2_UNICODE_ART_RICH[tsumohai])
+                latest_mjai_msg = self.app.mjai_msg_dict[self.flow_id][-1]
+                self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(latest_mjai_msg['meta'])
                 self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
                 self.mjai_log_container.scroll_end()
                 self.mjai_msg_idx += 1
-                self.akagi_action.label = self.app.mjai_msg_dict[self.flow_id][-1]["type"]
+                self.akagi_action.label = latest_mjai_msg["type"]
                 for akagi_action_class in self.akagi_action.classes:
                     self.akagi_action.remove_class(akagi_action_class)
-                self.akagi_action.add_class("action_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
+                self.akagi_action.add_class("action_"+latest_mjai_msg["type"])
                 for akagi_pai_class in self.akagi_pai.classes:
                     self.akagi_pai.remove_class(akagi_pai_class)
-                self.akagi_pai.add_class("pai_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
-                if "consumed" in self.app.mjai_msg_dict[self.flow_id][-1]:
-                    self.akagi_pai.label = str(self.app.mjai_msg_dict[self.flow_id][-1]["consumed"])
-                    if "pai" in self.app.mjai_msg_dict[self.flow_id][-1]:
-                        self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[self.app.mjai_msg_dict[self.flow_id][-1]["pai"]])
+                self.akagi_pai.add_class("pai_"+latest_mjai_msg["type"])
+                if "consumed" in latest_mjai_msg:
+                    self.akagi_pai.label = str(latest_mjai_msg["consumed"])
+                    if "pai" in latest_mjai_msg:
+                        self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[latest_mjai_msg["pai"]])
                     self.akagi_container.mount(Label(VERTICLE_RULE, id="consumed_rule"))
                     self.consume_ids.append("#"+"consumed_rule")
                     i=0
-                    for c in self.app.mjai_msg_dict[self.flow_id][-1]["consumed"]:
+                    for c in latest_mjai_msg["consumed"]:
                         self.akagi_container.mount(Label(TILE_2_UNICODE_ART_RICH[c], id="consumed_"+c+str(i)))
                         self.consume_ids.append("#"+"consumed_"+c+str(i))
                         i+=1
-                elif "pai" in self.app.mjai_msg_dict[self.flow_id][-1]:
+                elif "pai" in latest_mjai_msg:
                     for consume_id in self.consume_ids:
                         self.query_one(consume_id).remove()
                     self.consume_ids = []
-                    self.akagi_pai.label = str(self.app.mjai_msg_dict[self.flow_id][-1]["pai"])
-                    self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[self.app.mjai_msg_dict[self.flow_id][-1]["pai"]])
+                    self.akagi_pai.label = str(latest_mjai_msg["pai"])
+                    self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[latest_mjai_msg["pai"]])
                 else:
                     self.akagi_pai.label = "None"
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH["?"])
                 # Action
-                logger.info(f"Current tehai: {self.app.bridge[self.flow_id].my_tehais}")
-                logger.info(f"Current tsumohai: {self.app.bridge[self.flow_id].my_tsumohai}")
+                logger.info(f"Current tehai: {tehai}")
+                logger.info(f"Current tsumohai: {tsumohai}")
                 if not self.syncing and ENABLE_PLAYWRIGHT and AUTOPLAY:
-                    logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
-                    self.app.set_timer(0.05, self.autoplay)
+                    logger.log("CLICK", latest_mjai_msg)
+                    # self.app.set_timer(0.05, self.autoplay)
+                    self.autoplay(tehai, tsumohai)
                     
         except Exception as e:
             logger.error(e)
@@ -204,8 +206,8 @@ class FlowScreen(Screen):
         AUTOPLAY = event.value
         pass
         
-    def autoplay(self) -> None:
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.app.bridge[self.flow_id].my_tehais, self.app.bridge[self.flow_id].my_tsumohai)
+    def autoplay(self, tehai, tsumohai) -> None:
+        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], tehai, tsumohai)
         pass
 
     def action_quit(self) -> None:

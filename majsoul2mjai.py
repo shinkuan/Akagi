@@ -106,9 +106,6 @@ class MajsoulBridge:
                 my_tehais = ['?']*13
                 for hai in range(13):
                     my_tehais[hai] = MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles'][hai]]
-                self.my_tehais = my_tehais
-                self.my_tsumohai = "?"
-                self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
                 if   len(parse_msg['data']['data']['tiles']) == 13:
                     tehais[self.seat] = my_tehais
                     self.mjai_message.append(
@@ -210,14 +207,6 @@ class MajsoulBridge:
                                             'type': 'reach_accepted',
                                             'actor': actor
                                         }
-                if actor == self.seat:
-                    if self.my_tsumohai != "?":
-                        self.my_tehais.append(self.my_tsumohai)
-                        self.my_tsumohai = "?"
-                    else:
-                        self.my_tehais.append("?")
-                    self.my_tehais.remove(pai)
-                    self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
             # Reach
             if parse_msg['data']['name'] == 'ActionReach':
                 # TODO
@@ -275,11 +264,6 @@ class MajsoulBridge:
                         pass
                     case _:
                         raise
-                if actor == self.seat:
-                    for pai in consumed:
-                        self.my_tehais.remove(pai)
-                        self.my_tehais.append("?")
-                    self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
             # AnkanKakan
             if parse_msg['data']['name'] == 'ActionAnGangAddGang':
                 actor = parse_msg['data']['data']['seat']
@@ -296,17 +280,6 @@ class MajsoulBridge:
                                 'consumed': consumed
                             }
                         )
-                        if actor == self.seat:
-                            if self.my_tsumohai != "?":
-                                self.my_tehais.append(self.my_tsumohai)
-                                self.my_tsumohai = "?"
-                            else:
-                                self.my_tehais.append("?")  
-                            for pai in consumed:
-                                self.my_tehais.remove(pai)
-                                self.my_tehais.append("?")
-                            self.my_tehais.remove("?")
-                            self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
                     case OperationAnGangAddGang.AddGang:
                         pai = MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles']]
                         consumed = [pai.replace("r", "")] * 3
@@ -320,14 +293,6 @@ class MajsoulBridge:
                                 'consumed': consumed
                             }
                         )
-                        if actor == self.seat:
-                            if self.my_tsumohai != "?":
-                                self.my_tehais.append(self.my_tsumohai)
-                                self.my_tsumohai = "?"
-                            else:
-                                self.my_tehais.append("?")
-                            self.my_tehais.remove(pai)
-                            self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
 
             if parse_msg['data']['name'] == 'ActionBaBei':
                 actor = parse_msg['data']['data']['seat']
@@ -338,14 +303,6 @@ class MajsoulBridge:
                         'pai': 'N'
                     }
                 )
-                if actor == self.seat:
-                    if self.my_tsumohai != "?":
-                        self.my_tehais.append(self.my_tsumohai)
-                        self.my_tsumohai = "?"
-                    else:
-                        self.my_tehais.append("?")
-                    self.my_tehais.remove("N")
-                    self.my_tehais = sorted(self.my_tehais, key=cmp_to_key(compare_pai))
 
             # hora
             if parse_msg['data']['name'] == 'ActionHule':
@@ -368,8 +325,6 @@ class MajsoulBridge:
                         'type': 'end_kyoku'
                     }
                 )
-                self.my_tehais = ["?"]*13
-                self.my_tsumohai = "?"
                 self.react(self.mjai_client)
                 return None
             # notile
@@ -380,8 +335,6 @@ class MajsoulBridge:
                         'type': 'end_kyoku'
                     }
                 )
-                self.my_tehais = ["?"]*13
-                self.my_tsumohai = "?"
                 self.react(self.mjai_client)
                 return None
             # ryukyoku
@@ -397,8 +350,6 @@ class MajsoulBridge:
                         'type': 'end_kyoku'
                     }
                 )
-                self.my_tehais = ["?"]*13
-                self.my_tsumohai = "?"
                 self.react(self.mjai_client)
                 return None
             
@@ -413,8 +364,6 @@ class MajsoulBridge:
                     'type': 'end_game'
                 }
             )
-            self.my_tehais = ["?"]*13
-            self.my_tsumohai = "?"
             self.react(self.mjai_client)
             self.mjai_client.restart_bot(self.seat)
             return None

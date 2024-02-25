@@ -17,6 +17,7 @@
 /mitm_playwright.bat
 /playwright_test.py
 /unlocker_test.py
+/unlocker_passthrough.py
 /objects
 /players/bot
 /players/docker
