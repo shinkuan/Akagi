@@ -52,7 +52,7 @@ __Get mortal.pth at [Discord](https://discord.gg/Z2wjXUK8bN)__
 5. And mortal.pth is there.
 
 ### Akagi:
-
+#### Windows
 Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/releases/latest)
 
 1. Put `install_akagi.ps1` at the location you want to install Akagi.
@@ -65,6 +65,18 @@ Download `install_akagi.ps1` at [Release](https://github.com/shinkuan/Akagi/rele
 8. Go to your user home directory `~/.mitmproxy`
 9. Install the certificate.
 10. Put `mortal.pth` into `./Akagi/mjai/bot`
+
+#### Mac
+Download `install_akagi.command` from [Release](https://github.com/shinkuan/Akagi/releases/latest)
+
+1. Put `install_akagi.command` in the location where you want to install Akagi.
+2. Download the latest Python installation package from the [Python official website](https://www.python.org/downloads/) and install it (skip this step if you already have a compatible version of Python installed).
+3. Double-click `install_akagi.command` to automatically install the required dependencies.
+4. If this is your first time using mitmproxy, open it.
+5. Close it.
+6. Go to your user home directory `~/.mitmproxy`
+7. Install the certificate.
+8. Put `mortal.pth` into `./Akagi/mjai/bot`
 
 ### settings.json
 
