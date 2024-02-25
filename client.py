@@ -1,32 +1,37 @@
 import atexit
+import json
 import os
-from pathlib import Path
-import time
-os.environ["LOGURU_AUTOINIT"] = "False"
-
 import pathlib
+import subprocess
+import sys
+import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from sys import executable
-from subprocess import Popen, CREATE_NEW_CONSOLE
-
+from threading import Thread
 from typing import Any, Coroutine
 from xmlrpc.client import ServerProxy
-import json
+
 from loguru import logger
-
-from textual import on  
+from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import ScrollableContainer, Horizontal, Vertical
-from textual.events import Event, ScreenResume
-from textual.widgets import Button, Footer, Header, Static, Log, Pretty, Label, Rule, LoadingIndicator, Checkbox, Input, Markdown
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.css.query import NoMatches
+from textual.events import Event, ScreenResume
 from textual.screen import Screen
+from textual.widgets import (Button, Checkbox, Footer, Header, Input, Label,
+                             LoadingIndicator, Log, Markdown, Pretty, Rule,
+                             Static)
 
+from action import Action
 from liqi import LiqiProto, MsgType
 from majsoul2mjai import MajsoulBridge
+from tileUnicode import TILE_2_UNICODE, TILE_2_UNICODE_ART_RICH, VERTICLE_RULE
 from libriichi_helper import meta_to_recommend, state_to_tehai
-from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
-from action import Action
+
+os.environ["LOGURU_AUTOINIT"] = "False"
+
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
@@ -143,7 +148,7 @@ class FlowScreen(Screen):
                             self.action.reached = False
                     if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
                         self.action_quit()
-                    
+
             elif self.syncing:
                 self.query_one("#loading_indicator").remove()
                 self.syncing = False
@@ -229,6 +234,7 @@ class FlowDisplay(Static):
         self.app.push_screen(FlowScreen(self.flow_id))
         self.app.update_flow.pause()
 
+
 class HoverLink(Static):
     def __init__(self, text, url, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -241,6 +247,7 @@ class HoverLink(Static):
     def on_click(self, event):
         webbrowser.open_new_tab(self.url)
         pass
+
 
 class SettingsScreen(Static):
 
@@ -395,14 +402,14 @@ class Akagi(App):
     def __init__(self, rpc_server, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.rpc_server = rpc_server
-        self.liqi: dict[str, LiqiProto]={}
-        self.bridge: dict[str, MajsoulBridge]={}
+        self.liqi: dict[str, LiqiProto] = {}
+        self.bridge: dict[str, MajsoulBridge] = {}
         self.active_flows = []
-        self.messages_dict = dict() # flow.id -> List[flow_msg]
-        self.liqi_msg_dict = dict() # flow.id -> List[liqi_msg]
-        self.mjai_msg_dict = dict() # flow.id -> List[mjai_msg]
-        self.akagi_log_dict= dict() # flow.id -> List[akagi_log]
-        self.loguru_log = [] # List[loguru_log]
+        self.messages_dict  = dict() # flow.id -> List[flow_msg]
+        self.liqi_msg_dict  = dict() # flow.id -> List[liqi_msg]
+        self.mjai_msg_dict  = dict() # flow.id -> List[mjai_msg]
+        self.akagi_log_dict = dict() # flow.id -> List[akagi_log]
+        self.loguru_log = []         # List[loguru_log]
         self.mitm_started = False
 
     def on_mount(self) -> None:
@@ -506,19 +513,29 @@ def exit_handler():
     global mitm_exec
     try:
         mitm_exec.kill()
+        logger.info("Stop Akagi")
     except:
         pass
     pass
 
+
 def start_mitm():
     global mitm_exec
-    mitm_exec = Popen([executable, pathlib.Path(__file__).parent / "mitm.py"], creationflags=CREATE_NEW_CONSOLE)
-    pass
+
+    command = [sys.executable, pathlib.Path(__file__).parent / "mitm.py"]
+
+    if sys.platform == "win32":
+        # Windows特定代码
+        mitm_exec = subprocess.Popen(command, creationflags=subprocess.CREATE_NEW_CONSOLE)
+    else:
+        # macOS和其他Unix-like系统
+        mitm_exec = subprocess.Popen(command, preexec_fn=os.setsid)
+
 
 if __name__ == '__main__':
     with open("settings.json", "r") as f:
         settings = json.load(f)
-        rpc_port = settings["Port"]["XMLRPC"] 
+        rpc_port = settings["Port"]["XMLRPC"]
     rpc_host = "127.0.0.1"
     s = ServerProxy(f"http://{rpc_host}:{rpc_port}", allow_none=True)
     logger.level("CLICK", no=10, icon="CLICK")
@@ -532,4 +549,3 @@ if __name__ == '__main__':
     except Exception as e:
         exit_handler()
         raise e
-    
