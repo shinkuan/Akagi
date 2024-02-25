@@ -1,35 +1,38 @@
 import atexit
+import json
 import os
-from pathlib import Path
-import time
-os.environ["LOGURU_AUTOINIT"] = "False"
-
 import pathlib
+import subprocess
+import sys
+import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from sys import executable
-from subprocess import Popen, CREATE_NEW_CONSOLE
-
+from threading import Thread
 from typing import Any, Coroutine
 from xmlrpc.client import ServerProxy
-import json
+
 from loguru import logger
-
-from textual import on  
-from textual.app import App, ComposeResult
-from textual.containers import ScrollableContainer, Horizontal, Vertical
-from textual.events import Event, ScreenResume
-from textual.widgets import Button, Footer, Header, Static, Log, Pretty, Label, Rule, LoadingIndicator, Checkbox, Input, Markdown
-from textual.css.query import NoMatches
-from textual.screen import Screen
-
-from liqi import LiqiProto, MsgType
-from mjai.player import MjaiPlayerClient
-from majsoul2mjai import MajsoulBridge
-from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
-from action import Action
-from concurrent.futures import ThreadPoolExecutor
-from threading import Thread
 from playwright.sync_api import Playwright, sync_playwright
+from textual import on
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual.css.query import NoMatches
+from textual.events import Event, ScreenResume
+from textual.screen import Screen
+from textual.widgets import (Button, Checkbox, Footer, Header, Input, Label,
+                             LoadingIndicator, Log, Markdown, Pretty, Rule,
+                             Static)
+
+from action import Action
+from liqi import LiqiProto, MsgType
+from majsoul2mjai import MajsoulBridge
+from mjai.player import MjaiPlayerClient
+from tileUnicode import TILE_2_UNICODE, TILE_2_UNICODE_ART_RICH, VERTICLE_RULE
+
+os.environ["LOGURU_AUTOINIT"] = "False"
+
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
@@ -60,12 +63,16 @@ class FlowScreen(Screen):
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
-        liqi_log_container = ScrollableContainer(Pretty(self.app.liqi_msg_dict[self.flow_id], id="liqi_log"), id="liqi_log_container")
-        mjai_log_container = ScrollableContainer(Pretty(self.app.mjai_msg_dict[self.flow_id], id="mjai_log"), id="mjai_log_container")
-        log_container = Horizontal(liqi_log_container, mjai_log_container, id="log_container")
+        liqi_log_container = ScrollableContainer(Pretty(
+            self.app.liqi_msg_dict[self.flow_id], id="liqi_log"), id="liqi_log_container")
+        mjai_log_container = ScrollableContainer(Pretty(
+            self.app.mjai_msg_dict[self.flow_id], id="mjai_log"), id="mjai_log_container")
+        log_container = Horizontal(
+            liqi_log_container, mjai_log_container, id="log_container")
         liqi_log_container.border_title = "LiqiProto"
         mjai_log_container.border_title = "Mjai"
-        tehai_labels = [Label(TILE_2_UNICODE_ART_RICH["?"], id="tehai_"+str(i)) for i in range(13)]
+        tehai_labels = [Label(TILE_2_UNICODE_ART_RICH["?"],
+                              id="tehai_"+str(i)) for i in range(13)]
         tehai_rule = Label(VERTICLE_RULE, id="tehai_rule")
         tsumohai_label = Label(TILE_2_UNICODE_ART_RICH["?"], id="tsumohai")
         tehai_container = Horizontal(id="tehai_container")
@@ -75,18 +82,25 @@ class FlowScreen(Screen):
         tehai_container.mount(tsumohai_label)
         tehai_container.border_title = "Tehai"
         akagi_action = Button("Akagi", id="akagi_action", variant="default")
-        akagi_pai    = Button("Pai", id="akagi_pai", variant="default")
-        pai_unicode_art = Label(TILE_2_UNICODE_ART_RICH["?"], id="pai_unicode_art")
-        akagi_container = Horizontal(akagi_action, akagi_pai, pai_unicode_art, id="akagi_container")
+        akagi_pai = Button("Pai", id="akagi_pai", variant="default")
+        pai_unicode_art = Label(
+            TILE_2_UNICODE_ART_RICH["?"], id="pai_unicode_art")
+        akagi_container = Horizontal(
+            akagi_action, akagi_pai, pai_unicode_art, id="akagi_container")
         akagi_container.border_title = "Akagi"
         loading_indicator = LoadingIndicator(id="loading_indicator")
         loading_indicator.styles.height = "3"
-        checkbox_autoplay = Checkbox("Autoplay", id="checkbox_autoplay", classes="short", value=AUTOPLAY)
-        checkbox_test_one = Checkbox("test_one", id="checkbox_test_one", classes="short")
-        checkbox_test_two = Checkbox("test_two", id="checkbox_test_two", classes="short")
-        checkbox_container = Vertical(checkbox_autoplay, checkbox_test_one, id="checkbox_container")
+        checkbox_autoplay = Checkbox(
+            "Autoplay", id="checkbox_autoplay", classes="short", value=AUTOPLAY)
+        checkbox_test_one = Checkbox(
+            "test_one", id="checkbox_test_one", classes="short")
+        checkbox_test_two = Checkbox(
+            "test_two", id="checkbox_test_two", classes="short")
+        checkbox_container = Vertical(
+            checkbox_autoplay, checkbox_test_one, id="checkbox_container")
         checkbox_container.border_title = "Options"
-        bottom_container = Horizontal(checkbox_container, akagi_container, id="bottom_container")
+        bottom_container = Horizontal(
+            checkbox_container, akagi_container, id="bottom_container")
         yield Header()
         yield Footer()
         yield loading_indicator
@@ -105,7 +119,8 @@ class FlowScreen(Screen):
         self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
         self.liqi_log_container = self.query_one("#liqi_log_container")
         self.mjai_log_container = self.query_one("#mjai_log_container")
-        self.tehai_labels = [self.query_one("#tehai_"+str(i)) for i in range(13)]
+        self.tehai_labels = [self.query_one(
+            "#tehai_"+str(i)) for i in range(13)]
         self.tehai_rule = self.query_one("#tehai_rule")
         self.tsumohai_label = self.query_one("#tsumohai")
         self.tehai_container = self.query_one("#tehai_container")
@@ -118,10 +133,12 @@ class FlowScreen(Screen):
             self.akagi_action.label = self.app.mjai_msg_dict[self.flow_id][-1]["type"]
             for akagi_action_class in self.akagi_action.classes:
                 self.akagi_action.remove_class(akagi_action_class)
-            self.akagi_action.add_class("action_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
+            self.akagi_action.add_class(
+                "action_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
             for akagi_pai_class in self.akagi_pai.classes:
                 self.akagi_pai.remove_class(akagi_pai_class)
-            self.akagi_pai.add_class("pai_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
+            self.akagi_pai.add_class(
+                "pai_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
         except IndexError:
             self.akagi_action.label = "Akagi"
 
@@ -133,14 +150,17 @@ class FlowScreen(Screen):
                 self.liqi_log_container.scroll_end()
                 self.liqi_msg_idx += 1
                 for idx, tehai_label in enumerate(self.tehai_labels):
-                    tehai_label.update(TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tehais[idx]])
-                self.tsumohai_label.update(TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tsumohai])
+                    tehai_label.update(
+                        TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tehais[idx]])
+                self.tsumohai_label.update(
+                    TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tsumohai])
                 liqi_msg = self.app.liqi_msg_dict[self.flow_id][-1]
                 if liqi_msg['type'] == MsgType.Notify:
                     if liqi_msg['method'] == '.lq.ActionPrototype':
                         if 'operation' in liqi_msg['data']['data']:
                             if 'operationList' in liqi_msg['data']['data']['operation']:
-                                self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
+                                self.action.latest_operation_list = liqi_msg[
+                                    'data']['data']['operation']['operationList']
                         if liqi_msg['data']['name'] == 'ActionDiscardTile':
                             self.action.isNewRound = False
                             pass
@@ -149,12 +169,13 @@ class FlowScreen(Screen):
                             self.action.reached = False
                     if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
                         self.action_quit()
-                    
+
             elif self.syncing:
                 self.query_one("#loading_indicator").remove()
                 self.syncing = False
                 if AUTOPLAY:
-                    logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
+                    logger.log(
+                        "CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
                     self.app.set_timer(2, self.autoplay)
             if self.mjai_msg_idx < len(self.app.mjai_msg_dict[self.flow_id]):
                 self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
@@ -163,37 +184,48 @@ class FlowScreen(Screen):
                 self.akagi_action.label = self.app.mjai_msg_dict[self.flow_id][-1]["type"]
                 for akagi_action_class in self.akagi_action.classes:
                     self.akagi_action.remove_class(akagi_action_class)
-                self.akagi_action.add_class("action_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
+                self.akagi_action.add_class(
+                    "action_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
                 for akagi_pai_class in self.akagi_pai.classes:
                     self.akagi_pai.remove_class(akagi_pai_class)
-                self.akagi_pai.add_class("pai_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
+                self.akagi_pai.add_class(
+                    "pai_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
                 if "consumed" in self.app.mjai_msg_dict[self.flow_id][-1]:
-                    self.akagi_pai.label = str(self.app.mjai_msg_dict[self.flow_id][-1]["consumed"])
+                    self.akagi_pai.label = str(
+                        self.app.mjai_msg_dict[self.flow_id][-1]["consumed"])
                     if "pai" in self.app.mjai_msg_dict[self.flow_id][-1]:
-                        self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[self.app.mjai_msg_dict[self.flow_id][-1]["pai"]])
-                    self.akagi_container.mount(Label(VERTICLE_RULE, id="consumed_rule"))
+                        self.pai_unicode_art.update(
+                            TILE_2_UNICODE_ART_RICH[self.app.mjai_msg_dict[self.flow_id][-1]["pai"]])
+                    self.akagi_container.mount(
+                        Label(VERTICLE_RULE, id="consumed_rule"))
                     self.consume_ids.append("#"+"consumed_rule")
-                    i=0
+                    i = 0
                     for c in self.app.mjai_msg_dict[self.flow_id][-1]["consumed"]:
-                        self.akagi_container.mount(Label(TILE_2_UNICODE_ART_RICH[c], id="consumed_"+c+str(i)))
+                        self.akagi_container.mount(
+                            Label(TILE_2_UNICODE_ART_RICH[c], id="consumed_"+c+str(i)))
                         self.consume_ids.append("#"+"consumed_"+c+str(i))
-                        i+=1
+                        i += 1
                 elif "pai" in self.app.mjai_msg_dict[self.flow_id][-1]:
                     for consume_id in self.consume_ids:
                         self.query_one(consume_id).remove()
                     self.consume_ids = []
-                    self.akagi_pai.label = str(self.app.mjai_msg_dict[self.flow_id][-1]["pai"])
-                    self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[self.app.mjai_msg_dict[self.flow_id][-1]["pai"]])
+                    self.akagi_pai.label = str(
+                        self.app.mjai_msg_dict[self.flow_id][-1]["pai"])
+                    self.pai_unicode_art.update(
+                        TILE_2_UNICODE_ART_RICH[self.app.mjai_msg_dict[self.flow_id][-1]["pai"]])
                 else:
                     self.akagi_pai.label = "None"
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH["?"])
                 # Action
-                logger.info(f"Current tehai: {self.app.bridge[self.flow_id].my_tehais}")
-                logger.info(f"Current tsumohai: {self.app.bridge[self.flow_id].my_tsumohai}")
+                logger.info(
+                    f"Current tehai: {self.app.bridge[self.flow_id].my_tehais}")
+                logger.info(
+                    f"Current tsumohai: {self.app.bridge[self.flow_id].my_tsumohai}")
                 if not self.syncing and ENABLE_PLAYWRIGHT and AUTOPLAY:
-                    logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
+                    logger.log(
+                        "CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
                     self.app.set_timer(0.05, self.autoplay)
-                    
+
         except Exception as e:
             logger.error(e)
             pass
@@ -203,9 +235,10 @@ class FlowScreen(Screen):
         global AUTOPLAY
         AUTOPLAY = event.value
         pass
-        
+
     def autoplay(self) -> None:
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.app.bridge[self.flow_id].my_tehais, self.app.bridge[self.flow_id].my_tsumohai)
+        self.action.mjai2action(
+            self.app.mjai_msg_dict[self.flow_id][-1], self.app.bridge[self.flow_id].my_tehais, self.app.bridge[self.flow_id].my_tsumohai)
         pass
 
     def action_quit(self) -> None:
@@ -227,6 +260,7 @@ class FlowDisplay(Static):
         self.app.push_screen(FlowScreen(self.flow_id))
         self.app.update_flow.pause()
 
+
 class HoverLink(Static):
     def __init__(self, text, url, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -239,6 +273,7 @@ class HoverLink(Static):
     def on_click(self, event):
         webbrowser.open_new_tab(self.url)
         pass
+
 
 class SettingsScreen(Static):
 
@@ -259,60 +294,91 @@ class SettingsScreen(Static):
             self.value_playwright_setting_height_input = settings["Playwright"]["height"]
 
     def compose(self) -> ComposeResult:
-        self.port_setting_mitm_label = Label("MITM Port", id="port_setting_mitm_label")
-        self.port_setting_mitm_input = Input(placeholder="Port", type="integer", id="port_setting_mitm_input", value=str(self.value_port_setting_mitm_input))
-        self.port_setting_mitm_container = Horizontal(self.port_setting_mitm_label, self.port_setting_mitm_input, id="port_setting_mitm_container")
-        self.port_setting_xmlrpc_label = Label("XMLRPC Port", id="port_setting_xmlrpc_label")
-        self.port_setting_xmlrpc_input = Input(placeholder="Port", type="integer", id="port_setting_xmlrpc_input", value=str(self.value_port_setting_xmlrpc_input))
-        self.port_setting_xmlrpc_container = Horizontal(self.port_setting_xmlrpc_label, self.port_setting_xmlrpc_input, id="port_setting_xmlrpc_container")
-        self.port_setting_container = Vertical(self.port_setting_mitm_container, self.port_setting_xmlrpc_container, id="port_setting_container")
+        self.port_setting_mitm_label = Label(
+            "MITM Port", id="port_setting_mitm_label")
+        self.port_setting_mitm_input = Input(
+            placeholder="Port", type="integer", id="port_setting_mitm_input", value=str(self.value_port_setting_mitm_input))
+        self.port_setting_mitm_container = Horizontal(
+            self.port_setting_mitm_label, self.port_setting_mitm_input, id="port_setting_mitm_container")
+        self.port_setting_xmlrpc_label = Label(
+            "XMLRPC Port", id="port_setting_xmlrpc_label")
+        self.port_setting_xmlrpc_input = Input(
+            placeholder="Port", type="integer", id="port_setting_xmlrpc_input", value=str(self.value_port_setting_xmlrpc_input))
+        self.port_setting_xmlrpc_container = Horizontal(
+            self.port_setting_xmlrpc_label, self.port_setting_xmlrpc_input, id="port_setting_xmlrpc_container")
+        self.port_setting_container = Vertical(
+            self.port_setting_mitm_container, self.port_setting_xmlrpc_container, id="port_setting_container")
         self.port_setting_container.border_title = "Port"
 
-        self.unlocker_setting_label = Label("Unlocker", id="unlocker_setting_label")
-        self.unlocker_setting_enable_checkbox = Checkbox("Enable", id="unlocker_setting_enable_checkbox", classes="short", value=self.value_unlocker_setting_enable_checkbox)
-        self.unlocker_setting_v10_checkbox = Checkbox("v10", id="unlocker_setting_v10_checkbox", classes="short", value=self.value_unlocker_setting_v10_checkbox)
-        self.unlocker_setting_container = Horizontal(self.unlocker_setting_label, self.unlocker_setting_enable_checkbox, self.unlocker_setting_v10_checkbox, id="unlocker_setting_container")
+        self.unlocker_setting_label = Label(
+            "Unlocker", id="unlocker_setting_label")
+        self.unlocker_setting_enable_checkbox = Checkbox(
+            "Enable", id="unlocker_setting_enable_checkbox", classes="short", value=self.value_unlocker_setting_enable_checkbox)
+        self.unlocker_setting_v10_checkbox = Checkbox(
+            "v10", id="unlocker_setting_v10_checkbox", classes="short", value=self.value_unlocker_setting_v10_checkbox)
+        self.unlocker_setting_container = Horizontal(
+            self.unlocker_setting_label, self.unlocker_setting_enable_checkbox, self.unlocker_setting_v10_checkbox, id="unlocker_setting_container")
         self.unlocker_setting_container.border_title = "Unlocker"
 
         self.helper_setting_label = Label("Helper", id="helper_setting_label")
-        self.helper_setting_checkbox = Checkbox("Enable", id="helper_setting_checkbox", classes="short", value=self.value_helper_setting_checkbox)
-        self.helper_setting_container = Horizontal(self.helper_setting_label, self.helper_setting_checkbox, id="helper_setting_container")
+        self.helper_setting_checkbox = Checkbox(
+            "Enable", id="helper_setting_checkbox", classes="short", value=self.value_helper_setting_checkbox)
+        self.helper_setting_container = Horizontal(
+            self.helper_setting_label, self.helper_setting_checkbox, id="helper_setting_container")
         self.helper_setting_container.border_title = "Helper"
 
-        self.autoplay_setting_enable_label = Label("Enable", id="autoplay_setting_enable_label")
-        self.autoplay_setting_enable_checkbox = Checkbox("Enable", id="autoplay_setting_enable_checkbox", classes="short", value=self.value_autoplay_setting_enable_checkbox)
-        self.autoplay_setting_enable_container = Horizontal(self.autoplay_setting_enable_label, self.autoplay_setting_enable_checkbox, id="autoplay_setting_enable_container")
-        self.autoplay_setting_random_time_label = Label("Random Time", id="autoplay_setting_random_time_label")
-        self.autoplay_setting_random_time_min_input = Input(placeholder="Min", type="number", id="autoplay_setting_random_time_min_input")
-        self.autoplay_setting_random_time_max_input = Input(placeholder="Max", type="number", id="autoplay_setting_random_time_max_input")
-        self.autoplay_setting_random_time_container = Horizontal(self.autoplay_setting_random_time_label, self.autoplay_setting_random_time_min_input, self.autoplay_setting_random_time_max_input, id="autoplay_setting_random_time_container")
-        self.autoplay_setting_container = Vertical(self.autoplay_setting_enable_container, self.autoplay_setting_random_time_container, id="autoplay_setting_container")
+        self.autoplay_setting_enable_label = Label(
+            "Enable", id="autoplay_setting_enable_label")
+        self.autoplay_setting_enable_checkbox = Checkbox(
+            "Enable", id="autoplay_setting_enable_checkbox", classes="short", value=self.value_autoplay_setting_enable_checkbox)
+        self.autoplay_setting_enable_container = Horizontal(
+            self.autoplay_setting_enable_label, self.autoplay_setting_enable_checkbox, id="autoplay_setting_enable_container")
+        self.autoplay_setting_random_time_label = Label(
+            "Random Time", id="autoplay_setting_random_time_label")
+        self.autoplay_setting_random_time_min_input = Input(
+            placeholder="Min", type="number", id="autoplay_setting_random_time_min_input")
+        self.autoplay_setting_random_time_max_input = Input(
+            placeholder="Max", type="number", id="autoplay_setting_random_time_max_input")
+        self.autoplay_setting_random_time_container = Horizontal(
+            self.autoplay_setting_random_time_label, self.autoplay_setting_random_time_min_input, self.autoplay_setting_random_time_max_input, id="autoplay_setting_random_time_container")
+        self.autoplay_setting_container = Vertical(
+            self.autoplay_setting_enable_container, self.autoplay_setting_random_time_container, id="autoplay_setting_container")
         self.autoplay_setting_container.border_title = "Autoplay"
 
-        self.playwright_setting_enable_label = Label("Enable", id="playwright_setting_enable_label")
-        self.playwright_setting_enable_checkbox = Checkbox("Enable", id="playwright_setting_enable_checkbox", classes="short", value=self.value_playwright_setting_enable_checkbox)
-        self.playwright_setting_enable_container = Horizontal(self.playwright_setting_enable_label, self.playwright_setting_enable_checkbox, id="playwright_setting_enable_container")
-        self.playwright_setting_resolution_label = Label("Resolution", id="playwright_setting_resolution_label")
-        self.playwright_setting_width_input = Input(placeholder="Width", type="integer", id="playwright_setting_width_input", value=str(self.value_playwright_setting_width_input))
-        self.playwright_setting_height_input = Input(placeholder="Height", type="integer", id="playwright_setting_height_input", value=str(self.value_playwright_setting_height_input))
-        self.playwright_setting_resolution_container = Horizontal(self.playwright_setting_resolution_label, self.playwright_setting_width_input, self.playwright_setting_height_input, id="playwright_setting_resolution_container")
-        self.playwright_setting_container = Vertical(self.playwright_setting_enable_container, self.playwright_setting_resolution_container, id="playwright_setting_container")
+        self.playwright_setting_enable_label = Label(
+            "Enable", id="playwright_setting_enable_label")
+        self.playwright_setting_enable_checkbox = Checkbox(
+            "Enable", id="playwright_setting_enable_checkbox", classes="short", value=self.value_playwright_setting_enable_checkbox)
+        self.playwright_setting_enable_container = Horizontal(
+            self.playwright_setting_enable_label, self.playwright_setting_enable_checkbox, id="playwright_setting_enable_container")
+        self.playwright_setting_resolution_label = Label(
+            "Resolution", id="playwright_setting_resolution_label")
+        self.playwright_setting_width_input = Input(
+            placeholder="Width", type="integer", id="playwright_setting_width_input", value=str(self.value_playwright_setting_width_input))
+        self.playwright_setting_height_input = Input(
+            placeholder="Height", type="integer", id="playwright_setting_height_input", value=str(self.value_playwright_setting_height_input))
+        self.playwright_setting_resolution_container = Horizontal(
+            self.playwright_setting_resolution_label, self.playwright_setting_width_input, self.playwright_setting_height_input, id="playwright_setting_resolution_container")
+        self.playwright_setting_container = Vertical(
+            self.playwright_setting_enable_container, self.playwright_setting_resolution_container, id="playwright_setting_container")
         self.playwright_setting_container.border_title = "Playwright"
 
-        self.setting_save_button = Button("Save", variant="warning", id="setting_save_button")
+        self.setting_save_button = Button(
+            "Save", variant="warning", id="setting_save_button")
 
-        self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die = HoverLink("Akagi is Free and Open Sourced on GitHub.\n本程式Akagi在GitHub上完全開源且免費。如果你是付費取得的，你已經被賣家欺騙，請立即舉報、差評、退款。", "https://github.com/shinkuan/Akagi", id="remove_this_you_die")
+        self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die = HoverLink(
+            "Akagi is Free and Open Sourced on GitHub.\n本程式Akagi在GitHub上完全開源且免費。如果你是付費取得的，你已經被賣家欺騙，請立即舉報、差評、退款。", "https://github.com/shinkuan/Akagi", id="remove_this_you_die")
 
         self.setting_container = ScrollableContainer(
-                                                     self.port_setting_container, 
-                                                     self.unlocker_setting_container, 
-                                                     self.helper_setting_container,
-                                                     self.autoplay_setting_container,
-                                                     self.playwright_setting_container,
-                                                     self.setting_save_button,
-                                                     self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die,
-                                                     id="setting_container"
-                                                    )
+            self.port_setting_container,
+            self.unlocker_setting_container,
+            self.helper_setting_container,
+            self.autoplay_setting_container,
+            self.playwright_setting_container,
+            self.setting_save_button,
+            self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die,
+            id="setting_container"
+        )
 
         yield self.setting_container
 
@@ -393,14 +459,14 @@ class Akagi(App):
     def __init__(self, rpc_server, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.rpc_server = rpc_server
-        self.liqi: dict[str, LiqiProto]={}
-        self.bridge: dict[str, MajsoulBridge]={}
+        self.liqi: dict[str, LiqiProto] = {}
+        self.bridge: dict[str, MajsoulBridge] = {}
         self.active_flows = []
-        self.messages_dict = dict() # flow.id -> List[flow_msg]
-        self.liqi_msg_dict = dict() # flow.id -> List[liqi_msg]
-        self.mjai_msg_dict = dict() # flow.id -> List[mjai_msg]
-        self.akagi_log_dict= dict() # flow.id -> List[akagi_log]
-        self.loguru_log = [] # List[loguru_log]
+        self.messages_dict = dict()  # flow.id -> List[flow_msg]
+        self.liqi_msg_dict = dict()  # flow.id -> List[liqi_msg]
+        self.mjai_msg_dict = dict()  # flow.id -> List[mjai_msg]
+        self.akagi_log_dict = dict()  # flow.id -> List[akagi_log]
+        self.loguru_log = []  # List[loguru_log]
         self.mitm_started = False
 
     def on_mount(self) -> None:
@@ -430,7 +496,8 @@ class Akagi(App):
             try:
                 self.query_one(f"#flow_{flow_id}")
             except NoMatches:
-                self.query_one("#FlowContainer").mount(FlowDisplay(flow_id, id=f"flow_{flow_id}"))
+                self.query_one("#FlowContainer").mount(
+                    FlowDisplay(flow_id, id=f"flow_{flow_id}"))
                 self.active_flows.append(flow_id)
                 self.messages_dict[flow_id] = []
                 self.liqi_msg_dict[flow_id] = []
@@ -488,7 +555,8 @@ class Akagi(App):
 
     def my_sink(self, message) -> None:
         record = message.record
-        self.loguru_log.append(f"{record['time'].strftime('%H:%M:%S')} | {record['level'].name}\t | {record['message']}")
+        self.loguru_log.append(
+            f"{record['time'].strftime('%H:%M:%S')} | {record['level'].name}\t | {record['message']}")
 
     def action_quit(self) -> None:
         self.update_flow.stop()
@@ -504,15 +572,23 @@ def exit_handler():
         pass
     pass
 
+
 def start_mitm():
-    global mitm_exec
-    mitm_exec = Popen([executable, pathlib.Path(__file__).parent / "mitm.py"], creationflags=CREATE_NEW_CONSOLE)
-    pass
+    command = [sys.executable, pathlib.Path(__file__).parent / "mitm.py"]
+
+    if sys.platform == "win32":
+        # Windows特定代码
+        mitm_exec = subprocess.Popen(
+            command, creationflags=subprocess.CREATE_NEW_CONSOLE)
+    else:
+        # macOS和其他Unix-like系统
+        mitm_exec = subprocess.Popen(command, preexec_fn=os.setsid)
+
 
 if __name__ == '__main__':
     with open("settings.json", "r") as f:
         settings = json.load(f)
-        rpc_port = settings["Port"]["XMLRPC"] 
+        rpc_port = settings["Port"]["XMLRPC"]
     rpc_host = "127.0.0.1"
     s = ServerProxy(f"http://{rpc_host}:{rpc_port}", allow_none=True)
     logger.level("CLICK", no=10, icon="CLICK")
@@ -526,4 +602,3 @@ if __name__ == '__main__':
     except Exception as e:
         exit_handler()
         raise e
-    
