@@ -568,12 +568,15 @@ def exit_handler():
     global mitm_exec
     try:
         mitm_exec.kill()
+        logger.info("Stop Akagi")
     except:
         pass
     pass
 
 
 def start_mitm():
+    global mitm_exec
+
     command = [sys.executable, pathlib.Path(__file__).parent / "mitm.py"]
 
     if sys.platform == "win32":
