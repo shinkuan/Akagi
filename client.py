@@ -25,7 +25,7 @@ from textual.screen import Screen
 from liqi import LiqiProto, MsgType
 from majsoul2mjai import MajsoulBridge
 from libriichi_helper import meta_to_recommend, state_to_tehai
-from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
+from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE, HAI_VALUE
 from action import Action
 
 submission = 'players/bot.zip'
@@ -63,13 +63,17 @@ class FlowScreen(Screen):
         liqi_log_container.border_title = "LiqiProto"
         mjai_log_container.border_title = "Mjai"
         tehai_labels = [Label(TILE_2_UNICODE_ART_RICH["?"], id="tehai_"+str(i)) for i in range(13)]
+        tehai_value_labels = [Label(HAI_VALUE[40], id="tehai_value_"+str(i)) for i in range(13)]
         tehai_rule = Label(VERTICLE_RULE, id="tehai_rule")
         tsumohai_label = Label(TILE_2_UNICODE_ART_RICH["?"], id="tsumohai")
+        tsumohai_value_label = Label(HAI_VALUE[40], id="tsumohai_value")
         tehai_container = Horizontal(id="tehai_container")
-        for tehai_label in tehai_labels:
-            tehai_container.mount(tehai_label)
+        for i in range(13):
+            tehai_container.mount(tehai_labels[i])
+            tehai_container.mount(tehai_value_labels[i])
         tehai_container.mount(tehai_rule)
         tehai_container.mount(tsumohai_label)
+        tehai_container.mount(tsumohai_value_label)
         tehai_container.border_title = "Tehai"
         akagi_action = Button("Akagi", id="akagi_action", variant="default")
         akagi_pai    = Button("Pai", id="akagi_pai", variant="default")
@@ -103,8 +107,10 @@ class FlowScreen(Screen):
         self.liqi_log_container = self.query_one("#liqi_log_container")
         self.mjai_log_container = self.query_one("#mjai_log_container")
         self.tehai_labels = [self.query_one("#tehai_"+str(i)) for i in range(13)]
+        self.tehai_value_labels = [self.query_one("#tehai_value_"+str(i)) for i in range(13)]
         self.tehai_rule = self.query_one("#tehai_rule")
         self.tsumohai_label = self.query_one("#tsumohai")
+        self.tsumohai_value_label = self.query_one("#tsumohai_value")
         self.tehai_container = self.query_one("#tehai_container")
         self.liqi_log_container.scroll_end()
         self.mjai_log_container.scroll_end()
@@ -151,13 +157,33 @@ class FlowScreen(Screen):
                     logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
                     self.app.set_timer(2, self.autoplay)
             if self.mjai_msg_idx < len(self.app.mjai_msg_dict[self.flow_id]):
+                self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(self.app.mjai_msg_dict[self.flow_id][-1]['meta'])
+                latest_mjai_msg = self.app.mjai_msg_dict[self.flow_id][-1]
+                # Update tehai
                 player_state = self.app.bridge[self.flow_id].mjai_client.bot.state()
                 tehai, tsumohai = state_to_tehai(player_state)
                 for idx, tehai_label in enumerate(self.tehai_labels):
                     tehai_label.update(TILE_2_UNICODE_ART_RICH[tehai[idx]])
+                action_list = [x[0] for x in latest_mjai_msg['meta']]
+                for idx, tehai_value_label in enumerate(self.tehai_value_labels):
+                    # latest_mjai_msg['meta'] is list of (pai, value)
+                    try:
+                        pai_value = int(latest_mjai_msg['meta'][action_list.index(tehai[idx])][1] * 40)
+                        if pai_value == 40:
+                            pai_value = 39
+                    except ValueError:
+                        pai_value = 40
+                    tehai_value_label.update(HAI_VALUE[pai_value])
                 self.tsumohai_label.update(TILE_2_UNICODE_ART_RICH[tsumohai])
-                latest_mjai_msg = self.app.mjai_msg_dict[self.flow_id][-1]
-                self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(latest_mjai_msg['meta'])
+                if tsumohai in action_list:
+                    try:
+                        pai_value = int(latest_mjai_msg['meta'][action_list.index(tsumohai)][1] * 40)
+                        if pai_value == 40:
+                            pai_value = 39
+                    except ValueError:
+                        pai_value = 40
+                    self.tsumohai_value_label.update(HAI_VALUE[pai_value])
+                # mjai log
                 self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
                 self.mjai_log_container.scroll_end()
                 self.mjai_msg_idx += 1
