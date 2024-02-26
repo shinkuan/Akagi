@@ -7,10 +7,7 @@ from typing import List, Tuple, Dict
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-try:
-    from .proto import liqi_pb2 as pb
-except:
-    from proto import liqi_pb2 as pb
+from liqi_proto import liqi_pb2 as pb
 
 from rich.console import Console
 console = Console()
@@ -48,7 +45,7 @@ class LiqiProto:
         self.tot = 0 
         self.res_type = dict()
         self.jsonProto = json.load(
-            open(os.path.join(os.path.dirname(__file__), 'proto/liqi.json'), 'r'))
+            open(os.path.join(os.path.dirname(__file__), 'liqi_proto/liqi.json'), 'r'))
 
     def init(self):
         self.msg_id = 1
