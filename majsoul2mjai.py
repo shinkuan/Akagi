@@ -6,7 +6,7 @@ from liqi import MsgType
 from convert import MS_TILE_2_MJAI_TILE, MJAI_TILE_2_MS_TILE
 from liqi import LiqiProto
 from functools import cmp_to_key
-from loguru import logger
+from my_logger import logger, game_result_log
 
 class Operation:
     NoEffect = 0
@@ -47,6 +47,10 @@ class MajsoulBridge:
         self.my_tsumohai = "?"
         self.syncing = False
 
+        self.mode_id = -1
+        self.rank = -1
+        self.score = -1
+
         self.mjai_client = MjaiPlayerClient()
         self.is_3p = False
         pass
@@ -76,6 +80,10 @@ class MajsoulBridge:
             self.accountId = parse_msg['data']['accountId']
         if parse_msg['method'] == '.lq.FastTest.authGame' and parse_msg['type'] == MsgType.Res:
             self.is_3p = len(parse_msg['data']['seatList']) == 3
+            try:
+                self.mode_id = parse_msg['data']['gameConfig']['meta']['modeId']
+            except:
+                self.mode_id = -1
 
             seatList = parse_msg['data']['seatList']
             self.seat = seatList.index(self.accountId)
@@ -359,6 +367,14 @@ class MajsoulBridge:
                     return self.react(self.mjai_client)
         # end_game
         if parse_msg['method'] == '.lq.NotifyGameEndResult' or parse_msg['method'] == '.lq.NotifyGameTerminate':
+            try:
+                for idx, player in enumerate(parse_msg['data']['result']['players']):
+                    if player['seat'] == self.seat:
+                        self.rank = idx + 1
+                        self.score = player['partPoint1']
+                        game_result_log(self.mode_id, self.rank, self.score, self.mjai_client.bot.model_hash)
+            except:
+                pass
             self.mjai_message.append(
                 {
                     'type': 'end_game'

@@ -6,14 +6,13 @@ import subprocess
 import sys
 import time
 import webbrowser
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from sys import executable
 from threading import Thread
 from typing import Any, Coroutine
 from xmlrpc.client import ServerProxy
 
-from loguru import logger
+from my_logger import logger, game_result_log
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
@@ -29,9 +28,7 @@ from liqi import LiqiProto, MsgType
 from majsoul2mjai import MajsoulBridge
 from libriichi_helper import meta_to_recommend, state_to_tehai
 from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE, HAI_VALUE
-from action import Action
 
-os.environ["LOGURU_AUTOINIT"] = "False"
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
@@ -435,7 +432,6 @@ class Akagi(App):
         self.liqi_msg_dict  = dict() # flow.id -> List[liqi_msg]
         self.mjai_msg_dict  = dict() # flow.id -> List[mjai_msg]
         self.akagi_log_dict = dict() # flow.id -> List[akagi_log]
-        self.loguru_log = []         # List[loguru_log]
         self.mitm_started = False
 
     def on_mount(self) -> None:
@@ -457,6 +453,8 @@ class Akagi(App):
                 self.liqi_msg_dict.pop(flow_id)
                 self.mjai_msg_dict.pop(flow_id)
                 self.akagi_log_dict.pop(flow_id)
+                self.liqi.pop(flow_id)
+                self.bridge.pop(flow_id)
         for flow_id in flows:
             try:
                 self.query_one("#FlowContainer")
@@ -525,10 +523,6 @@ class Akagi(App):
         except:
             self.set_timer(2, self.mitm_connected)
 
-    def my_sink(self, message) -> None:
-        record = message.record
-        self.loguru_log.append(f"{record['time'].strftime('%H:%M:%S')} | {record['level'].name}\t | {record['message']}")
-
     def action_quit(self) -> None:
         self.update_flow.stop()
         self.get_messages_flow.stop()
@@ -564,10 +558,7 @@ if __name__ == '__main__':
         rpc_port = settings["Port"]["XMLRPC"]
     rpc_host = "127.0.0.1"
     s = ServerProxy(f"http://{rpc_host}:{rpc_port}", allow_none=True)
-    logger.level("CLICK", no=10, icon="CLICK")
-    logger.add("akagi.log")
     app = Akagi(rpc_server=s)
-    logger.add(app.my_sink)
     atexit.register(exit_handler)
     try:
         logger.info("Start Akagi")
