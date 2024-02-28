@@ -71,8 +71,8 @@ async def start_proxy(host, port, enable_unlocker):
     master.addons.add(ClientWebSocket())
     if enable_unlocker:
         master.addons.add(ClientHTTP())
-        from mhm.addons import WebSocketAddon as Unlocker
-        master.addons.add(Unlocker())
+    from mhm.addons import WebSocketAddon as Unlocker
+    master.addons.add(Unlocker())
     await master.run()
     return master
 
