@@ -8,6 +8,6 @@ rich==13.7.0
 textual==0.46.0
 playwright==1.41.0
 torch>=2.2.0
-aliyun-log-python-sdk==0.8.15
+git+https://github.com/shinkuan/aliyun-log-python-sdk
 --find-links https://github.com/shinkuan/Akagi/releases/expanded_assets/v0.1.0-libriichi
 riichi>=0.1.1
