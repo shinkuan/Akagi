@@ -1,6 +1,7 @@
 import json
 import sys
 import hashlib
+import pathlib
 
 from loguru import logger
 
@@ -10,7 +11,7 @@ from . import model
 class Bot:
     def __init__(self, player_id: int):
         self.player_id = player_id
-        model_path = "./mortal.pth"
+        model_path = pathlib.Path(__file__).parent / f"mortal.pth"
         self.model = model.load_model(player_id)
         with open(model_path, "rb") as f:
             self.model_hash = hashlib.sha256(f.read()).hexdigest()
