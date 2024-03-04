@@ -250,6 +250,8 @@ class MortalEngine:
         boltzmann_epsilon = 0,
         boltzmann_temp = 1,
         top_p = 1,
+        r = False,
+        key = "",
     ):
         self.engine_type = 'mortal'
         self.device = device or torch.device('cpu')
@@ -268,6 +270,8 @@ class MortalEngine:
         self.boltzmann_epsilon = boltzmann_epsilon
         self.boltzmann_temp = boltzmann_temp
         self.top_p = top_p
+        self.r = r
+        self.key = key
 
     def react_batch(self, obs, masks, invisible_obs):
         with (
@@ -304,7 +308,6 @@ class MortalEngine:
         else:
             is_greedy = torch.ones(batch_size, dtype=torch.bool, device=self.device)
             actions = q_out.argmax(-1)
-
         return actions.tolist(), q_out.tolist(), masks.tolist(), is_greedy.tolist()
 
 def sample_top_p(logits, p):
@@ -335,9 +338,17 @@ def load_model(seat: int) -> riichi.mjai.Bot:
 
     # Get the path of control_state_file = current directory / control_state_file
     control_state_file = pathlib.Path(__file__).parent / control_state_file
-
-
     state = torch.load(control_state_file, map_location=device)
+
+    key = ""
+    if 'r' in state['config']:
+        del state
+        from . import obfuscated_model
+        engine = obfuscated_model.IIIIIllllll()
+        return riichi.mjai.Bot(engine, seat)
+    else:
+        r = False
+
     mortal = Brain(version=state['config']['control']['version'], conv_channels=state['config']['resnet']['conv_channels'], num_blocks=state['config']['resnet']['num_blocks']).eval()
     dqn = DQN(version=state['config']['control']['version']).eval()
     mortal.load_state_dict(state['mortal'])
@@ -350,9 +361,11 @@ def load_model(seat: int) -> riichi.mjai.Bot:
         device = device,
         enable_amp = False,
         enable_quick_eval = False,
-        enable_rule_based_agari_guard = True,
+        enable_rule_based_agari_guard = False,
         name = 'mortal',
-        version= state['config']['control']['version']
+        version = state['config']['control']['version'],
+        r = r,
+        key = key,
     )
 
     bot = riichi.mjai.Bot(engine, seat)
