@@ -1,8 +1,8 @@
 {
-    "Unlocker": true,
+    "Unlocker": false,
     "v10": false,
-    "Autoplay": true,
-    "Helper": true,
+    "Autoplay": false,
+    "Helper": false,
     "Autohu": true,
     "Port": {
         "MITM": 7878,
