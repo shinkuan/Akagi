@@ -10,5 +10,5 @@ playwright==1.41.0
 pycryptodome==3.20.0
 torch>=2.2.0
 git+https://github.com/shinkuan/aliyun-log-python-sdk
---find-links https://github.com/shinkuan/Akagi/releases/expanded_assets/v0.1.0-libriichi
+--find-links https://github.com/shinkuan/Akagi/releases/expanded_assets/v0.1.1-libriichi
 riichi>=0.1.1
