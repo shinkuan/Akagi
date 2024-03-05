@@ -114,8 +114,8 @@ class FlowScreen(Screen):
         self.tsumohai_label = self.query_one("#tsumohai")
         self.tsumohai_value_label = self.query_one("#tsumohai_value")
         self.tehai_container = self.query_one("#tehai_container")
-        self.liqi_log_container.scroll_end()
-        self.mjai_log_container.scroll_end()
+        self.liqi_log_container.scroll_end(animate=False)
+        self.mjai_log_container.scroll_end(animate=False)
         self.liqi_msg_idx = len(self.app.liqi_msg_dict[self.flow_id])
         self.mjai_msg_idx = len(self.app.mjai_msg_dict[self.flow_id])
         self.update_log = self.set_interval(0.10, self.refresh_log)
@@ -135,7 +135,7 @@ class FlowScreen(Screen):
         try:
             if self.liqi_msg_idx < len(self.app.liqi_msg_dict[self.flow_id]):
                 self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id][-1])
-                self.liqi_log_container.scroll_end()
+                self.liqi_log_container.scroll_end(animate=False)
                 self.liqi_msg_idx += 1
                 liqi_msg = self.app.liqi_msg_dict[self.flow_id][-1]
                 if liqi_msg['type'] == MsgType.Notify:
@@ -187,7 +187,7 @@ class FlowScreen(Screen):
                     self.tsumohai_value_label.update(HAI_VALUE[pai_value])
                 # mjai log
                 self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
-                self.mjai_log_container.scroll_end()
+                self.mjai_log_container.scroll_end(animate=False)
                 self.mjai_msg_idx += 1
                 self.akagi_action.label = latest_mjai_msg["type"]
                 for akagi_action_class in self.akagi_action.classes:
@@ -219,10 +219,12 @@ class FlowScreen(Screen):
                 # Action
                 logger.info(f"Current tehai: {tehai}")
                 logger.info(f"Current tsumohai: {tsumohai}")
+                self.tehai = tehai
+                self.tsumohai = tsumohai
                 if not self.syncing and ENABLE_PLAYWRIGHT and AUTOPLAY:
                     logger.log("CLICK", latest_mjai_msg)
-                    # self.app.set_timer(0.05, self.autoplay)
-                    self.autoplay(tehai, tsumohai)
+                    self.app.set_timer(0.15, self.autoplay)
+                    # self.autoplay(tehai, tsumohai)
                     
         except Exception as e:
             logger.error(e)
@@ -234,8 +236,8 @@ class FlowScreen(Screen):
         AUTOPLAY = event.value
         pass
         
-    def autoplay(self, tehai, tsumohai) -> None:
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], tehai, tsumohai)
+    def autoplay(self) -> None:
+        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai)
         pass
 
     def action_quit(self) -> None:
