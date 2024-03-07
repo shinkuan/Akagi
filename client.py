@@ -186,7 +186,7 @@ class FlowScreen(Screen):
                         pai_value = 40
                     self.tsumohai_value_label.update(HAI_VALUE[pai_value])
                 # mjai log
-                self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
+                self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id][-3:])
                 self.mjai_log_container.scroll_end(animate=False)
                 self.mjai_msg_idx += 1
                 self.akagi_action.label = latest_mjai_msg["type"]
