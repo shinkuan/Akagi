@@ -487,7 +487,7 @@ TILE_2_UNICODE_ART_RICH = {
 │      │
 ╰──────╯""",
     '?': 
-    """[bold gray]╭─────╮
+    """[bold]╭─────╮
 │ ┏━┓ │
 │  ┏┛ │
 │  ●  │
@@ -499,3 +499,48 @@ VERTICLE_RULE = """║
 ║
 ║
 ║"""
+
+#▁▂▃▄▅▆▇█
+HAI_VALUE = [
+'[red]\n \n \n \n▁',
+'[red]\n \n \n \n▂',
+'[red]\n \n \n \n▃',
+'[red]\n \n \n \n▄',        # ~ 10%
+'[yellow]\n \n \n \n▅',
+'[yellow]\n \n \n \n▆',
+'[yellow]\n \n \n \n▇',
+'[yellow]\n \n \n \n█',     # ~ 20%
+'[yellow]\n \n \n▁\n█',
+'[yellow]\n \n \n▂\n█',
+'[yellow]\n \n \n▃\n█',
+'[yellow]\n \n \n▄\n█',     # ~ 30%
+'[yellow]\n \n \n▅\n█',
+'[yellow]\n \n \n▆\n█',
+'[yellow]\n \n \n▇\n█',
+'[yellow]\n \n \n█\n█',     # ~ 40%
+'[green]\n \n▁\n█\n█',
+'[green]\n \n▂\n█\n█',
+'[green]\n \n▃\n█\n█',
+'[green]\n \n▄\n█\n█',      # ~ 50%
+'[green]\n \n▅\n█\n█',
+'[green]\n \n▆\n█\n█',
+'[green]\n \n▇\n█\n█',
+'[green]\n \n█\n█\n█',      # ~ 60%
+'[green]\n▁\n█\n█\n█',
+'[green]\n▂\n█\n█\n█',
+'[green]\n▃\n█\n█\n█',
+'[green]\n▄\n█\n█\n█',      # ~ 70%
+'[green]\n▅\n█\n█\n█',
+'[green]\n▆\n█\n█\n█',
+'[green]\n▇\n█\n█\n█',
+'[green]\n█\n█\n█\n█',      # ~ 80%
+'[blue]▁\n█\n█\n█\n█',
+'[blue]▂\n█\n█\n█\n█',
+'[blue]▃\n█\n█\n█\n█',
+'[blue]▄\n█\n█\n█\n█',     # ~ 90%
+'[blue]▅\n█\n█\n█\n█',
+'[blue]▆\n█\n█\n█\n█',
+'[blue]▇\n█\n█\n█\n█',
+'[blue]█\n█\n█\n█\n█',     # ~ 100%
+''                         # none
+]

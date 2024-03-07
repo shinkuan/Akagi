@@ -9,7 +9,6 @@ import mitmproxy.http
 import mitmproxy.log
 import mitmproxy.tcp
 import mitmproxy.websocket
-import mhm
 from pathlib import Path
 from optparse import OptionParser
 from mitmproxy import proxy, options, ctx
@@ -70,16 +69,16 @@ async def start_proxy(host, port, enable_unlocker):
         with_dumper=False,
     )
     master.addons.add(ClientWebSocket())
-    master.addons.add(ClientHTTP())
     if enable_unlocker:
-        from mhm.addons import WebSocketAddon as Unlocker
-        master.addons.add(Unlocker())
+        master.addons.add(ClientHTTP())
+    from mhm.addons import WebSocketAddon as Unlocker
+    master.addons.add(Unlocker())
     await master.run()
     return master
 
 # Create a XMLRPC server
 class LiqiServer:
-    _rpc_methods_ = ['get_activated_flows', 'get_messages', 'reset_message_idx', 'page_clicker', 'do_autohu']
+    _rpc_methods_ = ['get_activated_flows', 'get_messages', 'reset_message_idx', 'page_clicker', 'do_autohu', 'ping']
     def __init__(self, host, port):
         self.host = host
         self.port = port
@@ -115,6 +114,9 @@ class LiqiServer:
     def do_autohu(self):
         global do_autohu
         do_autohu = True
+        return True
+
+    def ping(self):
         return True
 
     def serve_forever(self):
@@ -155,15 +157,16 @@ if __name__ == '__main__':
     if opts.unlocker is not None:
         enable_unlocker = bool(opts.unlocker)
 
-    print("fetching resver...")
-    mhm.fetch_resver()
-
     with open("mhmp.json", "r") as f:
         mhmp = json.load(f)
         mhmp["mitmdump"]["mode"] = [f"regular@{mitm_port}"]
+        mhmp["hook"]["enable_skins"] = enable_unlocker
         mhmp["hook"]["enable_aider"] = enable_helper
     with open("mhmp.json", "w") as f:
         json.dump(mhmp, f, indent=4)
+    import mhm
+    print("fetching resver...")
+    mhm.fetch_resver()
     # Create and start the proxy server thread
     proxy_thread = threading.Thread(target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker)))
     proxy_thread.start()

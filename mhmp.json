@@ -4,8 +4,8 @@
         "pure_python_protobuf": false
     },
     "hook": {
-        "enable_skins": true,
-        "enable_aider": true,
+        "enable_skins": false,
+        "enable_aider": false,
         "enable_chest": false,
         "random_star_char": false,
         "no_cheering_emotes": false

@@ -1,35 +1,34 @@
 import atexit
+import json
 import os
-from pathlib import Path
-import time
-os.environ["LOGURU_AUTOINIT"] = "False"
-
 import pathlib
+import subprocess
+import sys
+import time
 import webbrowser
+from pathlib import Path
 from sys import executable
-from subprocess import Popen, CREATE_NEW_CONSOLE
-
+from threading import Thread
 from typing import Any, Coroutine
 from xmlrpc.client import ServerProxy
-import json
-from loguru import logger
 
-from textual import on  
+from my_logger import logger, game_result_log
+from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import ScrollableContainer, Horizontal, Vertical
-from textual.events import Event, ScreenResume
-from textual.widgets import Button, Footer, Header, Static, Log, Pretty, Label, Rule, LoadingIndicator, Checkbox, Input, Markdown
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.css.query import NoMatches
+from textual.events import Event, ScreenResume
 from textual.screen import Screen
+from textual.widgets import (Button, Checkbox, Footer, Header, Input, Label,
+                             LoadingIndicator, Log, Markdown, Pretty, Rule,
+                             Static)
 
-from liqi import LiqiProto, MsgType
-from mjai.player import MjaiPlayerClient
-from majsoul2mjai import MajsoulBridge
-from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE
 from action import Action
-from concurrent.futures import ThreadPoolExecutor
-from threading import Thread
-from playwright.sync_api import Playwright, sync_playwright
+from liqi import LiqiProto, MsgType
+from majsoul2mjai import MajsoulBridge
+from libriichi_helper import meta_to_recommend, state_to_tehai
+from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE, HAI_VALUE
+
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
@@ -66,13 +65,17 @@ class FlowScreen(Screen):
         liqi_log_container.border_title = "LiqiProto"
         mjai_log_container.border_title = "Mjai"
         tehai_labels = [Label(TILE_2_UNICODE_ART_RICH["?"], id="tehai_"+str(i)) for i in range(13)]
+        tehai_value_labels = [Label(HAI_VALUE[40], id="tehai_value_"+str(i)) for i in range(13)]
         tehai_rule = Label(VERTICLE_RULE, id="tehai_rule")
         tsumohai_label = Label(TILE_2_UNICODE_ART_RICH["?"], id="tsumohai")
+        tsumohai_value_label = Label(HAI_VALUE[40], id="tsumohai_value")
         tehai_container = Horizontal(id="tehai_container")
-        for tehai_label in tehai_labels:
-            tehai_container.mount(tehai_label)
+        for i in range(13):
+            tehai_container.mount(tehai_labels[i])
+            tehai_container.mount(tehai_value_labels[i])
         tehai_container.mount(tehai_rule)
         tehai_container.mount(tsumohai_label)
+        tehai_container.mount(tsumohai_value_label)
         tehai_container.border_title = "Tehai"
         akagi_action = Button("Akagi", id="akagi_action", variant="default")
         akagi_pai    = Button("Pai", id="akagi_pai", variant="default")
@@ -106,11 +109,13 @@ class FlowScreen(Screen):
         self.liqi_log_container = self.query_one("#liqi_log_container")
         self.mjai_log_container = self.query_one("#mjai_log_container")
         self.tehai_labels = [self.query_one("#tehai_"+str(i)) for i in range(13)]
+        self.tehai_value_labels = [self.query_one("#tehai_value_"+str(i)) for i in range(13)]
         self.tehai_rule = self.query_one("#tehai_rule")
         self.tsumohai_label = self.query_one("#tsumohai")
+        self.tsumohai_value_label = self.query_one("#tsumohai_value")
         self.tehai_container = self.query_one("#tehai_container")
-        self.liqi_log_container.scroll_end()
-        self.mjai_log_container.scroll_end()
+        self.liqi_log_container.scroll_end(animate=False)
+        self.mjai_log_container.scroll_end(animate=False)
         self.liqi_msg_idx = len(self.app.liqi_msg_dict[self.flow_id])
         self.mjai_msg_idx = len(self.app.mjai_msg_dict[self.flow_id])
         self.update_log = self.set_interval(0.10, self.refresh_log)
@@ -130,11 +135,8 @@ class FlowScreen(Screen):
         try:
             if self.liqi_msg_idx < len(self.app.liqi_msg_dict[self.flow_id]):
                 self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id][-1])
-                self.liqi_log_container.scroll_end()
+                self.liqi_log_container.scroll_end(animate=False)
                 self.liqi_msg_idx += 1
-                for idx, tehai_label in enumerate(self.tehai_labels):
-                    tehai_label.update(TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tehais[idx]])
-                self.tsumohai_label.update(TILE_2_UNICODE_ART_RICH[self.app.bridge[self.flow_id].my_tsumohai])
                 liqi_msg = self.app.liqi_msg_dict[self.flow_id][-1]
                 if liqi_msg['type'] == MsgType.Notify:
                     if liqi_msg['method'] == '.lq.ActionPrototype':
@@ -149,50 +151,80 @@ class FlowScreen(Screen):
                             self.action.reached = False
                     if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
                         self.action_quit()
-                    
+
             elif self.syncing:
                 self.query_one("#loading_indicator").remove()
                 self.syncing = False
-                if AUTOPLAY:
+                if AUTOPLAY and len(self.app.mjai_msg_dict[self.flow_id]) > 0:
                     logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
                     self.app.set_timer(2, self.autoplay)
             if self.mjai_msg_idx < len(self.app.mjai_msg_dict[self.flow_id]):
-                self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
-                self.mjai_log_container.scroll_end()
+                self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(self.app.mjai_msg_dict[self.flow_id][-1]['meta'])
+                latest_mjai_msg = self.app.mjai_msg_dict[self.flow_id][-1]
+                # Update tehai
+                player_state = self.app.bridge[self.flow_id].mjai_client.bot.state()
+                tehai, tsumohai = state_to_tehai(player_state)
+                for idx, tehai_label in enumerate(self.tehai_labels):
+                    tehai_label.update(TILE_2_UNICODE_ART_RICH[tehai[idx]])
+                action_list = [x[0] for x in latest_mjai_msg['meta']]
+                for idx, tehai_value_label in enumerate(self.tehai_value_labels):
+                    # latest_mjai_msg['meta'] is list of (pai, value)
+                    try:
+                        pai_value = int(latest_mjai_msg['meta'][action_list.index(tehai[idx])][1] * 40)
+                        if pai_value == 40:
+                            pai_value = 39
+                    except ValueError:
+                        pai_value = 40
+                    tehai_value_label.update(HAI_VALUE[pai_value])
+                self.tsumohai_label.update(TILE_2_UNICODE_ART_RICH[tsumohai])
+                if tsumohai in action_list:
+                    try:
+                        pai_value = int(latest_mjai_msg['meta'][action_list.index(tsumohai)][1] * 40)
+                        if pai_value == 40:
+                            pai_value = 39
+                    except ValueError:
+                        pai_value = 40
+                    self.tsumohai_value_label.update(HAI_VALUE[pai_value])
+                # mjai log
+                self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id][-3:])
+                self.mjai_log_container.scroll_end(animate=False)
                 self.mjai_msg_idx += 1
-                self.akagi_action.label = self.app.mjai_msg_dict[self.flow_id][-1]["type"]
+                self.akagi_action.label = latest_mjai_msg["type"]
                 for akagi_action_class in self.akagi_action.classes:
                     self.akagi_action.remove_class(akagi_action_class)
-                self.akagi_action.add_class("action_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
+                self.akagi_action.add_class("action_"+latest_mjai_msg["type"])
                 for akagi_pai_class in self.akagi_pai.classes:
                     self.akagi_pai.remove_class(akagi_pai_class)
-                self.akagi_pai.add_class("pai_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
-                if "consumed" in self.app.mjai_msg_dict[self.flow_id][-1]:
-                    self.akagi_pai.label = str(self.app.mjai_msg_dict[self.flow_id][-1]["consumed"])
-                    if "pai" in self.app.mjai_msg_dict[self.flow_id][-1]:
-                        self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[self.app.mjai_msg_dict[self.flow_id][-1]["pai"]])
+                self.akagi_pai.add_class("pai_"+latest_mjai_msg["type"])
+                if "consumed" in latest_mjai_msg:
+                    self.akagi_pai.label = str(latest_mjai_msg["consumed"])
+                    if "pai" in latest_mjai_msg:
+                        self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[latest_mjai_msg["pai"]])
                     self.akagi_container.mount(Label(VERTICLE_RULE, id="consumed_rule"))
                     self.consume_ids.append("#"+"consumed_rule")
                     i=0
-                    for c in self.app.mjai_msg_dict[self.flow_id][-1]["consumed"]:
+                    for c in latest_mjai_msg["consumed"]:
                         self.akagi_container.mount(Label(TILE_2_UNICODE_ART_RICH[c], id="consumed_"+c+str(i)))
                         self.consume_ids.append("#"+"consumed_"+c+str(i))
                         i+=1
-                elif "pai" in self.app.mjai_msg_dict[self.flow_id][-1]:
+                elif "pai" in latest_mjai_msg:
                     for consume_id in self.consume_ids:
                         self.query_one(consume_id).remove()
                     self.consume_ids = []
-                    self.akagi_pai.label = str(self.app.mjai_msg_dict[self.flow_id][-1]["pai"])
-                    self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[self.app.mjai_msg_dict[self.flow_id][-1]["pai"]])
+                    self.akagi_pai.label = str(latest_mjai_msg["pai"])
+                    self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[latest_mjai_msg["pai"]])
                 else:
                     self.akagi_pai.label = "None"
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH["?"])
                 # Action
-                logger.info(f"Current tehai: {self.app.bridge[self.flow_id].my_tehais}")
-                logger.info(f"Current tsumohai: {self.app.bridge[self.flow_id].my_tsumohai}")
+                logger.info(f"Current tehai: {tehai}")
+                logger.info(f"Current tsumohai: {tsumohai}")
+                self.tehai = tehai
+                self.tsumohai = tsumohai
                 if not self.syncing and ENABLE_PLAYWRIGHT and AUTOPLAY:
-                    logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
-                    self.app.set_timer(0.05, self.autoplay)
+                    logger.log("CLICK", latest_mjai_msg)
+                    self.app.set_timer(0.15, self.autoplay)
+                    # self.autoplay(tehai, tsumohai)
                     
         except Exception as e:
             logger.error(e)
@@ -205,7 +237,7 @@ class FlowScreen(Screen):
         pass
         
     def autoplay(self) -> None:
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.app.bridge[self.flow_id].my_tehais, self.app.bridge[self.flow_id].my_tsumohai)
+        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai)
         pass
 
     def action_quit(self) -> None:
@@ -227,6 +259,7 @@ class FlowDisplay(Static):
         self.app.push_screen(FlowScreen(self.flow_id))
         self.app.update_flow.pause()
 
+
 class HoverLink(Static):
     def __init__(self, text, url, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -239,6 +272,7 @@ class HoverLink(Static):
     def on_click(self, event):
         webbrowser.open_new_tab(self.url)
         pass
+
 
 class SettingsScreen(Static):
 
@@ -393,14 +427,13 @@ class Akagi(App):
     def __init__(self, rpc_server, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.rpc_server = rpc_server
-        self.liqi: dict[str, LiqiProto]={}
-        self.bridge: dict[str, MajsoulBridge]={}
+        self.liqi: dict[str, LiqiProto] = {}
+        self.bridge: dict[str, MajsoulBridge] = {}
         self.active_flows = []
-        self.messages_dict = dict() # flow.id -> List[flow_msg]
-        self.liqi_msg_dict = dict() # flow.id -> List[liqi_msg]
-        self.mjai_msg_dict = dict() # flow.id -> List[mjai_msg]
-        self.akagi_log_dict= dict() # flow.id -> List[akagi_log]
-        self.loguru_log = [] # List[loguru_log]
+        self.messages_dict  = dict() # flow.id -> List[flow_msg]
+        self.liqi_msg_dict  = dict() # flow.id -> List[liqi_msg]
+        self.mjai_msg_dict  = dict() # flow.id -> List[mjai_msg]
+        self.akagi_log_dict = dict() # flow.id -> List[akagi_log]
         self.mitm_started = False
 
     def on_mount(self) -> None:
@@ -422,6 +455,8 @@ class Akagi(App):
                 self.liqi_msg_dict.pop(flow_id)
                 self.mjai_msg_dict.pop(flow_id)
                 self.akagi_log_dict.pop(flow_id)
+                self.liqi.pop(flow_id)
+                self.bridge.pop(flow_id)
         for flow_id in flows:
             try:
                 self.query_one("#FlowContainer")
@@ -484,11 +519,11 @@ class Akagi(App):
         pass
 
     def mitm_connected(self):
-        self.mitm_started = True
-
-    def my_sink(self, message) -> None:
-        record = message.record
-        self.loguru_log.append(f"{record['time'].strftime('%H:%M:%S')} | {record['level'].name}\t | {record['message']}")
+        try:
+            self.rpc_server.ping()
+            self.mitm_started = True
+        except:
+            self.set_timer(2, self.mitm_connected)
 
     def action_quit(self) -> None:
         self.update_flow.stop()
@@ -500,25 +535,32 @@ def exit_handler():
     global mitm_exec
     try:
         mitm_exec.kill()
+        logger.info("Stop Akagi")
     except:
         pass
     pass
 
+
 def start_mitm():
     global mitm_exec
-    mitm_exec = Popen([executable, pathlib.Path(__file__).parent / "mitm.py"], creationflags=CREATE_NEW_CONSOLE)
-    pass
+
+    command = [sys.executable, pathlib.Path(__file__).parent / "mitm.py"]
+
+    if sys.platform == "win32":
+        # Windows特定代码
+        mitm_exec = subprocess.Popen(command, creationflags=subprocess.CREATE_NEW_CONSOLE)
+    else:
+        # macOS和其他Unix-like系统
+        mitm_exec = subprocess.Popen(command, preexec_fn=os.setsid)
+
 
 if __name__ == '__main__':
     with open("settings.json", "r") as f:
         settings = json.load(f)
-        rpc_port = settings["Port"]["XMLRPC"] 
+        rpc_port = settings["Port"]["XMLRPC"]
     rpc_host = "127.0.0.1"
     s = ServerProxy(f"http://{rpc_host}:{rpc_port}", allow_none=True)
-    logger.level("CLICK", no=10, icon="CLICK")
-    logger.add("akagi.log")
     app = Akagi(rpc_server=s)
-    logger.add(app.my_sink)
     atexit.register(exit_handler)
     try:
         logger.info("Start Akagi")
@@ -526,4 +568,3 @@ if __name__ == '__main__':
     except Exception as e:
         exit_handler()
         raise e
-    

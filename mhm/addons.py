@@ -1,4 +1,6 @@
+import json
 from mitmproxy import http
+from urllib.parse import urlparse, parse_qs
 
 
 from . import logger
@@ -46,6 +48,20 @@ class WebSocketAddon:
                 self.manager.apply()
 
         log(self.manager)
+
+    def request(self, flow: http.HTTPFlow):
+        parsed_url = urlparse(flow.request.url)
+        if parsed_url.hostname == "majsoul-hk-client.cn-hongkong.log.aliyuncs.com":
+            qs = parse_qs(parsed_url.query)
+            try:
+                content = json.loads(qs["content"][0])
+                if content["type"] == "re_err":
+                    logger.warning(" ".join(["[i][red]Error", str(qs)]))
+                    flow.kill()
+                else:
+                    logger.debug(" ".join(["[i][green]Log", str(qs)]))
+            except:
+                return
 
 
 addons = [WebSocketAddon()]
