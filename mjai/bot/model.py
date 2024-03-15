@@ -279,6 +279,8 @@ class MortalEngine:
         self.online = online
         self.api_key = api_key
         self.server = server
+        if self.online:
+            self.version = 4
 
     def react_batch(self, obs, masks, invisible_obs):
         if self.online:
