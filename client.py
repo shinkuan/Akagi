@@ -283,11 +283,12 @@ class SettingsScreen(Static):
             self.value_port_setting_mitm_input = settings["Port"]["MITM"]
             self.value_port_setting_xmlrpc_input = settings["Port"]["XMLRPC"]
             self.value_unlocker_setting_enable_checkbox = settings["Unlocker"]
-            self.value_unlocker_setting_v10_checkbox = settings["v10"]
             self.value_helper_setting_checkbox = settings["Helper"]
             self.value_autoplay_setting_enable_checkbox = settings["Autoplay"]
-            # self.value_autoplay_setting_random_time_min_input = settings["Autoplay"]["Random Time"]["Min"]
-            # self.value_autoplay_setting_random_time_max_input = settings["Autoplay"]["Random Time"]["Max"]
+            self.value_autoplay_setting_random_time_new_min_input = settings["RandomTime"]["new_min"]
+            self.value_autoplay_setting_random_time_new_max_input = settings["RandomTime"]["new_max"]
+            self.value_autoplay_setting_random_time_min_input = settings["RandomTime"]["min"]
+            self.value_autoplay_setting_random_time_max_input = settings["RandomTime"]["max"]
             self.value_playwright_setting_enable_checkbox = settings["Playwright"]["enable"]
             self.value_playwright_setting_width_input = settings["Playwright"]["width"]
             self.value_playwright_setting_height_input = settings["Playwright"]["height"]
@@ -304,8 +305,7 @@ class SettingsScreen(Static):
 
         self.unlocker_setting_label = Label("Unlocker", id="unlocker_setting_label")
         self.unlocker_setting_enable_checkbox = Checkbox("Enable", id="unlocker_setting_enable_checkbox", classes="short", value=self.value_unlocker_setting_enable_checkbox)
-        self.unlocker_setting_v10_checkbox = Checkbox("v10", id="unlocker_setting_v10_checkbox", classes="short", value=self.value_unlocker_setting_v10_checkbox)
-        self.unlocker_setting_container = Horizontal(self.unlocker_setting_label, self.unlocker_setting_enable_checkbox, self.unlocker_setting_v10_checkbox, id="unlocker_setting_container")
+        self.unlocker_setting_container = Horizontal(self.unlocker_setting_label, self.unlocker_setting_enable_checkbox, id="unlocker_setting_container")
         self.unlocker_setting_container.border_title = "Unlocker"
 
         self.helper_setting_label = Label("Helper", id="helper_setting_label")
@@ -316,11 +316,15 @@ class SettingsScreen(Static):
         self.autoplay_setting_enable_label = Label("Enable", id="autoplay_setting_enable_label")
         self.autoplay_setting_enable_checkbox = Checkbox("Enable", id="autoplay_setting_enable_checkbox", classes="short", value=self.value_autoplay_setting_enable_checkbox)
         self.autoplay_setting_enable_container = Horizontal(self.autoplay_setting_enable_label, self.autoplay_setting_enable_checkbox, id="autoplay_setting_enable_container")
-        self.autoplay_setting_random_time_label = Label("Random Time", id="autoplay_setting_random_time_label")
-        self.autoplay_setting_random_time_min_input = Input(placeholder="Min", type="number", id="autoplay_setting_random_time_min_input")
-        self.autoplay_setting_random_time_max_input = Input(placeholder="Max", type="number", id="autoplay_setting_random_time_max_input")
+        self.autoplay_setting_random_time_new_label = Label("Random New", id="autoplay_setting_random_time_new_label")
+        self.autoplay_setting_random_time_new_min_input = Input(placeholder="Min", type="number", id="autoplay_setting_random_time_new_min_input", value=str(self.value_autoplay_setting_random_time_new_min_input))
+        self.autoplay_setting_random_time_new_max_input = Input(placeholder="Max", type="number", id="autoplay_setting_random_time_new_max_input", value=str(self.value_autoplay_setting_random_time_new_max_input))
+        self.autoplay_setting_random_time_new_container = Horizontal(self.autoplay_setting_random_time_new_label, self.autoplay_setting_random_time_new_min_input, self.autoplay_setting_random_time_new_max_input, id="autoplay_setting_random_time_new_container")
+        self.autoplay_setting_random_time_label = Label("Random", id="autoplay_setting_random_time_label")
+        self.autoplay_setting_random_time_min_input = Input(placeholder="Min", type="number", id="autoplay_setting_random_time_min_input", value=str(self.value_autoplay_setting_random_time_min_input))
+        self.autoplay_setting_random_time_max_input = Input(placeholder="Max", type="number", id="autoplay_setting_random_time_max_input", value=str(self.value_autoplay_setting_random_time_max_input))
         self.autoplay_setting_random_time_container = Horizontal(self.autoplay_setting_random_time_label, self.autoplay_setting_random_time_min_input, self.autoplay_setting_random_time_max_input, id="autoplay_setting_random_time_container")
-        self.autoplay_setting_container = Vertical(self.autoplay_setting_enable_container, self.autoplay_setting_random_time_container, id="autoplay_setting_container")
+        self.autoplay_setting_container = Vertical(self.autoplay_setting_enable_container, self.autoplay_setting_random_time_new_container, self.autoplay_setting_random_time_container, id="autoplay_setting_container")
         self.autoplay_setting_container.border_title = "Autoplay"
 
         self.playwright_setting_enable_label = Label("Enable", id="playwright_setting_enable_label")
@@ -352,11 +356,17 @@ class SettingsScreen(Static):
 
     @on(Input.Changed, "#port_setting_mitm_input")
     def port_setting_mitm_input_changed(self, event: Input.Changed) -> None:
-        self.value_port_setting_mitm_input = int(event.value)
+        try:
+            self.value_port_setting_mitm_input = int(event.value)
+        except:
+            pass
 
     @on(Input.Changed, "#port_setting_xmlrpc_input")
     def port_setting_xmlrpc_input_changed(self, event: Input.Changed) -> None:
-        self.value_port_setting_xmlrpc_input = int(event.value)
+        try:
+            self.value_port_setting_xmlrpc_input = int(event.value)
+        except:
+            pass
 
     @on(Checkbox.Changed, "#unlocker_setting_enable_checkbox")
     def unlocker_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
@@ -366,25 +376,39 @@ class SettingsScreen(Static):
     def helper_setting_checkbox_changed(self, event: Checkbox.Changed) -> None:
         self.value_helper_setting_checkbox = event.value
 
-    @on(Checkbox.Changed, "#unlocker_setting_v10_checkbox")
-    def unlocker_setting_v10_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        self.value_unlocker_setting_v10_checkbox = event.value
-
     @on(Checkbox.Changed, "#autoplay_setting_enable_checkbox")
     def autoplay_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
         global AUTOPLAY
         AUTOPLAY = event.value
         self.value_autoplay_setting_enable_checkbox = event.value
 
+    @on(Input.Changed, "#autoplay_setting_random_time_new_min_input")
+    def autoplay_setting_random_time_new_min_input_changed(self, event: Input.Changed) -> None:
+        try:
+            self.value_autoplay_setting_random_time_new_min_input = float(event.value)
+        except:
+            pass
+
+    @on(Input.Changed, "#autoplay_setting_random_time_new_max_input")
+    def autoplay_setting_random_time_new_max_input_changed(self, event: Input.Changed) -> None:
+        try:
+            self.value_autoplay_setting_random_time_new_max_input = float(event.value)
+        except:
+            pass
+
     @on(Input.Changed, "#autoplay_setting_random_time_min_input")
     def autoplay_setting_random_time_min_input_changed(self, event: Input.Changed) -> None:
-        # self.value_autoplay_setting_random_time_min_input = event.value
-        pass
+        try:
+            self.value_autoplay_setting_random_time_min_input = float(event.value)
+        except:
+            pass
 
     @on(Input.Changed, "#autoplay_setting_random_time_max_input")
     def autoplay_setting_random_time_max_input_changed(self, event: Input.Changed) -> None:
-        # self.value_autoplay_setting_random_time_max_input = event.value
-        pass
+        try:
+            self.value_autoplay_setting_random_time_max_input = float(event.value)
+        except:
+            pass
 
     @on(Checkbox.Changed, "#playwright_setting_enable_checkbox")
     def playwright_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
@@ -392,11 +416,17 @@ class SettingsScreen(Static):
 
     @on(Input.Changed, "#playwright_setting_width_input")
     def playwright_setting_width_input_changed(self, event: Input.Changed) -> None:
-        self.value_playwright_setting_width_input = int(event.value)
+        try:
+            self.value_playwright_setting_width_input = int(event.value)
+        except:
+            pass
 
     @on(Input.Changed, "#playwright_setting_height_input")
     def playwright_setting_height_input_changed(self, event: Input.Changed) -> None:
-        self.value_playwright_setting_height_input = int(event.value)
+        try:
+            self.value_playwright_setting_height_input = int(event.value)
+        except:
+            pass
 
     @on(Button.Pressed, "#setting_save_button")
     def setting_save_button_pressed(self) -> None:
@@ -405,11 +435,12 @@ class SettingsScreen(Static):
             settings["Port"]["MITM"] = self.value_port_setting_mitm_input
             settings["Port"]["XMLRPC"] = self.value_port_setting_xmlrpc_input
             settings["Unlocker"] = self.value_unlocker_setting_enable_checkbox
-            settings["v10"] = self.value_unlocker_setting_v10_checkbox
             settings["Helper"] = self.value_helper_setting_checkbox
             settings["Autoplay"] = self.value_autoplay_setting_enable_checkbox
-            # settings["Autoplay"]["Random Time"]["Min"] = self.value_autoplay_setting_random_time_min_input
-            # settings["Autoplay"]["Random Time"]["Max"] = self.value_autoplay_setting_random_time_max_input
+            settings["RandomTime"]["new_min"] = self.value_autoplay_setting_random_time_new_min_input
+            settings["RandomTime"]["new_max"] = self.value_autoplay_setting_random_time_new_max_input
+            settings["RandomTime"]["min"] = self.value_autoplay_setting_random_time_min_input
+            settings["RandomTime"]["max"] = self.value_autoplay_setting_random_time_max_input
             settings["Playwright"]["enable"] = self.value_playwright_setting_enable_checkbox
             settings["Playwright"]["width"] = self.value_playwright_setting_width_input
             settings["Playwright"]["height"] = self.value_playwright_setting_height_input
