@@ -94,17 +94,18 @@ ACTION2TYPE = {
     #^^^^^^^^^^^^^^^^Self Discard^^^^^^^^^^^^^^^^
 }
 
-with open("settings.json", "r") as f:
-    settings = json.load(f)
-    PLAYWRIGHT_RESOLUTION = (settings['Playwright']['width'], settings['Playwright']['height'])
-    SCALE = PLAYWRIGHT_RESOLUTION[0]/16
-
 class Action:
     def __init__(self, rpc_server: ServerProxy):
         self.isNewRound = True
         self.reached = False
         self.latest_operation_list = []
         self.rpc_server = rpc_server
+        with open("settings.json", "r") as f:
+            settings = json.load(f)
+            self.new_min = settings['RandomTime']['new_min']
+            self.new_max = settings['RandomTime']['new_max']
+            self.min = settings['RandomTime']['min']
+            self.max = settings['RandomTime']['max']
         pass
 
     def page_clicker(self, coord: tuple[float, float]):
@@ -115,9 +116,8 @@ class Action:
 
     def decide_random_time(self):
         if self.isNewRound:
-            return random.uniform(3.5, 4.5)
-        return random.uniform(1.0, 3.2)
-
+            return random.uniform(self.new_min, self.new_max)
+        return random.uniform(self.min, self.max)
 
     def click_chiponkan(self, mjai_msg: dict | None, tehai: list[str], tsumohai: str | None):
         latest_operation_list_temp = self.latest_operation_list.copy()

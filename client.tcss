@@ -349,6 +349,33 @@ Button.action_nukidora.-active {
     margin: 0;
 }
 
+#autoplay_setting_random_time_new_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#autoplay_setting_random_time_new_min_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_random_time_new_max_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#autoplay_setting_random_time_new_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+}
+
 #autoplay_setting_random_time_label {
     padding: 1 0;
     width: 11;

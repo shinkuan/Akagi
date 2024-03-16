@@ -1,9 +1,14 @@
 {
     "Unlocker": false,
-    "v10": false,
     "Autoplay": false,
+    "RandomTime": {
+        "new_min": 3.5,
+        "new_max": 4.5,
+        "min": 1.0,
+        "max": 3.2
+    },
     "Helper": false,
-    "Autohu": true,
+    "Autohu": false,
     "Port": {
         "MITM": 7878,
         "XMLRPC": 7879,
@@ -13,63 +18,5 @@
         "enable": true,
         "width": 1280,
         "height": 720
-    },
-    "views": [
-        {
-            "itemId": 308008,
-            "slot": 0,
-            "type": 0,
-            "itemIdList": []
-        },
-        {
-            "slot": 1,
-            "itemId": 305215,
-            "type": 0,
-            "itemIdList": []
-        },
-        {
-            "slot": 2,
-            "itemId": 305315,
-            "type": 0,
-            "itemIdList": []
-        },
-        {
-            "slot": 4,
-            "itemId": 306201,
-            "type": 0,
-            "itemIdList": []
-        },
-        {
-            "slot": 5,
-            "itemId": 305529,
-            "type": 0,
-            "itemIdList": []
-        },
-        {
-            "slot": 6,
-            "itemId": 305816,
-            "type": 0,
-            "itemIdList": []
-        },
-        {
-            "slot": 7,
-            "itemId": 308015,
-            "type": 0,
-            "itemIdList": []
-        },
-        {
-            "slot": 8,
-            "itemId": 307010,
-            "type": 0,
-            "itemIdList": []
-        },
-        {
-            "slot": 10,
-            "itemId": 305901,
-            "type": 0,
-            "itemIdList": []
-        }
-    ],
-    "main_character": 200052,
-    "title": 600037
+    }
 }
