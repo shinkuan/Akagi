@@ -3,6 +3,9 @@ import threading
 import asyncio
 import signal
 import time
+import pathlib
+import sys
+import subprocess
 import re
 import mitmproxy.addonmanager
 import mitmproxy.http
@@ -17,6 +20,7 @@ from xmlrpc.server import SimpleXMLRPCServer
 from playwright.sync_api import sync_playwright, WebSocket
 from playwright.sync_api._generated import Page
 
+MITM_CONFDIR = "mitm_config"
 activated_flows = [] # store all flow.id ([-1] is the recently opened)
 messages_dict = dict() # flow.id -> Queue[flow_msg]
 stop = False
@@ -61,7 +65,8 @@ class ClientHTTP:
                 flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
 
 async def start_proxy(host, port, enable_unlocker):
-    opts = options.Options(listen_host=host, listen_port=port)
+    condir = get_folder(MITM_CONFDIR)
+    opts = options.Options(listen_host=host, listen_port=port, confdir=condir)
 
     master = DumpMaster(
         opts,
@@ -123,6 +128,50 @@ class LiqiServer:
         print(f"XMLRPC Server is running on {self.host}:{self.port}")
         self.server.serve_forever()
 
+def get_folder(folder:str) -> str:
+    """ Create the subfolder inside current folder if not exist, and return the subfolder path string"""
+    folder_path = pathlib.Path(__file__).parent / folder
+    if not folder_path.exists():
+        folder_path.mkdir(exist_ok=True)
+    folder_str = str(folder_path.resolve())
+    return folder_str
+
+def wait_for_file(file:str, timeout:int=5) -> bool:
+    """ Wait for file creation (blocking until the file exists) for {timeout} seconds"""
+    # keep checking if the file exists until timeout
+    start_time = time.time()
+    while not pathlib.Path(file).exists():
+        if time.time() - start_time > timeout:
+            return False
+        time.sleep(0.5)
+    return True
+        
+def install_root_cert(cert_file:str) -> bool:
+    """ Install Root certificate onto the system
+    params:
+        cert_file(str): certificate file to be installed
+    Returns:
+        bool: True if the certificate is installed successfully        
+    """
+    # Install cert. If the cert exists, system will skip installation
+    if sys.platform == "win32":
+        result = subprocess.run(['certutil', '-addstore', 'Root', cert_file], capture_output=True, text=True)
+    elif sys.platform == "darwin":
+        # TODO Test on MAC system
+        result = subprocess.run(['sudo', 'security', 'add-trusted-cert', '-d', '-r', 'trustRoot', '-k', '/Library/Keychains/System.keychain', cert_file],
+            capture_output=True, text=True, check=True)
+    else:
+        print("Unknown Platform. Please manually install MITM certificate:", cert_file)
+        return
+    # Check if successful
+    if result.returncode == 0:  # success
+        print(result.stdout)        
+        return True
+    else:   # error
+        print(result.stdout)
+        print(f"Return code = {result.returncode}. Std Error: {result.stderr}")
+        return False    
+    
 if __name__ == '__main__':
     with open("settings.json", "r") as f:
         settings = json.load(f)
@@ -168,12 +217,30 @@ if __name__ == '__main__':
     print("fetching resver...")
     mhm.fetch_resver()
     # Create and start the proxy server thread
-    proxy_thread = threading.Thread(target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker)))
+    proxy_thread = threading.Thread(
+        target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker)),
+        name="MITM Proxy",
+        daemon=True)    # daemon thread will terminate when main thread terminates
     proxy_thread.start()
+    
+    # Install certificate onto the system
+    cert_file = pathlib.Path(__file__).parent / MITM_CONFDIR / "mitmproxy-ca-cert.cer"
+    if not wait_for_file(cert_file):
+        print(f"MITM certificate not found: {cert_file}")
+    else:
+        print(f"Installing MITM certificate: {cert_file}")
+        install_success = install_root_cert(cert_file)
+        if install_success:
+            print("MITM certificate installed successfully.")
+        else:
+            print("Failed to install MITM certificate. Please install manually.")
 
     liqiServer = LiqiServer(rpc_host, rpc_port)
     # Create and start the LiqiServer thread
-    server_thread = threading.Thread(target=lambda: liqiServer.serve_forever())
+    server_thread = threading.Thread(
+        target=lambda: liqiServer.serve_forever(),
+        name="RPC LiqiServer",
+        daemon=True)
     server_thread.start()
 
     page = None
@@ -209,12 +276,14 @@ if __name__ == '__main__':
                     page.mouse.move(x=xy_scale["x"], y=xy_scale["y"])
                     time.sleep(0.1)
                     page.mouse.click(x=xy_scale["x"], y=xy_scale["y"], delay=100)
+                    time.sleep(0.05)
+                    page.mouse.move(x=16/2*scale, y=9/2*scale)  # center the mouse so it does not select anything
                 if do_autohu and autohu:
                     print(f"do_autohu")
                     page.evaluate("() => view.DesktopMgr.Inst.setAutoHule(true)")
                     # page.locator("#layaCanvas").click(position=xy_scale)
                     do_autohu = False
-            time.sleep(1)  # main thread will block here
+            time.sleep(0.5)  # main thread will block here
     except KeyboardInterrupt:
         # On Ctrl+C, stop the other threads
         if enable_playwright:
