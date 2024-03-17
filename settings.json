@@ -6,6 +6,7 @@
         "new_max": 4.5,
         "min": 1.0,
         "max": 3.2
+        "moqiedelay": true
     },
     "Helper": false,
     "Autohu": false,
