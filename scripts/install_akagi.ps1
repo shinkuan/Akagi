@@ -226,18 +226,14 @@ if (Test-Path -Path $requirementsPath) {
 
 Write-Host "Installing mitm certificate..."
 $mitmdumpPath = ".\venv\Scripts\mitmdump.exe"
-$confdir = ".\mitmconfig"
+$mitmproxy = "$HOME\.mitmproxy"
 if (Test-Path -Path $mitmdumpPath) {
-    # create confdir if not exist
-    if (-not (Test-Path -Path $confdir -PathType Container)){
-        New-Item -Path $confdir -ItemType Directory -Force
-    }
     # run mitm proxy for 5 seconds and kill it
-    Start-Process -FilePath $mitmdumpPath -ArgumentList "--set confdir=$confdir" -NoNewWindow
+    Start-Process -FilePath $mitmdumpPath -NoNewWindow
     Start-Sleep -Seconds 5
     Stop-Process -Name mitmdump -Force
     # install mitm certificate
-    $certutilOutput = Invoke-Expression "certutil -addstore Root '$confdir\mitmproxy-ca-cert.cer'"
+    $certutilOutput = Invoke-Expression "certutil -addstore Root '$mitmproxy\mitmproxy-ca-cert.cer'"
     Write-Host $certutilOutput
 } else {
     Write-Host "mitmdump not found: $mitmdumpPath"
