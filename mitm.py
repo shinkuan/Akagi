@@ -61,7 +61,7 @@ class ClientHTTP:
                 flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
 
 async def start_proxy(host, port, enable_unlocker):
-    opts = options.Options(listen_host=host, listen_port=port)
+    opts = options.Options(listen_host=host, listen_port=port, confdir='mitmconfig')
 
     master = DumpMaster(
         opts,
