@@ -293,34 +293,26 @@ class Action:
         if mjai_msg['type'] == 'dahai' and not self.reached:
             if self.moqiedelay:
                 if isliqi:
-                    time.sleep(4.75)
-                    self.click_dahai(mjai_msg, tehai, tsumohai)
-                    return
+                    # if someone reached
+                    # dahai_delay = 4.75
+                    dahai_delay = dahai_delay
                 elif not mjai_msg['tsumogiri']:
                     if mjai_msg['pai'] in YAOJIU:
-                        time.sleep(dahai_delay)
-                        self.click_dahai(mjai_msg, tehai, tsumohai)
-                        return    
+                        dahai_delay = dahai_delay
                     elif mjai_msg['pai'] in TWOEIGHT:
-                        time.sleep(2.25)
-                        self.click_dahai(mjai_msg, tehai, tsumohai)
-                        return
+                        dahai_delay = dahai_delay
                     elif mjai_msg['pai'] in TFFSS:
-                        time.sleep(2.75)
-                        self.click_dahai(mjai_msg, tehai, tsumohai)
-                        return
+                        dahai_delay = dahai_delay
                     elif mjai_msg['pai'] in REDFIVE:
-                        time.sleep(3.25)
-                        self.click_dahai(mjai_msg, tehai, tsumohai)
-                        return
+                        dahai_delay = dahai_delay
                 else:
-                    time.sleep(dahai_delay)
-                    self.click_dahai(mjai_msg, tehai, tsumohai)
-                    return
+                    # tsumogiri
+                    dahai_delay = dahai_delay
             else:
-                time.sleep(dahai_delay)
-                self.click_dahai(mjai_msg, tehai, tsumohai)
-                return
+                dahai_delay = dahai_delay
+            time.sleep(dahai_delay)
+            self.click_dahai(mjai_msg, tehai, tsumohai)
+            return
         if mjai_msg['type'] in ['none', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan', 'hora', 'reach', 'ryukyoku', 'nukidora']:
             time.sleep(2)
             self.click_chiponkan(mjai_msg, tehai, tsumohai)

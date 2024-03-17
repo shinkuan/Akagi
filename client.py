@@ -521,8 +521,6 @@ class Akagi(App):
                 assert isinstance(messages, bytes)
                 self.messages_dict[flow_id].append(messages)
                 liqi_msg = self.liqi[flow_id].parse(messages)
-                # with open("C:/Users/kuroki/Downloads/1111/output.txt", "a") as file:
-                #     file.write(str(liqi_msg))
                 logger.info(liqi_msg)
                 if liqi_msg is not None:
                     self.liqi_msg_dict[flow_id].append(liqi_msg)
