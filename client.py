@@ -56,6 +56,7 @@ class FlowScreen(Screen):
         self.latest_operation_list = None
         self.syncing = True
         self.action = Action(self.app.rpc_server)
+        self.isLiqi = False
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
@@ -145,6 +146,8 @@ class FlowScreen(Screen):
                                 self.action.latest_operation_list = liqi_msg['data']['data']['operation']['operationList']
                         if liqi_msg['data']['name'] == 'ActionDiscardTile':
                             self.action.isNewRound = False
+                            if liqi_msg['data']['data']['isLiqi']:
+                                self.isLiqi = True
                             pass
                         if liqi_msg['data']['name'] == 'ActionNewRound':
                             self.action.isNewRound = True
@@ -237,7 +240,9 @@ class FlowScreen(Screen):
         pass
         
     def autoplay(self) -> None:
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai)
+        isliqi = self.isLiqi
+        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, isliqi)
+        self.isLiqi = False
         pass
 
     def action_quit(self) -> None:
