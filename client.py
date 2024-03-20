@@ -156,7 +156,7 @@ class FlowScreen(Screen):
                             self.action.reached = False
                     if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
                         self.action_quit()
-            
+
             elif self.syncing:
                 self.query_one("#loading_indicator").remove()
                 self.syncing = False
@@ -231,7 +231,7 @@ class FlowScreen(Screen):
                     self.app.set_timer(0.15, self.autoplay)
                     # self.autoplay(tehai, tsumohai)
 
-                    
+
         except Exception as e:
             logger.error(e)
             pass
@@ -548,7 +548,6 @@ class Akagi(App):
                             mjai_msg["type"] = "reach"
                             self.bridge[flow_id].reach = False
                         self.mjai_msg_dict[flow_id].append(mjai_msg)
-                    self.liqi_msg_dict[flow_id].append(liqi_msg)
 
 
     def compose(self) -> ComposeResult:
