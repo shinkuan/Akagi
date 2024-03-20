@@ -297,6 +297,7 @@ class Action:
             if self.moqiedelay:
                 if isliqi:
                     # if someone reached
+                    # dahai_delay = 4.75
                     dahai_delay = dahai_delay # Change value here
                 elif not mjai_msg['tsumogiri']:
                     if mjai_msg['pai'] in YAOJIU:
