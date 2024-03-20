@@ -286,16 +286,18 @@ class Action:
                 break
         
 
-    def mjai2action(self, mjai_msg: dict | None, tehai: list[str], tsumohai: str | None, isliqi: bool):
+    def mjai2action(self, mjai_msg: dict | None, tehai: list[str], tsumohai: str | None, isliqi: bool | None, NoOver: bool | None):
+        
+
         dahai_delay = self.decide_random_time()
+
         if mjai_msg is None:
             return
         if mjai_msg['type'] == 'dahai' and not self.reached:
             if self.moqiedelay:
                 if isliqi:
                     # if someone reached
-                    # dahai_delay = 4.75
-                    dahai_delay = dahai_delay
+                    dahai_delay = dahai_delay # Change value here
                 elif not mjai_msg['tsumogiri']:
                     if mjai_msg['pai'] in YAOJIU:
                         dahai_delay = dahai_delay
@@ -310,6 +312,10 @@ class Action:
                     dahai_delay = dahai_delay
             else:
                 dahai_delay = dahai_delay
+
+            if NoOver:
+                dahai_delay = 0.1
+
             time.sleep(dahai_delay)
             self.click_dahai(mjai_msg, tehai, tsumohai)
             return
