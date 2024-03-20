@@ -56,6 +56,7 @@ class FlowScreen(Screen):
         self.latest_operation_list = None
         self.syncing = True
         self.action = Action(self.app.rpc_server)
+        self.app.action = self.action
         self.isLiqi = False
 
     def compose(self) -> ComposeResult:
@@ -120,6 +121,7 @@ class FlowScreen(Screen):
         self.liqi_msg_idx = len(self.app.liqi_msg_dict[self.flow_id])
         self.mjai_msg_idx = len(self.app.mjai_msg_dict[self.flow_id])
         self.update_log = self.set_interval(0.10, self.refresh_log)
+        # self.dahaiyanzhenhg = self.set_interval(1, self.dahai_yanzheng)
         try:
             self.akagi_action.label = self.app.mjai_msg_dict[self.flow_id][-1]["type"]
             for akagi_action_class in self.akagi_action.classes:
@@ -154,7 +156,7 @@ class FlowScreen(Screen):
                             self.action.reached = False
                     if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
                         self.action_quit()
-
+            
             elif self.syncing:
                 self.query_one("#loading_indicator").remove()
                 self.syncing = False
@@ -228,6 +230,7 @@ class FlowScreen(Screen):
                     logger.log("CLICK", latest_mjai_msg)
                     self.app.set_timer(0.15, self.autoplay)
                     # self.autoplay(tehai, tsumohai)
+
                     
         except Exception as e:
             logger.error(e)
@@ -238,11 +241,15 @@ class FlowScreen(Screen):
         global AUTOPLAY
         AUTOPLAY = event.value
         pass
-        
+
     def autoplay(self) -> None:
+        self.app.yanzhengA = self.app.mjai_msg_dict[self.flow_id][-1]
+        self.app.yanzhengB = self.tehai
+        self.app.yanzhengC = self.tsumohai
         isliqi = self.isLiqi
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, isliqi)
+        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, isliqi, False)
         self.isLiqi = False
+        self.app.dahaiyanzhenhg = self.set_interval(1.5, self.app.dahai_yanzheng)
         pass
 
     def action_quit(self) -> None:
@@ -471,10 +478,14 @@ class Akagi(App):
         self.mjai_msg_dict  = dict() # flow.id -> List[mjai_msg]
         self.akagi_log_dict = dict() # flow.id -> List[akagi_log]
         self.mitm_started = False
+        self.dahaiyanzhenhg = None
 
     def on_mount(self) -> None:
         self.update_flow = self.set_interval(1, self.refresh_flow)
         self.get_messages_flow = self.set_interval(0.05, self.get_messages)
+
+    def dahai_yanzheng(self) -> None:
+        self.action.mjai2action(self.yanzhengA, self.yanzhengB, self.yanzhengC, None, True)
 
     def refresh_flow(self) -> None:
         if not self.mitm_started:
@@ -523,6 +534,10 @@ class Akagi(App):
                 liqi_msg = self.liqi[flow_id].parse(messages)
                 logger.info(liqi_msg)
                 if liqi_msg is not None:
+                    if liqi_msg['type'] == MsgType.Notify:
+                        if liqi_msg['method'] == '.lq.ActionPrototype':
+                            if self.dahaiyanzhenhg is not None:
+                                self.stopA = self.dahaiyanzhenhg.stop()
                     self.liqi_msg_dict[flow_id].append(liqi_msg)
                     if liqi_msg['method'] == '.lq.FastTest.authGame' and liqi_msg['type'] == MsgType.Req:
                         self.app.push_screen(FlowScreen(flow_id))
@@ -533,6 +548,8 @@ class Akagi(App):
                             mjai_msg["type"] = "reach"
                             self.bridge[flow_id].reach = False
                         self.mjai_msg_dict[flow_id].append(mjai_msg)
+                    self.liqi_msg_dict[flow_id].append(liqi_msg)
+
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
@@ -564,6 +581,7 @@ class Akagi(App):
     def action_quit(self) -> None:
         self.update_flow.stop()
         self.get_messages_flow.stop()
+        self.dahaiyanzhenhg.stop()
         self.exit()
 
 
