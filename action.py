@@ -287,10 +287,7 @@ class Action:
         
 
     def mjai2action(self, mjai_msg: dict | None, tehai: list[str], tsumohai: str | None, isliqi: bool | None, NoOver: bool | None):
-        
-
         dahai_delay = self.decide_random_time()
-
         if mjai_msg is None:
             return
         if mjai_msg['type'] == 'dahai' and not self.reached:
@@ -298,7 +295,7 @@ class Action:
                 if isliqi:
                     # if someone reached
                     # dahai_delay = 4.75
-                    dahai_delay = dahai_delay # Change value here
+                    dahai_delay = dahai_delay
                 elif not mjai_msg['tsumogiri']:
                     if mjai_msg['pai'] in YAOJIU:
                         dahai_delay = dahai_delay
