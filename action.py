@@ -291,6 +291,10 @@ class Action:
         if mjai_msg is None:
             return
         if mjai_msg['type'] == 'dahai' and not self.reached:
+            if NoOver:
+                self.click_dahai(mjai_msg, tehai, tsumohai)
+                return
+
             if self.moqiedelay:
                 if isliqi:
                     # if someone reached
@@ -311,13 +315,13 @@ class Action:
             else:
                 dahai_delay = dahai_delay
 
-            if NoOver:
-                dahai_delay = 0.1
-
             time.sleep(dahai_delay)
             self.click_dahai(mjai_msg, tehai, tsumohai)
             return
         if mjai_msg['type'] in ['none', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan', 'hora', 'reach', 'ryukyoku', 'nukidora']:
+            if NoOver:
+                self.click_chiponkan(mjai_msg, tehai, tsumohai)
+                return
             time.sleep(2)
             self.click_chiponkan(mjai_msg, tehai, tsumohai)
             # kan can have multiple candidates too! ex: tehai=1111m 1111p 111s 11z, tsumohai=1s

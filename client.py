@@ -57,6 +57,7 @@ class FlowScreen(Screen):
         self.syncing = True
         self.action = Action(self.app.rpc_server)
         self.isLiqi = False
+        self.dahai_verfication_job = None
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
@@ -152,6 +153,10 @@ class FlowScreen(Screen):
                         if liqi_msg['data']['name'] == 'ActionNewRound':
                             self.action.isNewRound = True
                             self.action.reached = False
+                        # No matter what the action is, as long as we get a new action, we should stop the verification job as it's outdated.
+                        if self.dahai_verfication_job is not None:
+                            self.dahai_verfication_job.stop()
+                            self.dahai_verfication_job = None
                     if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
                         self.action_quit()
             
@@ -240,14 +245,17 @@ class FlowScreen(Screen):
         AUTOPLAY = event.value
         pass
     
-    def dahai_yanzheng(self) -> None:
+    def redo_action(self) -> None:
         self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, None, True)
 
     def autoplay(self) -> None:
         isliqi = self.isLiqi
         self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, isliqi, False)
         self.isLiqi = False
-        self.app.dahaiyanzhenhg = self.set_interval(2.5, self.dahai_yanzheng)
+        if self.dahai_verfication_job is not None:
+            self.dahai_verfication_job.stop()
+            self.dahai_verfication_job = None
+        self.dahai_verfication_job = self.set_interval(2.5, self.redo_action)
         pass
 
     def action_quit(self) -> None:
@@ -476,7 +484,6 @@ class Akagi(App):
         self.mjai_msg_dict  = dict() # flow.id -> List[mjai_msg]
         self.akagi_log_dict = dict() # flow.id -> List[akagi_log]
         self.mitm_started = False
-        self.dahaiyanzhenhg = None
 
     def on_mount(self) -> None:
         self.update_flow = self.set_interval(1, self.refresh_flow)
@@ -529,11 +536,6 @@ class Akagi(App):
                 liqi_msg = self.liqi[flow_id].parse(messages)
                 logger.info(liqi_msg)
                 if liqi_msg is not None:
-                    if liqi_msg['type'] == MsgType.Notify:
-                        if liqi_msg['method'] == '.lq.ActionPrototype':
-                            if liqi_msg['data']['name'] in ['ActionDealTile', 'ActionDiscardTile', 'ActionChiPengGang', 'ActionAnGangAddGang', 'ActionBaBei', 'ActionHule', 'ActionLiuJu', 'ActionNoTile']:
-                                if self.dahaiyanzhenhg is not None:
-                                    self.stopA = self.dahaiyanzhenhg.stop()
                     self.liqi_msg_dict[flow_id].append(liqi_msg)
                     if liqi_msg['method'] == '.lq.FastTest.authGame' and liqi_msg['type'] == MsgType.Req:
                         self.app.push_screen(FlowScreen(flow_id))
@@ -576,7 +578,6 @@ class Akagi(App):
     def action_quit(self) -> None:
         self.update_flow.stop()
         self.get_messages_flow.stop()
-        self.dahaiyanzhenhg.stop()
         self.exit()
 
 
