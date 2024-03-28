@@ -57,6 +57,7 @@ class FlowScreen(Screen):
         self.syncing = True
         self.action = Action(self.app.rpc_server)
         self.isLiqi = False
+        self.dahai_verfication_job = None
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
@@ -152,9 +153,13 @@ class FlowScreen(Screen):
                         if liqi_msg['data']['name'] == 'ActionNewRound':
                             self.action.isNewRound = True
                             self.action.reached = False
+                        # No matter what the action is, as long as we get a new action, we should stop the verification job as it's outdated.
+                        if self.dahai_verfication_job is not None:
+                            self.dahai_verfication_job.stop()
+                            self.dahai_verfication_job = None
                     if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
                         self.action_quit()
-
+            
             elif self.syncing:
                 self.query_one("#loading_indicator").remove()
                 self.syncing = False
@@ -229,6 +234,7 @@ class FlowScreen(Screen):
                     logger.log("CLICK", latest_mjai_msg)
                     self.app.set_timer(0.15, self.autoplay)
                     # self.autoplay(tehai, tsumohai)
+
                     
         except Exception as e:
             logger.error(e)
@@ -239,11 +245,18 @@ class FlowScreen(Screen):
         global AUTOPLAY
         AUTOPLAY = event.value
         pass
-        
+    
+    def redo_action(self) -> None:
+        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, None, True)
+
     def autoplay(self) -> None:
         isliqi = self.isLiqi
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, isliqi)
+        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, isliqi, False)
         self.isLiqi = False
+        if self.dahai_verfication_job is not None:
+            self.dahai_verfication_job.stop()
+            self.dahai_verfication_job = None
+        self.dahai_verfication_job = self.set_interval(2.5, self.redo_action)
         pass
 
     def action_quit(self) -> None:
@@ -534,6 +547,7 @@ class Akagi(App):
                             mjai_msg["type"] = "reach"
                             self.bridge[flow_id].reach = False
                         self.mjai_msg_dict[flow_id].append(mjai_msg)
+
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
