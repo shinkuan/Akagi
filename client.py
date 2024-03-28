@@ -162,10 +162,11 @@ class FlowScreen(Screen):
                     logger.log("CLICK", self.app.mjai_msg_dict[self.flow_id][-1])
                     self.app.set_timer(2, self.autoplay)
             if self.mjai_msg_idx < len(self.app.mjai_msg_dict[self.flow_id]):
-                self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(self.app.mjai_msg_dict[self.flow_id][-1]['meta'])
+                bridge = self.app.bridge[self.flow_id]
+                self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(self.app.mjai_msg_dict[self.flow_id][-1]['meta'], bridge.is_3p)
                 latest_mjai_msg = self.app.mjai_msg_dict[self.flow_id][-1]
                 # Update tehai
-                player_state = self.app.bridge[self.flow_id].mjai_client.bot.state()
+                player_state = bridge.mjai_client.bot.state()
                 tehai, tsumohai = state_to_tehai(player_state)
                 for idx, tehai_label in enumerate(self.tehai_labels):
                     tehai_label.update(TILE_2_UNICODE_ART_RICH[tehai[idx]])
@@ -199,6 +200,8 @@ class FlowScreen(Screen):
                 for akagi_pai_class in self.akagi_pai.classes:
                     self.akagi_pai.remove_class(akagi_pai_class)
                 self.akagi_pai.add_class("pai_"+latest_mjai_msg["type"])
+                for consume_id in self.consume_ids:
+                    self.query_one(consume_id).remove()
                 if "consumed" in latest_mjai_msg:
                     self.akagi_pai.label = str(latest_mjai_msg["consumed"])
                     if "pai" in latest_mjai_msg:
@@ -211,8 +214,6 @@ class FlowScreen(Screen):
                         self.consume_ids.append("#"+"consumed_"+c+str(i))
                         i+=1
                 elif "pai" in latest_mjai_msg:
-                    for consume_id in self.consume_ids:
-                        self.query_one(consume_id).remove()
                     self.consume_ids = []
                     self.akagi_pai.label = str(latest_mjai_msg["pai"])
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[latest_mjai_msg["pai"]])
