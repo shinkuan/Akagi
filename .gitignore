@@ -1,0 +1,14 @@
+.vscode
+bot_3p
+account
+__pycache__
+mitm/data
+test*
+lqc.lqbin
+lqc.txt
+akagi.json
+akagi.log
+mhmp.json
+mitm.json
+
+mortal.pth
