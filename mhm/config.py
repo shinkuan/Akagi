@@ -12,13 +12,14 @@ MITMPROXY_HOST = "127.0.0.1"
 MITMPROXY_PORT = 7878
 MITMPROXY = f"{MITMPROXY_HOST}:{MITMPROXY_PORT}"
 ROOT = Path(".")
+FILE_ROOT = Path(__file__).parent
 
-CONFIG_PATH = ROOT / "mhmp.json"
+CONFIG_PATH = ROOT / "configs" / "mhmp.json"
 PROXIN_PATH = ROOT / "proxinject/proxinjector-cli.exe"
 
 LQBIN_RKEY = "res/config/lqc.lqbin"
-LQBIN_VTXT = ROOT / "lqc.txt"
-LQBIN_PATH = ROOT / "lqc.lqbin"
+LQBIN_VTXT = FILE_ROOT / "lqc.txt"
+LQBIN_PATH = FILE_ROOT / "lqc.lqbin"
 
 
 @dataclass

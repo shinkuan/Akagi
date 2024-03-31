@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(".")
 
-CONFIG_PATH = ROOT / "mitm.json"
+CONFIG_PATH = ROOT / "configs" / "mitm.json"
 
 
 @dataclass

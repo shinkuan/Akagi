@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(".")
 
-CONFIG_PATH = ROOT / "akagi.json"
+CONFIG_PATH = ROOT / "configs" / "akagi.json"
 
 
 @dataclass
