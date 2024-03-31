@@ -9,7 +9,8 @@ from .eel_app import start_eel
 from .common import start_message_controller, stop_message_controller, start_mitm, stop_mitm
 from .config import config as akagi_config
 
-if __name__ == "__main__":
+
+def main():
     start_eel()
 
     while True:
@@ -20,3 +21,7 @@ if __name__ == "__main__":
             stop_mitm()
             sys.exit(0)
         pass
+
+
+if __name__ == "__main__":
+    main()
