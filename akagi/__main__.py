@@ -3,23 +3,28 @@ import sys
 import platform
 import pathlib
 import subprocess
-import eel
+import gevent as gvt
 from my_logger import both_logger
-from .eel_app import start_eel
 from .common import start_message_controller, stop_message_controller, start_mitm, stop_mitm
+from .app import _app as app
 from .config import config as akagi_config
 
 
+def stop():
+    stop_message_controller()
+    stop_mitm()
+    app.destroy()
+    sys.exit(0)
+
 def main():
-    start_eel()
+    both_logger.info("Starting Akagi")
+    app.protocol("WM_DELETE_WINDOW", stop)    
 
     while True:
         try:
-            eel.sleep(0.1)
+            app.mainloop()
         except KeyboardInterrupt:
-            stop_message_controller()
-            stop_mitm()
-            sys.exit(0)
+            stop()
         pass
 
 
