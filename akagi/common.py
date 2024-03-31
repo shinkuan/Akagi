@@ -15,6 +15,10 @@ def start_mitm():
     global mitm_exec
     command = [sys.executable, "-m", "mitm"]
 
+    if mitm_exec is not None:
+        both_logger.info("mitm already running")
+        return
+
     if sys.platform == "win32":
         # Windows特定代码
         mitm_exec = subprocess.Popen(command, creationflags=subprocess.CREATE_NEW_CONSOLE)
@@ -25,6 +29,11 @@ def start_mitm():
 def stop_mitm():
     both_logger.info("Stopping mitm")
     global mitm_exec
+
+    if mitm_exec is None:
+        both_logger.info("mitm is not running")
+        return
+
     try:
         mitm_exec.kill()
     except Exception as e:
