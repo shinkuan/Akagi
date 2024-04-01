@@ -1,5 +1,5 @@
 from .config import config as mitm_config
-from .common import activated_flows, messages_dict
+from .client_websocket import activated_flows, messages_dict
 from xmlrpc.server import SimpleXMLRPCServer
 
 page_evaluate_list: list[str] = []
@@ -16,9 +16,11 @@ class XMLRPCServer:
         self.message_idx = dict() # flow.id -> int
 
     def get_activated_flows(self):
+        global activated_flows
         return activated_flows
     
     def get_message(self, flow_id):
+        global activated_flows, messages_dict
         try:
             idx = self.message_idx[flow_id]
         except KeyError:
@@ -31,6 +33,7 @@ class XMLRPCServer:
         return msg
     
     def reset_message_idx(self):
+        global activated_flows
         for flow_id in activated_flows:
             self.message_idx[flow_id] = 0
 
