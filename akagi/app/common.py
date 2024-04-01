@@ -1,4 +1,4 @@
-import gevent as gvt
+import threading
 from .app import App
 from my_logger import both_logger
 
@@ -21,7 +21,7 @@ def start_app():
         return
     
     app = App()
-    app_thread = gvt.spawn(app.mainloop)
+    app_thread = threading.Thread(target=app.mainloop)
 
 def stop_app():
     global app, app_thread
