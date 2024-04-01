@@ -11,18 +11,10 @@ CONFIG_PATH = ROOT / "configs" / "akagi.json"
 @dataclass
 class Config:
     @dataclass
-    class Eel:
-        host: str = "127.0.0.1"
-        port: int = 7880
-        width: int = 1280
-        height: int = 720
-
-    @dataclass
     class XMLRPCClient:
         max_ping_count: int = 10
-        refresh_interval: float = 0.2
+        refresh_interval: float = 0.05
 
-    eel: Eel = field(default_factory=lambda: Config.Eel())
     xmlrpc_client: XMLRPCClient = field(default_factory=lambda: Config.XMLRPCClient())
 
     @classmethod
