@@ -1,5 +1,6 @@
 from gevent import monkey; monkey.patch_socket()
 
+import copy
 import pathlib
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -9,6 +10,7 @@ import sv_ttk
 from my_logger import both_logger
 from akagi.common import start_message_controller, stop_message_controller, start_mitm, stop_mitm
 from akagi.message_controller import MessageController
+from akagi.libriichi_helper import meta_to_recommend
 
 ASSETS_PATH = pathlib.Path(__file__).parent / "assets"
 
@@ -158,7 +160,8 @@ class FlowWindow(ttk.Frame):
             self.activated_flows_tabs[flow] = FlowTab(self.notebook, flow)
             self.notebook.add(self.activated_flows_tabs[flow], text=f"Flow {flow}")
 
-        for flow in self.activated_flows_tabs.keys():
+        self_activated_flows = copy.deepcopy(self.activated_flows_tabs.keys())
+        for flow in self_activated_flows:
             if not flow in activated_flows:
                 self.notebook.forget(self.activated_flows_tabs[flow])
                 del self.activated_flows_tabs[flow]
@@ -170,6 +173,17 @@ class FlowWindow(ttk.Frame):
             if bot is None:
                 return
             self.activated_flows_tabs[flow_id].tehai_viewer.update_tehai(bot.state())
+            meta = meta_to_recommend(mjai_msg.get("meta"))
+            self.activated_flows_tabs[flow_id].indicator_0.update_content(meta[0][0], meta[0][1])
+            if len(meta) == 1:
+                assert meta[1][0] == "reach"
+                self.activated_flows_tabs[flow_id].indicator_1.update_content(mjai_msg['pai'], 1.0)
+            else:
+                self.activated_flows_tabs[flow_id].indicator_1.update_content(meta[1][0], meta[1][1])
+            if len(meta) > 2:
+                self.activated_flows_tabs[flow_id].indicator_2.update_content(meta[2][0], meta[2][1])
+            else:
+                self.activated_flows_tabs[flow_id].indicator_2.update_content("?", 0.0)            
 
     def destroy(self) -> None:
         if self.app.message_controller is not None:
@@ -182,18 +196,42 @@ class FlowTab(ttk.Frame):
         super().__init__(parent, *args, **kwargs)
 
         self.app: App = parent.master.app  # Notebook -> FlowWindow -> App
-        self.grid_columnconfigure(0, weight=1)  # 使列0可以扩展，这样中间的部分可以使用额外的空间
-        self.grid_rowconfigure(0, weight=0)  # 使行1可以扩展
-        self.grid_rowconfigure(1, weight=0)  # 使行1可以扩展
+        # self.grid_columnconfigure(0, weight=1)  # 使列0可以扩展，这样中间的部分可以使用额外的空间
+        # self.grid_rowconfigure(0, weight=0)  # 使行1可以扩展
+        # self.grid_rowconfigure(1, weight=0)  # 使行1可以扩展
 
-        self.dummy_label = ttk.Label(self)
-        self.dummy_label.grid(row=0, column=0, sticky="ew")  # 使用grid布局管理器
+        # self.indicator_0 = Indicator(self)
+        # self.indicator_0.grid(row=0, column=0)
 
-        self.tehai_viewer_frame_container = ttk.Frame(self)
-        self.tehai_viewer_frame_container.grid(row=1, column=0)  # 放置在中间的行
+        # self.indicator_1 = Indicator(self)
+        # self.indicator_1.grid(row=0, column=1)
 
-        self.tehai_viewer: TehaiViewer = TehaiViewer(self.tehai_viewer_frame_container)
-        self.tehai_viewer.pack()  # TehaiViewer内部的布局管理器不变
+        # self.indicator_2 = Indicator(self)
+        # self.indicator_2.grid(row=0, column=2)
+
+        # self.separator = ttk.Separator(self)
+        # self.separator.grid(row=1, column=0, columnspan=3, sticky="ew", pady=10)
+
+        # self.tehai_viewer_frame_container = ttk.Frame(self)
+        # self.tehai_viewer_frame_container.grid(row=1, column=0)  # 放置在中间的行
+
+        # self.tehai_viewer: TehaiViewer = TehaiViewer(self.tehai_viewer_frame_container)
+        # self.tehai_viewer.pack()  # TehaiViewer内部的布局管理器不变
+
+        self.indicator_0 = Indicator(self)
+        self.indicator_0.pack(side="top", padx=10, pady=10)
+
+        self.indicator_1 = Indicator(self)
+        self.indicator_1.pack(side="top", padx=10, pady=10)
+
+        self.indicator_2 = Indicator(self)
+        self.indicator_2.pack(side="top", padx=10, pady=10)
+
+        self.separator = ttk.Separator(self, orient="horizontal")
+        self.separator.pack(fill="x", padx=10, pady=10)
+
+        self.tehai_viewer: TehaiViewer = TehaiViewer(self)
+        self.tehai_viewer.pack(side="top", padx=10, pady=10)
 
         self.flow_id = flow_id
 
@@ -203,11 +241,44 @@ class FlowTab(ttk.Frame):
                 self.tehai_viewer.update_tehai(bot.state())
 
 
+PAI_STR = [
+    "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m",
+    "1p", "2p", "3p", "4p", "5p", "6p", "7p", "8p", "9p",
+    "1s", "2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s",
+    "E",  "S",  "W",  "N",  "P",  "F",  "C",  "?",
+    "5mr", "5pr", "5sr"
+]
+
+
+class Indicator(ttk.Frame):
+    def __init__(self, parent: FlowTab, *args, **kwargs):
+        height = 200
+        super().__init__(parent, height=height, *args, **kwargs)
+
+        self.app: App = parent.app
+        self.pack(side="top", fill="x")
+        
+        action = "?"
+        weight = 0.0
+        self.action_frame = Pai(self, action, width=200)
+        self.action_frame.pack(side="left", padx=10, pady=10)
+
+        self.separator = ttk.Separator(self, orient="vertical")
+        self.separator.pack(side="left", fill="y", padx=10, pady=10)
+
+        self.weight_label = ttk.Label(self, text=f"Weight: {weight*100:.2f}%", font=('Arial', 24, 'bold'))        
+        self.weight_label.pack(side="left", padx=10, pady=10)
+
+    def update_content(self, action: str, weight: float):
+        self.action_frame.update_content(action)
+        self.weight_label.configure(text=f"Weight: {weight*100:.2f}%")
+
+
 class TehaiViewer(ttk.Frame):
     def __init__(self, parent: FlowTab, libriichi_state = None, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
-        self.app: App = parent.master.app
+        self.app: App = parent.app
         self.pack(fill="x")
         
         self.libriichi_state = libriichi_state
@@ -231,8 +302,8 @@ class TehaiViewer(ttk.Frame):
         self.libriichi_state = libriichi_state
         tile_list, tsumohai = self.state_to_tehai()
         for idx, tile in enumerate(tile_list):
-            self.pai_frame_list[idx].update_pai(tile)
-        self.tsumohai_frame.update_pai(tsumohai)
+            self.pai_frame_list[idx].update_content(tile)
+        self.tsumohai_frame.update_content(tsumohai)
 
     def state_to_tehai(self) -> tuple[list[str], str]:
         tehai34 = self.libriichi_state.tehai # with tsumohai, no aka marked
@@ -311,7 +382,7 @@ MJAI_2_ASSETS = {
 
 
 class Pai(ttk.Frame):
-    def __init__(self, parent: TehaiViewer, pai: str, *args, **kwargs):
+    def __init__(self, parent: TehaiViewer | Indicator, pai: str, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
         self.app: App = parent.app
@@ -319,18 +390,25 @@ class Pai(ttk.Frame):
         
         self.label = None
         self.pai = pai
-        self.display_image(pai, width=80)
+        if pai in PAI_STR:
+            width = 80
+        else:
+            width = 200
+        self.display_image(pai, width)
 
         # self.bind("<Configure>", self.on_resize)
 
     def combine_images(self, pai: str):
-        front_image = ASSETS_PATH / "Black" / f"Outline.png"
-        pai_image = ASSETS_PATH / "Black" / f"{MJAI_2_ASSETS[pai]}.png"
-        image1 = Image.open(front_image).convert("RGBA")
-        image2 = Image.open(pai_image).convert("RGBA")
-        
-        combined = Image.alpha_composite(image1, image2)
-        
+        if pai in PAI_STR:
+            front_image = ASSETS_PATH / "Black" / f"Outline.png"
+            pai_image = ASSETS_PATH / "Black" / f"{MJAI_2_ASSETS[pai]}.png"
+            image1 = Image.open(front_image).convert("RGBA")
+            image2 = Image.open(pai_image).convert("RGBA")
+            
+            combined = Image.alpha_composite(image1, image2)
+        else:
+            combined = Image.open(ASSETS_PATH / "Action" / f"{pai}.png").convert("RGBA")
+
         return combined
 
     def get_resized_image(self, pai: str, width: int):
@@ -353,9 +431,13 @@ class Pai(ttk.Frame):
     def on_resize(self, event):
         self.display_image(self.pai, event.width)
 
-    def update_pai(self, pai: str):
+    def update_content(self, pai: str):
         self.pai = pai
-        resized_image = self.get_resized_image(pai, 80)
+        if pai in PAI_STR:
+            width = 80
+        else:
+            width = 200
+        resized_image = self.get_resized_image(pai, width)
         tk_image = ImageTk.PhotoImage(resized_image)
         self.label.configure(image=tk_image)
         self.label.image = tk_image # 防止圖像被垃圾回收
