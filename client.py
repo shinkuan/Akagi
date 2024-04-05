@@ -82,7 +82,10 @@ class FlowScreen(Screen):
         akagi_action = Button("Akagi", id="akagi_action", variant="default")
         akagi_pai    = Button("Pai", id="akagi_pai", variant="default")
         pai_unicode_art = Label(TILE_2_UNICODE_ART_RICH["?"], id="pai_unicode_art")
-        akagi_container = Horizontal(akagi_action, akagi_pai, pai_unicode_art, id="akagi_container")
+        vertical_rule = Label(VERTICLE_RULE, id="vertical_rule")
+        comsumed_pais = [Label(TILE_2_UNICODE_ART_RICH["?"], id="consumed_"+str(i)) for i in range(3)]
+        akagi_container = Horizontal(akagi_action, akagi_pai, pai_unicode_art, vertical_rule, 
+                                     comsumed_pais[0], comsumed_pais[1], comsumed_pais[2], id="akagi_container")
         akagi_container.border_title = "Akagi"
         loading_indicator = LoadingIndicator(id="loading_indicator")
         loading_indicator.styles.height = "3"
@@ -105,6 +108,8 @@ class FlowScreen(Screen):
         self.akagi_action = self.query_one("#akagi_action")
         self.akagi_pai = self.query_one("#akagi_pai")
         self.pai_unicode_art = self.query_one("#pai_unicode_art")
+        self.vertical_rule = self.query_one("#vertical_rule")
+        self.comsumed_pais = [self.query_one("#consumed_"+str(i)) for i in range(3)]
         self.akagi_container = self.query_one("#akagi_container")
         self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id])
         self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
@@ -205,19 +210,14 @@ class FlowScreen(Screen):
                 for akagi_pai_class in self.akagi_pai.classes:
                     self.akagi_pai.remove_class(akagi_pai_class)
                 self.akagi_pai.add_class("pai_"+latest_mjai_msg["type"])
-                for consume_id in self.consume_ids:
-                    self.query_one(consume_id).remove()
+                for comsumed_pai in self.comsumed_pais:
+                    comsumed_pai.update(TILE_2_UNICODE_ART_RICH["?"])
                 if "consumed" in latest_mjai_msg:
                     self.akagi_pai.label = str(latest_mjai_msg["consumed"])
                     if "pai" in latest_mjai_msg:
                         self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[latest_mjai_msg["pai"]])
-                    self.akagi_container.mount(Label(VERTICLE_RULE, id="consumed_rule"))
-                    self.consume_ids.append("#"+"consumed_rule")
-                    i=0
-                    for c in latest_mjai_msg["consumed"]:
-                        self.akagi_container.mount(Label(TILE_2_UNICODE_ART_RICH[c], id="consumed_"+c+str(i)))
-                        self.consume_ids.append("#"+"consumed_"+c+str(i))
-                        i+=1
+                    for i, c in enumerate(latest_mjai_msg["consumed"]):
+                        self.query_one("#consumed_"+str(i)).update(TILE_2_UNICODE_ART_RICH[c])
                 elif "pai" in latest_mjai_msg:
                     self.consume_ids = []
                     self.akagi_pai.label = str(latest_mjai_msg["pai"])
