@@ -57,14 +57,15 @@ class MajsoulBridge:
 
     def input(self, parse_msg: dict) -> dict | None:
         # TODO SyncGame
-        if parse_msg['method'] == '.lq.FastTest.syncGame' or parse_msg['method'] == '.lq.FastTest.enterGame':
+        if ((parse_msg['method'] == '.lq.FastTest.syncGame' or parse_msg['method'] == '.lq.FastTest.enterGame')
+            and parse_msg['type'] == MsgType.Res):
             self.syncing = True
             syncGame_msgs = LiqiProto().parse_syncGame(parse_msg)
             reacts = []
             for msg in syncGame_msgs:
                 reacts.append(self.input(msg))
+            self.syncing = False
             if len(reacts)>=1:
-                self.syncing = False
                 return reacts[-1]
             else:
                 return None
@@ -115,7 +116,7 @@ class MajsoulBridge:
                 for hai in range(13):
                     my_tehais[hai] = MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles'][hai]]
                 if   len(parse_msg['data']['data']['tiles']) == 13:
-                    tehais[self.seat] = my_tehais
+                    tehais[self.seat] = sorted(my_tehais, key=cmp_to_key(compare_pai))
                     self.mjai_message.append(
                         {
                             'type': 'start_kyoku',
@@ -130,7 +131,10 @@ class MajsoulBridge:
                         }
                     )
                 elif len(parse_msg['data']['data']['tiles']) == 14:
-                    tehais[self.seat] = my_tehais
+                    self.my_tsumohai = MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles'][13]]
+                    all_tehais = my_tehais + [self.my_tsumohai]
+                    all_tehais = sorted(all_tehais, key=cmp_to_key(compare_pai))
+                    tehais[self.seat] = all_tehais[:13]
                     self.mjai_message.append(
                         {
                             'type': 'start_kyoku',
@@ -144,12 +148,11 @@ class MajsoulBridge:
                             'tehais': tehais
                         }
                     )
-                    self.my_tsumohai = MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles'][13]]
                     self.mjai_message.append(
                         {
                             'type': 'tsumo',
                             'actor': self.seat,
-                            'pai': MS_TILE_2_MJAI_TILE[parse_msg['data']['data']['tiles'][13]]
+                            'pai': all_tehais[13]
                         }
                     )
                 else:
