@@ -506,6 +506,12 @@ VERTICLE_RULE = """║
 ║
 ║"""
 
+EMPTY_VERTICAL_RULE = """ 
+ 
+ 
+ 
+ """
+
 #▁▂▃▄▅▆▇█
 HAI_VALUE = [
 '[red]\n \n \n \n▁',

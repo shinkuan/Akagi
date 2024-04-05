@@ -27,7 +27,7 @@ from action import Action
 from liqi import LiqiProto, MsgType
 from majsoul2mjai import MajsoulBridge
 from libriichi_helper import meta_to_recommend, state_to_tehai
-from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE, HAI_VALUE
+from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE, HAI_VALUE, EMPTY_VERTICAL_RULE
 
 
 submission = 'players/bot.zip'
@@ -82,7 +82,7 @@ class FlowScreen(Screen):
         akagi_action = Button("Akagi", id="akagi_action", variant="default")
         akagi_pai    = Button("Pai", id="akagi_pai", variant="default")
         pai_unicode_art = Label(TILE_2_UNICODE_ART_RICH["?"], id="pai_unicode_art")
-        vertical_rule = Label(VERTICLE_RULE, id="vertical_rule")
+        vertical_rule = Label(EMPTY_VERTICAL_RULE, id="vertical_rule")
         consumed_pais = [Label(TILE_2_UNICODE_ART_RICH["?"], id="consumed_"+str(i)) for i in range(3)]
         akagi_container = Horizontal(akagi_action, akagi_pai, pai_unicode_art, vertical_rule, 
                                      consumed_pais[0], consumed_pais[1], consumed_pais[2], id="akagi_container")
@@ -212,12 +212,14 @@ class FlowScreen(Screen):
                 self.akagi_pai.add_class("pai_"+latest_mjai_msg["type"])
                 for consumed_pai in self.consumed_pais:
                     consumed_pai.update(TILE_2_UNICODE_ART_RICH["?"])
+                self.vertical_rule.update(EMPTY_VERTICAL_RULE)
                 if "consumed" in latest_mjai_msg:
                     self.akagi_pai.label = str(latest_mjai_msg["consumed"])
                     if "pai" in latest_mjai_msg:
                         self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[latest_mjai_msg["pai"]])
                     for i, c in enumerate(latest_mjai_msg["consumed"]):
-                        self.query_one("#consumed_"+str(i)).update(TILE_2_UNICODE_ART_RICH[c])
+                        self.consumed_pais[i].update(TILE_2_UNICODE_ART_RICH[c])
+                    self.vertical_rule.update(VERTICLE_RULE)
                 elif "pai" in latest_mjai_msg:
                     self.consume_ids = []
                     self.akagi_pai.label = str(latest_mjai_msg["pai"])
