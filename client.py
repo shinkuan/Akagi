@@ -21,14 +21,14 @@ from textual.events import Event, ScreenResume
 from textual.screen import Screen
 from textual.widgets import (Button, Checkbox, Footer, Header, Input, Label,
                              LoadingIndicator, Log, Markdown, Pretty, Rule,
-                             Static)
+                             Digits, Static)
 
 from action import Action
 from liqi import LiqiProto, MsgType
 from majsoul2mjai import MajsoulBridge
 from libriichi_helper import meta_to_recommend, state_to_tehai
-from tileUnicode import TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, VERTICLE_RULE, HAI_VALUE, EMPTY_VERTICAL_RULE
-
+from tileUnicode import (TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, HAI_VALUE,
+                        VERTICAL_RULE, EMPTY_VERTICAL_RULE, TILE_LIST)
 
 submission = 'players/bot.zip'
 PORT_NUM = 28680
@@ -39,6 +39,98 @@ with open("settings.json", "r") as f:
     PORT_NUM = settings["Port"]["MJAI"]
     AUTOPLAY = settings["Autoplay"]
     ENABLE_PLAYWRIGHT = settings["Playwright"]["enable"]
+
+
+class Recommandation(Horizontal):
+    def __init__(self, recommand_idx: int, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.recommand_idx = recommand_idx
+
+    def compose(self) -> ComposeResult:
+        self.action = Button("Akagi", classes="action_none recommand_button", variant="default") # 10
+        self.pai = Label(TILE_2_UNICODE_ART_RICH["?"])                          # 8
+        self.vertical_rule = Label(EMPTY_VERTICAL_RULE)                         # 1
+        self.consumes = [Label(TILE_2_UNICODE_ART_RICH["?"]) for _ in range(3)] # 8*3
+        self.action_container = Horizontal(self.action, self.pai, self.vertical_rule, *self.consumes, classes="action_container")
+        self.weight = Digits("0.0", classes="recommand_digit")
+
+        yield self.action_container
+        yield self.weight
+
+    def update(self, mjai_msg, state):
+        if len(mjai_msg['meta']) <= self.recommand_idx:
+            self.action.label = "Akagi"
+            self.action.add_class("action_none")
+            self.pai.update(TILE_2_UNICODE_ART_RICH["?"])
+            self.vertical_rule.update(EMPTY_VERTICAL_RULE)
+            for i in range(3):
+                self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+            self.weight.update("0.0")
+            return
+        recommand = mjai_msg['meta'][self.recommand_idx]
+        for action_class in self.action.classes:
+            if "action_" in action_class:
+                self.action.remove_class(action_class)
+        self.weight.update(f"{(recommand[1]*100):.2f}")
+        if recommand[0] in TILE_LIST:
+            self.action.label = recommand[0]
+            self.action.add_class("action_"+recommand[0])
+            self.pai.update(TILE_2_UNICODE_ART_RICH[recommand[0]])
+            self.vertical_rule.update(EMPTY_VERTICAL_RULE)
+            for i in range(3):
+                self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+        elif recommand[0] in ['chi_low', 'chi_mid', 'chi_high']:
+            self.action.label = "chi"
+            self.action.add_class("action_chi")
+            last_kawa_tile = state.last_kawa_tile()
+            self.pai.update(TILE_2_UNICODE_ART_RICH[last_kawa_tile])
+            self.vertical_rule.update(VERTICAL_RULE)
+            last_kawa_tile_idx = TILE_LIST.index(last_kawa_tile)
+            match recommand[0]:
+                case 'chi_low':
+                    self.consumes[0].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx-2]])
+                    self.consumes[1].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx-1]])
+                case 'chi_mid':
+                    self.consumes[0].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx-1]])
+                    self.consumes[1].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx+1]])
+                case 'chi_high':
+                    self.consumes[0].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx+1]])
+                    self.consumes[1].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx+2]])
+            self.consumes[2].update(TILE_2_UNICODE_ART_RICH["?"])
+        elif recommand[0] in ['pon']:
+            self.action.label = "pon"
+            self.action.add_class("action_pon")
+            last_kawa_tile = state.last_kawa_tile()
+            self.pai.update(TILE_2_UNICODE_ART_RICH[last_kawa_tile])
+            self.vertical_rule.update(VERTICAL_RULE)
+            for i in range(2):
+                self.consumes[i].update(TILE_2_UNICODE_ART_RICH[last_kawa_tile])
+            self.consumes[2].update(TILE_2_UNICODE_ART_RICH["?"])
+        elif recommand[0] in ['kan_select']:
+            # The recommandation only shows kan_select, but not ['daiminkan', 'ankan', 'kakan'],
+            # this is due to the Mortal model structure limitations.
+            # We can only know the model wants to do a kan.
+            self.action.label = "kan"
+            self.action.add_class("action_kakan") # We don't know which kan it is, so we just use kakan as a placeholder.
+            self.pai.update(TILE_2_UNICODE_ART_RICH["?"])
+            self.vertical_rule.update(EMPTY_VERTICAL_RULE)
+            for i in range(3):
+                self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+        elif recommand[0] in ['reach', 'hora', 'ryukyoku', 'none']:
+            self.action.label = recommand[0]
+            self.action.add_class("action_"+recommand[0])
+            self.pai.update(TILE_2_UNICODE_ART_RICH["?"])
+            self.vertical_rule.update(EMPTY_VERTICAL_RULE)
+            for i in range(3):
+                self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+        elif recommand[0] in ['nukidora']:
+            self.action.label = "nukidora"
+            self.action.add_class("action_nukidora")
+            self.pai.update(TILE_2_UNICODE_ART_RICH["N"])
+            self.vertical_rule.update(EMPTY_VERTICAL_RULE)
+            for i in range(3):
+                self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+        pass
 
 
 class FlowScreen(Screen):
@@ -61,14 +153,16 @@ class FlowScreen(Screen):
 
     def compose(self) -> ComposeResult:
         """Called to add widgets to the app."""
-        liqi_log_container = ScrollableContainer(Pretty(self.app.liqi_msg_dict[self.flow_id], id="liqi_log"), id="liqi_log_container")
+        # liqi_log_container = ScrollableContainer(Pretty(self.app.liqi_msg_dict[self.flow_id], id="liqi_log"), id="liqi_log_container")
+        recommandations = [Recommandation(i, classes="recommandations", id="recommandation_"+str(i)) for i in range(3)]
+        recommandations_container = Vertical(*recommandations, id="recommandations_container")
         mjai_log_container = ScrollableContainer(Pretty(self.app.mjai_msg_dict[self.flow_id], id="mjai_log"), id="mjai_log_container")
-        log_container = Horizontal(liqi_log_container, mjai_log_container, id="log_container")
-        liqi_log_container.border_title = "LiqiProto"
+        log_container = Horizontal(recommandations_container, mjai_log_container, id="log_container")
+        recommandations_container.border_title = "Recommandations"
         mjai_log_container.border_title = "Mjai"
         tehai_labels = [Label(TILE_2_UNICODE_ART_RICH["?"], id="tehai_"+str(i)) for i in range(13)]
         tehai_value_labels = [Label(HAI_VALUE[40], id="tehai_value_"+str(i)) for i in range(13)]
-        tehai_rule = Label(VERTICLE_RULE, id="tehai_rule")
+        tehai_rule = Label(VERTICAL_RULE, id="tehai_rule")
         tsumohai_label = Label(TILE_2_UNICODE_ART_RICH["?"], id="tsumohai")
         tsumohai_value_label = Label(HAI_VALUE[40], id="tsumohai_value")
         tehai_container = Horizontal(id="tehai_container")
@@ -103,7 +197,7 @@ class FlowScreen(Screen):
         yield bottom_container
 
     def on_mount(self) -> None:
-        self.liqi_log = self.query_one("#liqi_log")
+        # self.liqi_log = self.query_one("#liqi_log")
         self.mjai_log = self.query_one("#mjai_log")
         self.akagi_action = self.query_one("#akagi_action")
         self.akagi_pai = self.query_one("#akagi_pai")
@@ -111,9 +205,10 @@ class FlowScreen(Screen):
         self.vertical_rule = self.query_one("#vertical_rule")
         self.consumed_pais = [self.query_one("#consumed_"+str(i)) for i in range(3)]
         self.akagi_container = self.query_one("#akagi_container")
-        self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id])
+        # self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id])
         self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id])
-        self.liqi_log_container = self.query_one("#liqi_log_container")
+        # self.liqi_log_container = self.query_one("#liqi_log_container")
+        self.recommandations_container = self.query_one("#recommandations_container")
         self.mjai_log_container = self.query_one("#mjai_log_container")
         self.tehai_labels = [self.query_one("#tehai_"+str(i)) for i in range(13)]
         self.tehai_value_labels = [self.query_one("#tehai_value_"+str(i)) for i in range(13)]
@@ -121,7 +216,7 @@ class FlowScreen(Screen):
         self.tsumohai_label = self.query_one("#tsumohai")
         self.tsumohai_value_label = self.query_one("#tsumohai_value")
         self.tehai_container = self.query_one("#tehai_container")
-        self.liqi_log_container.scroll_end(animate=False)
+        # self.liqi_log_container.scroll_end(animate=False)
         self.mjai_log_container.scroll_end(animate=False)
         self.liqi_msg_idx = len(self.app.liqi_msg_dict[self.flow_id])
         self.mjai_msg_idx = len(self.app.mjai_msg_dict[self.flow_id])
@@ -141,8 +236,8 @@ class FlowScreen(Screen):
         # Yes I know this is stupid
         try:
             if self.liqi_msg_idx < len(self.app.liqi_msg_dict[self.flow_id]):
-                self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id][-1])
-                self.liqi_log_container.scroll_end(animate=False)
+                # self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id][-1])
+                # self.liqi_log_container.scroll_end(animate=False)
                 self.liqi_msg_idx += 1
                 liqi_msg = self.app.liqi_msg_dict[self.flow_id][-1]
                 if liqi_msg['type'] == MsgType.Notify:
@@ -218,8 +313,12 @@ class FlowScreen(Screen):
                     if "pai" in latest_mjai_msg:
                         self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[latest_mjai_msg["pai"]])
                     for i, c in enumerate(latest_mjai_msg["consumed"]):
+                        if i >= 3:
+                            # ankan
+                            self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH[c])
+                            continue
                         self.consumed_pais[i].update(TILE_2_UNICODE_ART_RICH[c])
-                    self.vertical_rule.update(VERTICLE_RULE)
+                    self.vertical_rule.update(VERTICAL_RULE)
                 elif "pai" in latest_mjai_msg:
                     self.consume_ids = []
                     self.akagi_pai.label = str(latest_mjai_msg["pai"])
@@ -227,6 +326,9 @@ class FlowScreen(Screen):
                 else:
                     self.akagi_pai.label = "None"
                     self.pai_unicode_art.update(TILE_2_UNICODE_ART_RICH["?"])
+                for recommandation in self.recommandations_container.children:
+                    recommandation.update(latest_mjai_msg, player_state)
+                
                 # Action
                 logger.info(f"Current tehai: {tehai}")
                 logger.info(f"Current tsumohai: {tsumohai}")
@@ -249,7 +351,13 @@ class FlowScreen(Screen):
         pass
     
     def redo_action(self) -> None:
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, None, True)
+        try:
+            self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, None, True)
+        except Exception as e:
+            logger.error(e)
+            if self.dahai_verfication_job is not None:
+                self.dahai_verfication_job.stop()
+                self.dahai_verfication_job = None
 
     def autoplay(self) -> None:
         isliqi = self.isLiqi

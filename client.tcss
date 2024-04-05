@@ -20,12 +20,37 @@
 }
 
 #mjai_log_container {
-    width: 1fr;
+    width: 2fr;
     height: 1fr;
     border: round $accent;
     border-title-align: center;
     align: right top;
     padding: 1;
+}
+
+#recommandations_container {
+    width: 3fr;
+    height: 1fr;
+    border: round $accent;
+    border-title-align: center;
+    align: right top;
+    padding: 1;
+}
+
+.recommand_button {
+    height: 1fr;
+    align: center top;
+    min-width: 10;
+}
+
+.action_container {
+    min-width: 45;
+    height: 5;
+    align: left top;
+}
+
+.recommand_digit {
+    margin: 1 1;
 }
 
 $chi: #00ff80;
@@ -41,6 +66,7 @@ Button.action_chi {
     color: $text;
     border-top: tall $chi-lighten-2;
     border-bottom: tall $chi-darken-3;
+    min-width: 10;
 }
 
 Button.action_chi:hover {
