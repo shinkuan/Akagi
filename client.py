@@ -66,12 +66,14 @@ class Recommandation(Horizontal):
             for i in range(3):
                 self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
             self.weight.update("0.0")
+            self.app.rpc_server.draw_top3([self.recommand_idx, "?", "?", "?", "?", 0.0])
             return
         recommand = mjai_msg['meta'][self.recommand_idx]
         for action_class in self.action.classes:
             if "action_" in action_class:
                 self.action.remove_class(action_class)
         self.weight.update(f"{(recommand[1]*100):.2f}")
+        weight_text = f"{(recommand[1]*100):.2f}%"
         if recommand[0] in TILE_LIST:
             self.action.label = recommand[0]
             self.action.add_class("action_"+recommand[0])
@@ -79,6 +81,7 @@ class Recommandation(Horizontal):
             self.vertical_rule.update(EMPTY_VERTICAL_RULE)
             for i in range(3):
                 self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+            self.app.rpc_server.draw_top3([self.recommand_idx, recommand[0], "?", "?", "?", weight_text])
         elif recommand[0] in ['chi_low', 'chi_mid', 'chi_high']:
             self.action.label = "chi"
             self.action.add_class("action_chi")
@@ -88,15 +91,18 @@ class Recommandation(Horizontal):
             last_kawa_tile_idx = TILE_LIST.index(last_kawa_tile)
             match recommand[0]:
                 case 'chi_low':
-                    self.consumes[0].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx-2]])
-                    self.consumes[1].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx-1]])
+                    c0 = TILE_LIST[last_kawa_tile_idx+1]
+                    c1 = TILE_LIST[last_kawa_tile_idx+2]
                 case 'chi_mid':
-                    self.consumes[0].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx-1]])
-                    self.consumes[1].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx+1]])
+                    c0 = TILE_LIST[last_kawa_tile_idx-1]
+                    c1 = TILE_LIST[last_kawa_tile_idx+1]
                 case 'chi_high':
-                    self.consumes[0].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx+1]])
-                    self.consumes[1].update(TILE_2_UNICODE_ART_RICH[TILE_LIST[last_kawa_tile_idx+2]])
+                    c0 = TILE_LIST[last_kawa_tile_idx-2]
+                    c1 = TILE_LIST[last_kawa_tile_idx-1]
+            self.consumes[0].update(TILE_2_UNICODE_ART_RICH[c0])
+            self.consumes[1].update(TILE_2_UNICODE_ART_RICH[c1])
             self.consumes[2].update(TILE_2_UNICODE_ART_RICH["?"])
+            self.app.rpc_server.draw_top3([self.recommand_idx, "chi", last_kawa_tile, c0, c1, weight_text])
         elif recommand[0] in ['pon']:
             self.action.label = "pon"
             self.action.add_class("action_pon")
@@ -106,6 +112,7 @@ class Recommandation(Horizontal):
             for i in range(2):
                 self.consumes[i].update(TILE_2_UNICODE_ART_RICH[last_kawa_tile])
             self.consumes[2].update(TILE_2_UNICODE_ART_RICH["?"])
+            self.app.rpc_server.draw_top3([self.recommand_idx, "pon", last_kawa_tile, last_kawa_tile, last_kawa_tile, weight_text])
         elif recommand[0] in ['kan_select']:
             # The recommandation only shows kan_select, but not ['daiminkan', 'ankan', 'kakan'],
             # this is due to the Mortal model structure limitations.
@@ -116,6 +123,7 @@ class Recommandation(Horizontal):
             self.vertical_rule.update(EMPTY_VERTICAL_RULE)
             for i in range(3):
                 self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+            self.app.rpc_server.draw_top3([self.recommand_idx, "kan", "?", "?", "?", weight_text])
         elif recommand[0] in ['reach', 'hora', 'ryukyoku', 'none']:
             self.action.label = recommand[0]
             self.action.add_class("action_"+recommand[0])
@@ -123,6 +131,7 @@ class Recommandation(Horizontal):
             self.vertical_rule.update(EMPTY_VERTICAL_RULE)
             for i in range(3):
                 self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+            self.app.rpc_server.draw_top3([self.recommand_idx, recommand[0], "?", "?", "?", weight_text])
         elif recommand[0] in ['nukidora']:
             self.action.label = "nukidora"
             self.action.add_class("action_nukidora")
@@ -130,6 +139,7 @@ class Recommandation(Horizontal):
             self.vertical_rule.update(EMPTY_VERTICAL_RULE)
             for i in range(3):
                 self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
+            self.app.rpc_server.draw_top3([self.recommand_idx, "nukidora", "N", "?", "?", weight_text])
         pass
 
 
@@ -161,17 +171,17 @@ class FlowScreen(Screen):
         recommandations_container.border_title = "Recommandations"
         mjai_log_container.border_title = "Mjai"
         tehai_labels = [Label(TILE_2_UNICODE_ART_RICH["?"], id="tehai_"+str(i)) for i in range(13)]
-        tehai_value_labels = [Label(HAI_VALUE[40], id="tehai_value_"+str(i)) for i in range(13)]
+        # tehai_value_labels = [Label(HAI_VALUE[40], id="tehai_value_"+str(i)) for i in range(13)]
         tehai_rule = Label(VERTICAL_RULE, id="tehai_rule")
         tsumohai_label = Label(TILE_2_UNICODE_ART_RICH["?"], id="tsumohai")
-        tsumohai_value_label = Label(HAI_VALUE[40], id="tsumohai_value")
+        # tsumohai_value_label = Label(HAI_VALUE[40], id="tsumohai_value")
         tehai_container = Horizontal(id="tehai_container")
         for i in range(13):
             tehai_container.mount(tehai_labels[i])
-            tehai_container.mount(tehai_value_labels[i])
+            # tehai_container.mount(tehai_value_labels[i])
         tehai_container.mount(tehai_rule)
         tehai_container.mount(tsumohai_label)
-        tehai_container.mount(tsumohai_value_label)
+        # tehai_container.mount(tsumohai_value_label)
         tehai_container.border_title = "Tehai"
         akagi_action = Button("Akagi", id="akagi_action", variant="default")
         akagi_pai    = Button("Pai", id="akagi_pai", variant="default")
@@ -184,9 +194,9 @@ class FlowScreen(Screen):
         loading_indicator = LoadingIndicator(id="loading_indicator")
         loading_indicator.styles.height = "3"
         checkbox_autoplay = Checkbox("Autoplay", id="checkbox_autoplay", classes="short", value=AUTOPLAY)
+        checkbox_overlay = Checkbox("Overlay ", id="checkbox_overlay", classes="short")
         checkbox_test_one = Checkbox("test_one", id="checkbox_test_one", classes="short")
-        checkbox_test_two = Checkbox("test_two", id="checkbox_test_two", classes="short")
-        checkbox_container = Vertical(checkbox_autoplay, checkbox_test_one, id="checkbox_container")
+        checkbox_container = Vertical(checkbox_autoplay, checkbox_overlay, id="checkbox_container")
         checkbox_container.border_title = "Options"
         bottom_container = Horizontal(checkbox_container, akagi_container, id="bottom_container")
         yield Header()
@@ -211,10 +221,10 @@ class FlowScreen(Screen):
         self.recommandations_container = self.query_one("#recommandations_container")
         self.mjai_log_container = self.query_one("#mjai_log_container")
         self.tehai_labels = [self.query_one("#tehai_"+str(i)) for i in range(13)]
-        self.tehai_value_labels = [self.query_one("#tehai_value_"+str(i)) for i in range(13)]
+        # self.tehai_value_labels = [self.query_one("#tehai_value_"+str(i)) for i in range(13)]
         self.tehai_rule = self.query_one("#tehai_rule")
         self.tsumohai_label = self.query_one("#tsumohai")
-        self.tsumohai_value_label = self.query_one("#tsumohai_value")
+        # self.tsumohai_value_label = self.query_one("#tsumohai_value")
         self.tehai_container = self.query_one("#tehai_container")
         # self.liqi_log_container.scroll_end(animate=False)
         self.mjai_log_container.scroll_end(animate=False)
@@ -233,8 +243,9 @@ class FlowScreen(Screen):
             self.akagi_action.label = "Akagi"
 
     def refresh_log(self) -> None:
-        # Yes I know this is stupid
         try:
+            if self.flow_id not in self.app.liqi_msg_dict:
+                self.action_quit()
             if self.liqi_msg_idx < len(self.app.liqi_msg_dict[self.flow_id]):
                 # self.liqi_log.update(self.app.liqi_msg_dict[self.flow_id][-1])
                 # self.liqi_log_container.scroll_end(animate=False)
@@ -275,25 +286,38 @@ class FlowScreen(Screen):
                 tehai, tsumohai = state_to_tehai(player_state)
                 for idx, tehai_label in enumerate(self.tehai_labels):
                     tehai_label.update(TILE_2_UNICODE_ART_RICH[tehai[idx]])
-                action_list = [x[0] for x in latest_mjai_msg['meta']]
-                for idx, tehai_value_label in enumerate(self.tehai_value_labels):
-                    # latest_mjai_msg['meta'] is list of (pai, value)
-                    try:
-                        pai_value = int(latest_mjai_msg['meta'][action_list.index(tehai[idx])][1] * 40)
-                        if pai_value == 40:
-                            pai_value = 39
-                    except ValueError:
-                        pai_value = 40
-                    tehai_value_label.update(HAI_VALUE[pai_value])
+                # action_list = [x[0] for x in latest_mjai_msg['meta']]
+                # for idx, tehai_value_label in enumerate(self.tehai_value_labels):
+                #     # latest_mjai_msg['meta'] is list of (pai, value)
+                #     try:
+                #         pai_value = int(latest_mjai_msg['meta'][action_list.index(tehai[idx])][1] * 40)
+                #         if pai_value == 40:
+                #             pai_value = 39
+                #     except ValueError:
+                #         pai_value = 40
+                #     tehai_value_label.update(HAI_VALUE[pai_value])
                 self.tsumohai_label.update(TILE_2_UNICODE_ART_RICH[tsumohai])
-                if tsumohai in action_list:
-                    try:
-                        pai_value = int(latest_mjai_msg['meta'][action_list.index(tsumohai)][1] * 40)
-                        if pai_value == 40:
-                            pai_value = 39
-                    except ValueError:
-                        pai_value = 40
-                    self.tsumohai_value_label.update(HAI_VALUE[pai_value])
+                # if tsumohai in action_list:
+                #     try:
+                #         pai_value = int(latest_mjai_msg['meta'][action_list.index(tsumohai)][1] * 40)
+                #         if pai_value == 40:
+                #             pai_value = 39
+                #     except ValueError:
+                #         pai_value = 40
+                #     self.tsumohai_value_label.update(HAI_VALUE[pai_value])
+
+                self.app.rpc_server.clear_top3()
+
+                # 將weight轉換為字典形式以便快速查找
+                weight_dict = dict(self.app.mjai_msg_dict[self.flow_id][-1]['meta'])
+
+                # 生成對應tile_list的權重列表
+                tile_order_weight = [weight_dict[tile] if tile in weight_dict else -1.0 if tile == "?" else 0.0 for tile in tehai]
+                tile_order_weight.append(weight_dict[tsumohai] if tsumohai in weight_dict else -1.0 if tsumohai == "?" else 0.0)
+                # tile_order_weight is numpy.float64, need to convert to float
+                tile_order_weight = [float(weight) for weight in tile_order_weight]
+                self.app.rpc_server.draw_weight(tile_order_weight)
+
                 # mjai log
                 self.mjai_log.update(self.app.mjai_msg_dict[self.flow_id][-3:])
                 self.mjai_log_container.scroll_end(animate=False)
@@ -338,7 +362,6 @@ class FlowScreen(Screen):
                     logger.log("CLICK", latest_mjai_msg)
                     self.app.set_timer(0.15, self.autoplay)
                     # self.autoplay(tehai, tsumohai)
-
                     
         except Exception as e:
             logger.error(e)
@@ -348,6 +371,14 @@ class FlowScreen(Screen):
     def checkbox_autoplay_changed(self, event: Checkbox.Changed) -> None:
         global AUTOPLAY
         AUTOPLAY = event.value
+        pass
+
+    @on(Checkbox.Changed, "#checkbox_overlay")
+    def checkbox_overlay_changed(self, event: Checkbox.Changed) -> None:
+        if event.value:
+            self.app.rpc_server.start_overlay_action()
+        else:
+            self.app.rpc_server.stop_overlay_action()
         pass
     
     def redo_action(self) -> None:
@@ -370,6 +401,7 @@ class FlowScreen(Screen):
         pass
 
     def action_quit(self) -> None:
+        self.app.rpc_server.stop_overlay_action()
         self.app.set_timer(2, self.app.update_flow.resume)
         self.update_log.stop()
         self.app.pop_screen()
