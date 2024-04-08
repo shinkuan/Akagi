@@ -339,6 +339,7 @@ class PlaywrightController:
             return
         bar_width = int(0.2 * self.scale)
         max_bar_height = int(1 * self.scale)
+        tile_half_height = int(0.675 * self.scale)
         js_code = f"""(() => {{
             const canvas = document.getElementById('{self._canvas_id}');
             if (!canvas || !canvas.getContext) {{
@@ -357,7 +358,7 @@ class PlaywrightController:
             const MAX_BAR_HEIGHT = {max_bar_height};
             const TSUMO_SPACE = {self.tsumo_space_scaled};
 
-            ctx.clearRect(0, TILES_LOCATION[0][1] - MAX_BAR_HEIGHT - 55, canvas.width, MAX_BAR_HEIGHT);
+            ctx.clearRect(0, TILES_LOCATION[0][1] - MAX_BAR_HEIGHT - {tile_half_height} - 4, canvas.width, MAX_BAR_HEIGHT + 8);
 
             // 绘制每个长条
             for (let i = 0; i < weight.length; i++) {{
@@ -371,7 +372,7 @@ class PlaywrightController:
                     const barHeight2 = weight[13] * MAX_BAR_HEIGHT;
                     const [x2, y2] = TILES_LOCATION[i];
                     const barX2 = x2 - BAR_WIDTH / 2 + TSUMO_SPACE;
-                    const barY2 = y2 - barHeight2 - 55; // 55 is the half height of the tile
+                    const barY2 = y2 - barHeight2 - {tile_half_height};
                     ctx.fillStyle = 'hsl(' + weight[13]*180 + ', 100%, 50%)';
                     ctx.fillRect(barX2, barY2, BAR_WIDTH, barHeight2);
                     break;                    
@@ -385,7 +386,7 @@ class PlaywrightController:
 
                 // 计算长条的左上角坐标，以便以中心底部位置为基准绘制
                 const barX = x - BAR_WIDTH / 2;
-                const barY = y - barHeight - 55; // 55 is the half height of the tile
+                const barY = y - barHeight - {tile_half_height};
 
                 // 设置绘制样式
                 ctx.fillStyle = 'hsl(' + w*180 + ', 100%, 50%)'; // 设置长条颜色

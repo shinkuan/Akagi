@@ -20,7 +20,7 @@
 }
 
 #mjai_log_container {
-    width: 2fr;
+    width: 1fr;
     height: 1fr;
     border: round $accent;
     border-title-align: center;
@@ -29,7 +29,7 @@
 }
 
 #recommandations_container {
-    width: 3fr;
+    width: 1fr;
     height: 1fr;
     border: round $accent;
     border-title-align: center;
@@ -38,6 +38,7 @@
 }
 
 .recommand_button {
+    width: 1fr;
     height: 1fr;
     align: center top;
     min-width: 10;
