@@ -76,13 +76,15 @@ Download `install_akagi.command` from [Release](https://github.com/shinkuan/Akag
 
 1. Place `install_akagi.command` in the location where you want to install Akagi.
 2. Download the latest Python installation package from the [Python official website](https://www.python.org/downloads/) and install it (skip this step if you already have a compatible version of Python installed).
-3. Double-click `install_akagi.command` to automatically install the required dependencies.
-4. Double-click `run_agaki.command` to start Akagi.
-5. If you are using mitmproxy for the first time, click on "start mitm".
-6. Close it.
-7. Go to your user home directory `~/.mitmproxy`.
-8. Install the certificate.
-9. Put `mortal.pth` into `./Akagi/mjai/bot`.
+3. Open Terminal and cd to the directory where `install_akagi.command` is located.
+4. Execute: bash install_akagi.command
+5. After installation is complete, enter the Akagi folder.
+6. Double-click `run_agaki.command` to start Akagi.
+7. If you are using mitmproxy for the first time, click on "start mitm".
+8. Close it.
+9. Go to your user home directory `~/.mitmproxy`.
+10. Install the certificate.
+11. Put `mortal.pth` into `./Akagi/mjai/bot`.
 
 ### settings.json
 

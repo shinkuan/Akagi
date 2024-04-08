@@ -5,7 +5,8 @@
         "new_min": 3.5,
         "new_max": 4.5,
         "min": 1.0,
-        "max": 3.2
+        "max": 3.2,
+        "moqiedelay": true
     },
     "Helper": false,
     "Autohu": false,
@@ -18,5 +19,6 @@
         "enable": true,
         "width": 1280,
         "height": 720
-    }
+    },
+    "Overlay": true
 }

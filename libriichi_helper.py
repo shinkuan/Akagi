@@ -1,6 +1,6 @@
 import numpy as np
 
-def meta_to_recommend(meta: dict) -> dict:
+def meta_to_recommend(meta: dict, is_3p=False) -> dict:
     # """
     # {
     #     "q_values":[
@@ -25,7 +25,7 @@ def meta_to_recommend(meta: dict) -> dict:
 
     recommend = []
 
-    mask_unicode = [
+    mask_unicode_4p = [
         "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m",
         "1p", "2p", "3p", "4p", "5p", "6p", "7p", "8p", "9p",
         "1s", "2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s",
@@ -33,6 +33,18 @@ def meta_to_recommend(meta: dict) -> dict:
         '5mr', '5pr', '5sr', 
         'reach', 'chi_low', 'chi_mid', 'chi_high', 'pon', 'kan_select', 'hora', 'ryukyoku', 'none'
     ]
+    mask_unicode_3p = [
+        "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m",
+        "1p", "2p", "3p", "4p", "5p", "6p", "7p", "8p", "9p",
+        "1s", "2s", "3s", "4s", "5s", "6s", "7s", "8s", "9s",
+         "E",  "S",  "W",  "N",  "P",  "F",  "C",
+        '5mr', '5pr', '5sr', 
+        'reach', 'pon', 'kan_select', 'nukidora', 'hora', 'ryukyoku', 'none'
+    ]
+    if is_3p:
+        mask_unicode = mask_unicode_3p
+    else:
+        mask_unicode = mask_unicode_4p
     
     def mask_bits_to_binary_string(mask_bits):
         binary_string = bin(mask_bits)[2:]

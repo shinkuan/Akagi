@@ -8,6 +8,12 @@ from majsoul2mjai import compare_pai
 from loguru import logger
 from xmlrpc.client import ServerProxy
 
+YAOJIU = ('1p','1m','1s','9p','9m','9s','E','S','W','N','P','F','C')
+TWOEIGHT = ('2p','2m','2s','8p','8m','8s')
+TFFSS = ('3p','3m','3s','4p','4m','4s','5p','5m','5s','6p','6m','6s','7p','7m','7s')
+REDFIVE = ('5pr','5mr','5sr')
+
+
 # Coordinates here is on the resolution of 16x9
 LOCATION = {
     "tiles": [
@@ -106,6 +112,7 @@ class Action:
             self.new_max = settings['RandomTime']['new_max']
             self.min = settings['RandomTime']['min']
             self.max = settings['RandomTime']['max']
+            self.moqiedelay = settings['RandomTime']['moqiedelay']
         pass
 
     def page_clicker(self, coord: tuple[float, float]):
@@ -279,15 +286,41 @@ class Action:
                 break
         
 
-    def mjai2action(self, mjai_msg: dict | None, tehai: list[str], tsumohai: str | None):
+    def mjai2action(self, mjai_msg: dict | None, tehai: list[str], tsumohai: str | None, isliqi: bool | None, NoOver: bool | None):
         dahai_delay = self.decide_random_time()
         if mjai_msg is None:
             return
         if mjai_msg['type'] == 'dahai' and not self.reached:
+            if NoOver:
+                self.click_dahai(mjai_msg, tehai, tsumohai)
+                return
+
+            if self.moqiedelay:
+                if isliqi:
+                    # if someone reached
+                    dahai_delay = dahai_delay # Change value here
+                elif not mjai_msg['tsumogiri']:
+                    if mjai_msg['pai'] in YAOJIU:
+                        dahai_delay = dahai_delay
+                    elif mjai_msg['pai'] in TWOEIGHT:
+                        dahai_delay = dahai_delay
+                    elif mjai_msg['pai'] in TFFSS:
+                        dahai_delay = dahai_delay
+                    elif mjai_msg['pai'] in REDFIVE:
+                        dahai_delay = dahai_delay
+                else:
+                    # tsumogiri
+                    dahai_delay = dahai_delay
+            else:
+                dahai_delay = dahai_delay
+
             time.sleep(dahai_delay)
             self.click_dahai(mjai_msg, tehai, tsumohai)
             return
         if mjai_msg['type'] in ['none', 'chi', 'pon', 'daiminkan', 'ankan', 'kakan', 'hora', 'reach', 'ryukyoku', 'nukidora']:
+            if NoOver:
+                self.click_chiponkan(mjai_msg, tehai, tsumohai)
+                return
             time.sleep(2)
             self.click_chiponkan(mjai_msg, tehai, tsumohai)
             # kan can have multiple candidates too! ex: tehai=1111m 1111p 111s 11z, tsumohai=1s
