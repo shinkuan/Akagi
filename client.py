@@ -33,11 +33,13 @@ from tileUnicode import (TILE_2_UNICODE_ART_RICH, TILE_2_UNICODE, HAI_VALUE,
 submission = 'players/bot.zip'
 PORT_NUM = 28680
 AUTOPLAY = False
+OVERLAY = False
 ENABLE_PLAYWRIGHT = False
 with open("settings.json", "r") as f:
     settings = json.load(f)
     PORT_NUM = settings["Port"]["MJAI"]
     AUTOPLAY = settings["Autoplay"]
+    OVERLAY = settings["Overlay"]
     ENABLE_PLAYWRIGHT = settings["Playwright"]["enable"]
 
 
@@ -194,7 +196,7 @@ class FlowScreen(Screen):
         loading_indicator = LoadingIndicator(id="loading_indicator")
         loading_indicator.styles.height = "3"
         checkbox_autoplay = Checkbox("Autoplay", id="checkbox_autoplay", classes="short", value=AUTOPLAY)
-        checkbox_overlay = Checkbox("Overlay ", id="checkbox_overlay", classes="short")
+        checkbox_overlay = Checkbox("Overlay ", id="checkbox_overlay", classes="short", value=OVERLAY)
         checkbox_test_one = Checkbox("test_one", id="checkbox_test_one", classes="short")
         checkbox_container = Vertical(checkbox_autoplay, checkbox_overlay, id="checkbox_container")
         checkbox_container.border_title = "Options"
@@ -241,6 +243,9 @@ class FlowScreen(Screen):
             self.akagi_pai.add_class("pai_"+self.app.mjai_msg_dict[self.flow_id][-1]["type"])
         except IndexError:
             self.akagi_action.label = "Akagi"
+
+        if OVERLAY:
+            self.app.rpc_server.start_overlay_action()
 
     def refresh_log(self) -> None:
         try:
@@ -375,6 +380,8 @@ class FlowScreen(Screen):
 
     @on(Checkbox.Changed, "#checkbox_overlay")
     def checkbox_overlay_changed(self, event: Checkbox.Changed) -> None:
+        global OVERLAY
+        OVERLAY = event.value
         if event.value:
             self.app.rpc_server.start_overlay_action()
         else:
@@ -445,6 +452,7 @@ class SettingsScreen(Static):
             self.value_port_setting_xmlrpc_input = settings["Port"]["XMLRPC"]
             self.value_unlocker_setting_enable_checkbox = settings["Unlocker"]
             self.value_helper_setting_checkbox = settings["Helper"]
+            self.value_overlay_setting_enable_checkbox = settings["Overlay"]
             self.value_autoplay_setting_enable_checkbox = settings["Autoplay"]
             self.value_autoplay_setting_random_time_new_min_input = settings["RandomTime"]["new_min"]
             self.value_autoplay_setting_random_time_new_max_input = settings["RandomTime"]["new_max"]
@@ -473,6 +481,11 @@ class SettingsScreen(Static):
         self.helper_setting_checkbox = Checkbox("Enable", id="helper_setting_checkbox", classes="short", value=self.value_helper_setting_checkbox)
         self.helper_setting_container = Horizontal(self.helper_setting_label, self.helper_setting_checkbox, id="helper_setting_container")
         self.helper_setting_container.border_title = "Helper"
+
+        self.overlay_setting_label = Label("Overlay", id="overlay_setting_label")
+        self.overlay_setting_checkbox = Checkbox("Enable", id="overlay_setting_checkbox", classes="short", value=self.value_overlay_setting_enable_checkbox)
+        self.overlay_setting_container = Horizontal(self.overlay_setting_label, self.overlay_setting_checkbox, id="overlay_setting_container")
+        self.overlay_setting_container.border_title = "Overlay"
 
         self.autoplay_setting_enable_label = Label("Enable", id="autoplay_setting_enable_label")
         self.autoplay_setting_enable_checkbox = Checkbox("Enable", id="autoplay_setting_enable_checkbox", classes="short", value=self.value_autoplay_setting_enable_checkbox)
@@ -506,6 +519,7 @@ class SettingsScreen(Static):
                                                      self.port_setting_container, 
                                                      self.unlocker_setting_container, 
                                                      self.helper_setting_container,
+                                                     self.overlay_setting_container,
                                                      self.autoplay_setting_container,
                                                      self.playwright_setting_container,
                                                      self.setting_save_button,
@@ -536,6 +550,12 @@ class SettingsScreen(Static):
     @on(Checkbox.Changed, "#helper_setting_checkbox")
     def helper_setting_checkbox_changed(self, event: Checkbox.Changed) -> None:
         self.value_helper_setting_checkbox = event.value
+
+    @on(Checkbox.Changed, "#overlay_setting_checkbox")
+    def overlay_setting_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        global OVERLAY
+        OVERLAY = event.value
+        self.value_overlay_setting_enable_checkbox = event.value
 
     @on(Checkbox.Changed, "#autoplay_setting_enable_checkbox")
     def autoplay_setting_enable_checkbox_changed(self, event: Checkbox.Changed) -> None:
@@ -597,6 +617,7 @@ class SettingsScreen(Static):
             settings["Port"]["XMLRPC"] = self.value_port_setting_xmlrpc_input
             settings["Unlocker"] = self.value_unlocker_setting_enable_checkbox
             settings["Helper"] = self.value_helper_setting_checkbox
+            settings["Overlay"] = self.value_overlay_setting_enable_checkbox
             settings["Autoplay"] = self.value_autoplay_setting_enable_checkbox
             settings["RandomTime"]["new_min"] = self.value_autoplay_setting_random_time_new_min_input
             settings["RandomTime"]["new_max"] = self.value_autoplay_setting_random_time_new_max_input

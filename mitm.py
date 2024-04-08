@@ -122,7 +122,10 @@ class LiqiServer:
         return True
 
     def do_autohu(self):
-        return self.evaluate("() => view.DesktopMgr.Inst.setAutoHule(true)")
+        global do_autohu
+        if do_autohu:
+            return self.evaluate("() => view.DesktopMgr.Inst.setAutoHule(true)")
+        return False
 
     def evaluate(self, script):
         global enable_playwright, playwright_controller
