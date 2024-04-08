@@ -241,7 +241,7 @@ class PlaywrightController:
             if self.evaluate_list:
                 for _ in range(len(self.evaluate_list)):
                     script = self.evaluate_list.pop(0)
-                    print(f"evaluate: {script}")
+                    # print(f"evaluate: {script}")
                     self.page.evaluate(script)
             time.sleep(0.1)  # main thread will block here
 
