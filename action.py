@@ -299,6 +299,8 @@ class Action:
                 if isliqi:
                     # if someone reached
                     dahai_delay = dahai_delay # Change value here
+                elif self.isNewRound:
+                    dahai_delay = random.uniform(self.new_min, self.new_max)
                 elif not mjai_msg['tsumogiri']:
                     if mjai_msg['pai'] in YAOJIU:
                         dahai_delay = dahai_delay
