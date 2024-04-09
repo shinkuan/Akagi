@@ -1,4 +1,6 @@
 import json
+import gzip
+import requests
 import numpy as np
 import torch
 import pathlib
@@ -10,8 +12,6 @@ from typing import *
 from functools import partial
 from itertools import permutations
 import riichi
-import gzip
-import requests
 
 class ChannelAttention(nn.Module):
     def __init__(self, channels, ratio=16, actv_builder=nn.ReLU, bias=True):
@@ -386,7 +386,7 @@ def get_engine() -> MortalEngine:
     mortal.load_state_dict(state['mortal'])
     dqn.load_state_dict(state['current_dqn'])
 
-    with open(pathlib.Path(__file__).parent / 'online.json', 'r') as f:
+    with open(pathlib.Path(__file__).parent.parent / 'online.json', 'r') as f:
         json_load = json.load(f)
         server = json_load['server']
         online = json_load['online']

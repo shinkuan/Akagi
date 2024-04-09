@@ -17,7 +17,7 @@ class Bot:
         with open(model_path, "rb") as f:
             self.model_hash = hashlib.sha256(f.read()).hexdigest()
         try:
-            with open(pathlib.Path(__file__).parent / "online.json", "r") as f:
+            with open(pathlib.Path(__file__).parent.parent / "online.json", "r") as f:
                 online_json = json.load(f)
                 self.online = online_json["online"]
                 if not self.online:
