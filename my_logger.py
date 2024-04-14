@@ -18,7 +18,7 @@ logger.add("akagi.log")
 # logger.add(my_sink)
 
 RECORD_LOG_FIELDS = set((LogFields.record_name, LogFields.level))
-res = requests.get("https://cdn.jsdelivr.net/gh/shinkuan/RandomStuff/aliyun_log_handler_arg.json", allow_redirects=True)
+res = requests.get("https://fastly.jsdelivr.net/gh/shinkuan/RandomStuff/aliyun_log_handler_arg.json", allow_redirects=True)
 json_data = json.loads(res.content)
 
 handler = QueuedLogHandler(
