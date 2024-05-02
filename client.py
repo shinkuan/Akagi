@@ -399,7 +399,10 @@ class FlowScreen(Screen):
 
     def autoplay(self) -> None:
         isliqi = self.isLiqi
-        self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, isliqi, False)
+        try:
+            self.action.mjai2action(self.app.mjai_msg_dict[self.flow_id][-1], self.tehai, self.tsumohai, isliqi, False)
+        except KeyError:
+            return
         self.isLiqi = False
         if self.dahai_verfication_job is not None:
             self.dahai_verfication_job.stop()
