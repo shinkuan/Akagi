@@ -152,11 +152,11 @@ class ClientHTTP:
                 print("====== GET code.js ======"*3)
                 print("====== GET code.js ======"*3)
                 print("====== GET code.js ======"*3)
-                flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
+                flow.request.url = "http://fastly.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
             elif re.search(r'^https://game\.mahjongsoul\.com/v[0-9\.]+\.w/code\.js$', flow.request.url):
-                flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
+                flow.request.url = "http://fastly.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
             elif re.search(r'^https://mahjongsoul\.game\.yo-star\.com/v[0-9\.]+\.w/code\.js$', flow.request.url):
-                flow.request.url = "http://cdn.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
+                flow.request.url = "http://fastly.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
 
 async def start_proxy(host, port, enable_unlocker):
     opts = options.Options(listen_host=host, listen_port=port)
