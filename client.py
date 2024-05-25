@@ -84,7 +84,7 @@ class Recommandation(Horizontal):
             for i in range(3):
                 self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
             self.app.rpc_server.draw_top3([self.recommand_idx, recommand[0], "?", "?", "?", weight_text])
-        elif recommand[0] in ['chi_low', 'chi_mid', 'chi_high']:
+        elif recommand[0] in ['chi_low', 'chi_mid', 'chi_high', 'chi']:
             self.action.label = "chi"
             self.action.add_class("action_chi")
             last_kawa_tile = state.last_kawa_tile()
@@ -284,7 +284,10 @@ class FlowScreen(Screen):
                     self.app.set_timer(2, self.autoplay)
             if self.mjai_msg_idx < len(self.app.mjai_msg_dict[self.flow_id]):
                 bridge = self.app.bridge[self.flow_id]
-                self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(self.app.mjai_msg_dict[self.flow_id][-1]['meta'], bridge.is_3p)
+                if 'meta' in self.app.mjai_msg_dict[self.flow_id][-1]:
+                    self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(self.app.mjai_msg_dict[self.flow_id][-1]['meta'], bridge.is_3p)
+                else:
+                    self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = [[self.app.mjai_msg_dict[self.flow_id][-1]['type'], 1.0]]
                 latest_mjai_msg = self.app.mjai_msg_dict[self.flow_id][-1]
                 # Update tehai
                 player_state = bridge.mjai_client.bot.state()
