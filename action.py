@@ -316,6 +316,10 @@ class Action:
             else:
                 dahai_delay = dahai_delay
 
+            if "time" in mjai_msg:
+                dahai_delay -= mjai_msg["time"]
+                if dahai_delay < 0:
+                    dahai_delay = 0
             time.sleep(dahai_delay)
             self.click_dahai(mjai_msg, tehai, tsumohai)
             return
