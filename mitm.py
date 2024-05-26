@@ -56,10 +56,17 @@ async def start_proxy(host, port, enable_unlocker):
         with_dumper=False,
     )
     master.addons.add(ClientWebSocket())
-    if enable_unlocker:
-        master.addons.add(ClientHTTP())
-    from mhm.addons import WebSocketAddon as Unlocker
-    master.addons.add(Unlocker())
+
+    import mhm
+    import mhm.addon
+    import mhm.hook
+    import mhm.main
+    import mhm.resource
+    print("fetching resver...")
+    resmgr = mhm.resource.load_resource()
+    hooks: list[mhm.hook.Hook] = mhm.main.create_hooks(resmgr)
+    master.addons.add(mhm.addon.GameAddon([h.run for h in hooks], False))
+
     await master.run()
     return master
 
@@ -205,7 +212,8 @@ class PlaywrightController:
 
         self.page = self.browser.new_page()
 
-        self.page.goto('https://game.maj-soul.com/1/')
+        self.page.goto('https://game.mahjongsoul.com/')
+        # self.page.goto('https://game.maj-soul.com/1/')
         print(f'go to page success, url: {self.page.url}')
 
         self._t3c_width = self.width * 0.16
@@ -464,14 +472,11 @@ if __name__ == '__main__':
 
     with open("mhmp.json", "r") as f:
         mhmp = json.load(f)
-        mhmp["mitmdump"]["mode"] = [f"regular@{mitm_port}"]
-        mhmp["hook"]["enable_skins"] = enable_unlocker
-        mhmp["hook"]["enable_aider"] = enable_helper
+        mhmp["mitmdump"]["args"]["mode"] = [f"regular@{mitm_port}"]
+        mhmp["base"]["skins"] = enable_unlocker
+        mhmp["base"]["aider"] = enable_helper
     with open("mhmp.json", "w") as f:
         json.dump(mhmp, f, indent=4)
-    import mhm
-    print("fetching resver...")
-    mhm.fetch_resver()
     # Create and start the proxy server thread
     proxy_thread = threading.Thread(target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker)))
     proxy_thread.start()
@@ -496,24 +501,8 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         # On Ctrl+C, stop the other threads
         if enable_playwright:
-            playwright_controller.__exit__()
+            playwright_controller.exit()
         ctx.master.shutdown()
         liqiServer.server.shutdown()
         exit(0)
 
-# else:
-with open("settings.json", "r") as f:
-    settings = json.load(f)
-    mitm_port = settings["Port"]["MITM"]
-    rpc_port = settings["Port"]["XMLRPC"]
-    enable_unlocker = settings["Unlocker"]
-if enable_unlocker:
-    from mhm.addons import WebSocketAddon as Unlocker
-    addons = [ClientWebSocket(), Unlocker()]
-else:
-    addons = [ClientWebSocket()]
-# start XMLRPC server
-rpc_host="127.0.0.1"
-liqiServer = LiqiServer(rpc_host, rpc_port)
-server_thread = threading.Thread(target=lambda: liqiServer.serve_forever())
-server_thread.start()
