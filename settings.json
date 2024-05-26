@@ -20,5 +20,6 @@
         "width": 1280,
         "height": 720
     },
-    "Overlay": true
+    "Overlay": true,
+    "MajsoulURL": "https://game.maj-soul.com/1/"
 }
