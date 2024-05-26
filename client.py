@@ -84,7 +84,7 @@ class Recommandation(Horizontal):
             for i in range(3):
                 self.consumes[i].update(TILE_2_UNICODE_ART_RICH["?"])
             self.app.rpc_server.draw_top3([self.recommand_idx, recommand[0], "?", "?", "?", weight_text])
-        elif recommand[0] in ['chi_low', 'chi_mid', 'chi_high']:
+        elif recommand[0] in ['chi_low', 'chi_mid', 'chi_high', 'chi']:
             self.action.label = "chi"
             self.action.add_class("action_chi")
             last_kawa_tile = state.last_kawa_tile()
@@ -284,7 +284,10 @@ class FlowScreen(Screen):
                     self.app.set_timer(2, self.autoplay)
             if self.mjai_msg_idx < len(self.app.mjai_msg_dict[self.flow_id]):
                 bridge = self.app.bridge[self.flow_id]
-                self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(self.app.mjai_msg_dict[self.flow_id][-1]['meta'], bridge.is_3p)
+                if 'meta' in self.app.mjai_msg_dict[self.flow_id][-1]:
+                    self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = meta_to_recommend(self.app.mjai_msg_dict[self.flow_id][-1]['meta'], bridge.is_3p)
+                else:
+                    self.app.mjai_msg_dict[self.flow_id][-1]['meta'] = [[self.app.mjai_msg_dict[self.flow_id][-1]['type'], 1.0]]
                 latest_mjai_msg = self.app.mjai_msg_dict[self.flow_id][-1]
                 # Update tehai
                 player_state = bridge.mjai_client.bot.state()
@@ -464,6 +467,7 @@ class SettingsScreen(Static):
             self.value_playwright_setting_enable_checkbox = settings["Playwright"]["enable"]
             self.value_playwright_setting_width_input = settings["Playwright"]["width"]
             self.value_playwright_setting_height_input = settings["Playwright"]["height"]
+            self.value_majsoul_url_input = settings["MajsoulURL"]
 
     def compose(self) -> ComposeResult:
         self.port_setting_mitm_label = Label("MITM Port", id="port_setting_mitm_label")
@@ -514,6 +518,11 @@ class SettingsScreen(Static):
         self.playwright_setting_container = Vertical(self.playwright_setting_enable_container, self.playwright_setting_resolution_container, id="playwright_setting_container")
         self.playwright_setting_container.border_title = "Playwright"
 
+        self.majsoul_url_label = Label("Majsoul URL", id="majsoul_url_label")
+        self.majsoul_url_input = Input(placeholder="URL", type="text", id="majsoul_url_input", value=self.value_majsoul_url_input)
+        self.majsoul_url_container = Horizontal(self.majsoul_url_label, self.majsoul_url_input, id="majsoul_url_container")
+        self.majsoul_url_container.border_title = "Majsoul"
+
         self.setting_save_button = Button("Save", variant="warning", id="setting_save_button")
 
         self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die = HoverLink("Akagi is Free and Open Sourced on GitHub.\n本程式Akagi在GitHub上完全開源且免費。如果你是付費取得的，你已經被賣家欺騙，請立即舉報、差評、退款。", "https://github.com/shinkuan/Akagi", id="remove_this_you_die")
@@ -525,6 +534,7 @@ class SettingsScreen(Static):
                                                      self.overlay_setting_container,
                                                      self.autoplay_setting_container,
                                                      self.playwright_setting_container,
+                                                     self.majsoul_url_container,
                                                      self.setting_save_button,
                                                      self.remove_this_then_you_badluck_for_100years_and_get_hit_by_a_car_then_die,
                                                      id="setting_container"
@@ -612,6 +622,10 @@ class SettingsScreen(Static):
         except:
             pass
 
+    @on(Input.Changed, "#majsoul_url_input")
+    def majsoul_url_input_changed(self, event: Input.Changed) -> None:
+        self.value_majsoul_url_input = event.value
+
     @on(Button.Pressed, "#setting_save_button")
     def setting_save_button_pressed(self) -> None:
         with open("settings.json", "r") as f:
@@ -629,6 +643,7 @@ class SettingsScreen(Static):
             settings["Playwright"]["enable"] = self.value_playwright_setting_enable_checkbox
             settings["Playwright"]["width"] = self.value_playwright_setting_width_input
             settings["Playwright"]["height"] = self.value_playwright_setting_height_input
+            settings["MajsoulURL"] = self.value_majsoul_url_input
         with open("settings.json", "w") as f:
             json.dump(settings, f, indent=4)
 

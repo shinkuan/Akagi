@@ -1,4 +1,5 @@
 import json
+import time
 import sys
 import hashlib
 import pathlib
@@ -38,14 +39,17 @@ class Bot:
     def react(self, events: str) -> str:
         events = json.loads(events)
 
+        start = time.time()
         return_action = None
         for e in events:
             return_action = self.model.react(json.dumps(e, separators=(",", ":")))
+        time_elapsed = time.time() - start
 
         if return_action is None:
-            return json.dumps({"type":"none"}, separators=(",", ":"))
+            return json.dumps({"type":"none", "time":time_elapsed}, separators=(",", ":"))
         else:
             raw_data = json.loads(return_action)
+            raw_data["time"] = time_elapsed
             if self.online:
                 raw_data["online"] = model.online_valid
             return json.dumps(raw_data, separators=(",", ":"))

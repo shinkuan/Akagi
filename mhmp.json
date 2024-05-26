@@ -1,27 +1,29 @@
 {
-    "mhm": {
-        "log_level": "info",
-        "pure_python_protobuf": false
-    },
-    "hook": {
-        "enable_skins": false,
-        "enable_aider": false,
-        "enable_chest": false,
-        "random_star_char": false,
-        "no_cheering_emotes": false
-    },
+  "base": {
+    "skins": false,
+    "aider": false,
+    "chest": false,
+    "yongchang_mode": false,
+    "random_star_char": false,
+    "no_cheering_emotes": true
+  },
+  "mitmdump": {
     "dump": {
-        "with_dumper": false,
-        "with_termlog": true
+      "with_dumper": false,
+      "with_termlog": true
     },
-    "mitmdump": {
-        "http2": false,
-        "mode": [
-            "regular@7878"
-        ]
-    },
-    "proxinject": {
-        "name": "jantama_mahjongsoul",
-        "set-proxy": "127.0.0.1:7070"
+    "args": {
+      "http2": false,
+      "mode": [
+        "regular@7878"
+      ]
     }
+  },
+  "proxinject": {
+    "path": null,
+    "args": {
+      "name": "jantama_mahjongsoul",
+      "set-proxy": "127.0.0.1:7070"
+    }
+  }
 }

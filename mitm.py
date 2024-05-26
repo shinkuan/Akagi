@@ -47,22 +47,6 @@ class ClientWebSocket:
         activated_flows.remove(flow.id)
         messages_dict.pop(flow.id)
 
-class ClientHTTP:
-    def __init__(self):
-        pass
-
-    def request(self, flow: mitmproxy.http.HTTPFlow):
-        if flow.request.method == "GET":
-            if re.search(r'^https://game\.maj\-soul\.(com|net)/[0-9]+/v[0-9\.]+\.w/code\.js$', flow.request.url):
-                print("====== GET code.js ======"*3)
-                print("====== GET code.js ======"*3)
-                print("====== GET code.js ======"*3)
-                flow.request.url = "http://fastly.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
-            elif re.search(r'^https://game\.mahjongsoul\.com/v[0-9\.]+\.w/code\.js$', flow.request.url):
-                flow.request.url = "http://fastly.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
-            elif re.search(r'^https://mahjongsoul\.game\.yo-star\.com/v[0-9\.]+\.w/code\.js$', flow.request.url):
-                flow.request.url = "http://fastly.jsdelivr.net/gh/Avenshy/majsoul_mod_plus/safe_code.js"
-
 async def start_proxy(host, port, enable_unlocker):
     opts = options.Options(listen_host=host, listen_port=port)
 
@@ -72,10 +56,17 @@ async def start_proxy(host, port, enable_unlocker):
         with_dumper=False,
     )
     master.addons.add(ClientWebSocket())
-    if enable_unlocker:
-        master.addons.add(ClientHTTP())
-    from mhm.addons import WebSocketAddon as Unlocker
-    master.addons.add(Unlocker())
+
+    import mhm
+    import mhm.addon
+    import mhm.hook
+    import mhm.main
+    import mhm.resource
+    print("fetching resver...")
+    resmgr = mhm.resource.load_resource()
+    hooks: list[mhm.hook.Hook] = mhm.main.create_hooks(resmgr)
+    master.addons.add(mhm.addon.GameAddon([h.run for h in hooks], False))
+
     await master.run()
     return master
 
@@ -197,7 +188,7 @@ ACTION_2_UNICODE = {
 
 
 class PlaywrightController:
-    def __init__(self, width, height, mitm_port):
+    def __init__(self, width, height, mitm_port, majsoul_url):
         self.playwrightContextManager = sync_playwright()
         self.playwright = self.playwrightContextManager.__enter__()
         self.chromium = self.playwright.chromium
@@ -221,7 +212,8 @@ class PlaywrightController:
 
         self.page = self.browser.new_page()
 
-        self.page.goto('https://game.maj-soul.com/1/')
+        self.page.goto(majsoul_url)
+        # self.page.goto('https://game.mahjongsoul.com/')
         print(f'go to page success, url: {self.page.url}')
 
         self._t3c_width = self.width * 0.16
@@ -439,6 +431,8 @@ class PlaywrightController:
         self.evaluate_list.append(js_code)
 
     def exit(self):
+        for page in self.page.context.pages:
+            page.close()
         self.playwrightContextManager.__exit__()
 
 
@@ -454,6 +448,7 @@ if __name__ == '__main__':
         playwright_height = settings["Playwright"]["height"]
         autohu = settings["Autohu"]
         scale = playwright_width / 16
+        majsoul_url = settings["MajsoulURL"]
 
     mitm_host="127.0.0.1"
     rpc_host="127.0.0.1"
@@ -478,14 +473,11 @@ if __name__ == '__main__':
 
     with open("mhmp.json", "r") as f:
         mhmp = json.load(f)
-        mhmp["mitmdump"]["mode"] = [f"regular@{mitm_port}"]
-        mhmp["hook"]["enable_skins"] = enable_unlocker
-        mhmp["hook"]["enable_aider"] = enable_helper
+        mhmp["mitmdump"]["args"]["mode"] = [f"regular@{mitm_port}"]
+        mhmp["base"]["skins"] = enable_unlocker
+        mhmp["base"]["aider"] = enable_helper
     with open("mhmp.json", "w") as f:
         json.dump(mhmp, f, indent=4)
-    import mhm
-    print("fetching resver...")
-    mhm.fetch_resver()
     # Create and start the proxy server thread
     proxy_thread = threading.Thread(target=lambda: asyncio.run(start_proxy(mitm_host, mitm_port, enable_unlocker)))
     proxy_thread.start()
@@ -498,7 +490,7 @@ if __name__ == '__main__':
     playwright_controller = None
     page = None
     if enable_playwright:
-        playwright_controller = PlaywrightController(playwright_width, playwright_height, mitm_port)
+        playwright_controller = PlaywrightController(playwright_width, playwright_height, mitm_port, majsoul_url)
 
     click_list = []
     evaluate_list = []
@@ -510,24 +502,8 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         # On Ctrl+C, stop the other threads
         if enable_playwright:
-            playwright_controller.__exit__()
+            playwright_controller.exit()
         ctx.master.shutdown()
         liqiServer.server.shutdown()
         exit(0)
 
-# else:
-with open("settings.json", "r") as f:
-    settings = json.load(f)
-    mitm_port = settings["Port"]["MITM"]
-    rpc_port = settings["Port"]["XMLRPC"]
-    enable_unlocker = settings["Unlocker"]
-if enable_unlocker:
-    from mhm.addons import WebSocketAddon as Unlocker
-    addons = [ClientWebSocket(), Unlocker()]
-else:
-    addons = [ClientWebSocket()]
-# start XMLRPC server
-rpc_host="127.0.0.1"
-liqiServer = LiqiServer(rpc_host, rpc_port)
-server_thread = threading.Thread(target=lambda: liqiServer.serve_forever())
-server_thread.start()
