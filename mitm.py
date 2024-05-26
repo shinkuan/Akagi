@@ -423,6 +423,8 @@ class PlaywrightController:
         self.evaluate_list.append(js_code)
 
     def exit(self):
+        for page in self.page.context.pages:
+            page.close()
         self.playwrightContextManager.__exit__()
 
 
