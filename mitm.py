@@ -188,7 +188,7 @@ ACTION_2_UNICODE = {
 
 
 class PlaywrightController:
-    def __init__(self, width, height, mitm_port):
+    def __init__(self, width, height, mitm_port, majsoul_url):
         self.playwrightContextManager = sync_playwright()
         self.playwright = self.playwrightContextManager.__enter__()
         self.chromium = self.playwright.chromium
@@ -212,8 +212,8 @@ class PlaywrightController:
 
         self.page = self.browser.new_page()
 
-        self.page.goto('https://game.mahjongsoul.com/')
-        # self.page.goto('https://game.maj-soul.com/1/')
+        self.page.goto(majsoul_url)
+        # self.page.goto('https://game.mahjongsoul.com/')
         print(f'go to page success, url: {self.page.url}')
 
         self._t3c_width = self.width * 0.16
@@ -448,6 +448,7 @@ if __name__ == '__main__':
         playwright_height = settings["Playwright"]["height"]
         autohu = settings["Autohu"]
         scale = playwright_width / 16
+        majsoul_url = settings["MajsoulURL"]
 
     mitm_host="127.0.0.1"
     rpc_host="127.0.0.1"
@@ -489,7 +490,7 @@ if __name__ == '__main__':
     playwright_controller = None
     page = None
     if enable_playwright:
-        playwright_controller = PlaywrightController(playwright_width, playwright_height, mitm_port)
+        playwright_controller = PlaywrightController(playwright_width, playwright_height, mitm_port, majsoul_url)
 
     click_list = []
     evaluate_list = []

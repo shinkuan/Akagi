@@ -622,6 +622,29 @@ Button.action_nukidora.-active {
     border-title-align: center;
 }
 
+#majsoul_url_label {
+    padding: 1 0;
+    width: 11;
+    height: 3;
+    align: center middle;
+    margin: 0 1;
+}
+
+#majsoul_url_input {
+    width: 1fr;
+    align: center top;
+    margin: 0 1;
+}
+
+#majsoul_url_container {
+    width: 1fr;
+    height: auto;
+    align: center top;
+    margin: 0;
+    border: round $accent;
+    border-title-align: center;
+}
+
 #remove_this_you_die {
     width: 1fr;
     height: auto;
