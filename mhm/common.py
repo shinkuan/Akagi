@@ -1,30 +1,62 @@
 import asyncio
 
-from mitmproxy.options import Options
-from mitmproxy.tools.dump import DumpMaster
-
-from .addon import GameAddon
-from .config import config
+from . import pRoot, logger, conf, resver, init
 
 
-def _cmd(dikt):
-    # HACK: not support single parameter
-    return [obj for key, value in dikt.items() for obj in (f"--{key}", value)]
+PROXINJECTOR = pRoot / "common/proxinject/proxinjector-cli"
 
 
-async def start_proxy(methods: list, verbose: bool):
-    master = DumpMaster(Options(**config.mitmdump.args), **config.mitmdump.dump)
-    master.addons.add(GameAddon(methods, verbose))
+def _cmd(dict):
+    return [obj for key, value in dict.items() for obj in (f"--{key}", value)]
+
+
+async def start_proxy():
+    from mitmproxy.tools.dump import DumpMaster
+    from mitmproxy.options import Options
+    from .addons import addons
+
+    master = DumpMaster(Options(**conf.mitmdump), **conf.dump)
+    master.addons.add(*addons)
     await master.run()
     return master
 
 
 async def start_inject():
-    cmd = [config.proxinject.path, *_cmd(config.proxinject.args)]
+    cmd = [PROXINJECTOR, *_cmd(conf.proxinject)]
+
     while True:
-        # HACK: Due to Proxinject exiting directly without injecting into the process
         process = await asyncio.subprocess.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        await process.communicate()
+
+        stdout, stderr = await process.communicate()
+
         await asyncio.sleep(0.8)
+
+
+def main():
+    async def start():
+        logger.info(f"[i]log level: {conf.mhm.log_level}")
+        logger.info(f"[i]pure python protobuf: {conf.mhm.pure_python_protobuf}")
+
+        logger.info(f"[i]version: {resver.version}")
+        logger.info(f"[i]characters: {len(resver.emotes)}")
+
+        tasks = set()
+
+        if conf.mitmdump:
+            tasks.add(start_proxy())
+            logger.info(f"[i]mitmdump launched @ {len(conf.mitmdump.get('mode'))} mode")
+
+        # if conf.proxinject:
+        #     tasks.add(start_inject())
+        #     logger.info(f"[i]proxinject launched @ {conf.proxinject.get('set-proxy')}")
+
+        await asyncio.gather(*tasks)
+
+    init()
+
+    try:
+        asyncio.run(start())
+    except KeyboardInterrupt:
+        pass

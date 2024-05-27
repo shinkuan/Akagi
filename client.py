@@ -273,7 +273,7 @@ class FlowScreen(Screen):
                         if self.dahai_verfication_job is not None:
                             self.dahai_verfication_job.stop()
                             self.dahai_verfication_job = None
-                    if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate':
+                    if liqi_msg['method'] == '.lq.NotifyGameEndResult' or liqi_msg['method'] == '.lq.NotifyGameTerminate' or liqi_msg['method'] == '.lq.FastTest.terminateGame':
                         self.action_quit()
             
             elif self.syncing:

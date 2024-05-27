@@ -58,14 +58,10 @@ async def start_proxy(host, port, enable_unlocker):
     master.addons.add(ClientWebSocket())
 
     import mhm
-    import mhm.addon
-    import mhm.hook
-    import mhm.main
-    import mhm.resource
     print("fetching resver...")
-    resmgr = mhm.resource.load_resource()
-    hooks: list[mhm.hook.Hook] = mhm.main.create_hooks(resmgr)
-    master.addons.add(mhm.addon.GameAddon([h.run for h in hooks], False))
+    mhm.fetch_resver()
+    from mhm.addons import WebSocketAddon as Unlocker
+    master.addons.add(Unlocker())
 
     await master.run()
     return master
@@ -473,9 +469,9 @@ if __name__ == '__main__':
 
     with open("mhmp.json", "r") as f:
         mhmp = json.load(f)
-        mhmp["mitmdump"]["args"]["mode"] = [f"regular@{mitm_port}"]
-        mhmp["base"]["skins"] = enable_unlocker
-        mhmp["base"]["aider"] = enable_helper
+        mhmp["mitmdump"]["mode"] = [f"regular@{mitm_port}"]
+        mhmp["hook"]["enable_skins"] = enable_unlocker
+        mhmp["hook"]["enable_aider"] = enable_helper
     with open("mhmp.json", "w") as f:
         json.dump(mhmp, f, indent=4)
     # Create and start the proxy server thread
