@@ -210,7 +210,10 @@ class PlaywrightController:
 
         print(f'startup browser success')
 
-        self.page = self.browser.new_page()
+        if self.browser.pages:
+            self.page = self.browser.pages[0]
+        else:
+            self.page = self.browser.new_page()
 
         self.page.goto(majsoul_url)
         # self.page.goto('https://game.mahjongsoul.com/')
