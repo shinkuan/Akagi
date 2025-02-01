@@ -442,7 +442,9 @@ class PlaywrightController:
 if __name__ == '__main__':
     with open("settings.json", "r") as f:
         settings = json.load(f)
+        mitm_host = settings["Host"]["MITM"]
         mitm_port = settings["Port"]["MITM"]
+        rpc_host = settings["Host"]["XMLRPC"]
         rpc_port = settings["Port"]["XMLRPC"]
         enable_unlocker = settings["Unlocker"]
         enable_helper = settings["Helper"]
@@ -453,8 +455,8 @@ if __name__ == '__main__':
         scale = playwright_width / 16
         majsoul_url = settings["MajsoulURL"]
 
-    mitm_host="127.0.0.1"
-    rpc_host="127.0.0.1"
+    mitm_host=mitm_host
+    rpc_host=rpc_port
 
     p = OptionParser()
     p.add_option("--mitm-host", default=None)
