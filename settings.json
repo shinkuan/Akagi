@@ -10,6 +10,10 @@
     },
     "Helper": false,
     "Autohu": false,
+    "Host": {
+        "MIMT": "127.0.0.1",
+        "XMLRPC": "127.0.0.1"
+    },
     "Port": {
         "MITM": 7878,
         "XMLRPC": 7879,
