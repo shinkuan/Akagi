@@ -11,7 +11,7 @@
     <a href="https://discord.gg/Z2wjXUK8bN">Ask me anything about this at Discord</a>
     <br/>
     <br/>
-    <a href="https://github.com/shinkuan/Akagi/blob/main/README_CH.md">中文</a>
+    <a href="https://github.com/shinkuan/Akagi/blob/main/README_CH.md">繁體中文</a>
     <br/>
     <a href="https://github.com/shinkuan/MajsoulUnlocker/issues">Report Bug</a>
     .
