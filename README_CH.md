@@ -11,6 +11,8 @@
     <a href="https://discord.gg/Z2wjXUK8bN">有問題？到Discord找我</a>
     <br/>
     <br/>
+    <a href="https://github.com/shinkuan/Akagi/blob/main/README.md">English</a>
+    <br/>
     <a href="https://github.com/shinkuan/MajsoulUnlocker/issues">回報 Bug</a>
     .
     <a href="https://github.com/shinkuan/MajsoulUnlocker/issues">功能請求</a>
