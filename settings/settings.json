@@ -11,6 +11,8 @@
         "online": false,
         "api_key": "your_api_key"
     },
+    "dataserver": true,
+    "tui": true,
     "autoplay": false,
     "auto_switch_model": true,
     "autoplay_time": {

@@ -4,21 +4,21 @@ import re
 import sys
 import json
 import time
-import atexit
 import random
-import pathlib
 import traceback
 import jsonschema
 import subprocess
+import signal
 from pathlib import Path
 from sys import executable
-from threading import Thread
+from threading import Thread, Event as ThreadEvent
 from functools import partial
 from datetime import datetime
 
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.css.query import NoMatches
 from textual.message import Message
@@ -39,6 +39,7 @@ from mitm.client import Client
 from mjai_bot.bot import AkagiBot
 from mjai_bot.controller import Controller
 from autoplay.autoplay import AutoPlay
+from dataserver.dataserver import DataServer
 from settings import MITMType, Settings, load_settings, get_settings, get_schema, verify_settings, save_settings
 from settings.settings import settings
 
@@ -46,6 +47,105 @@ mitm_client: Client = None
 mjai_controller: Controller = None
 mjai_bot: AkagiBot = None
 autoplay: AutoPlay = None
+dataserver_client: DataServer | None = None
+stop_event: ThreadEvent | None = None
+
+
+def start_dataserver_if_enabled() -> None:
+    """
+    Start the dataserver thread when enabled in settings.
+    """
+    global dataserver_client
+    if not settings.dataserver:
+        logger.info("Dataserver disabled in settings, skipping startup.")
+        return
+
+    if dataserver_client and dataserver_client.running:
+        return
+
+    try:
+        dataserver_client = DataServer()
+        dataserver_client.start()
+        logger.info("Dataserver started on 0.0.0.0:8765")
+    except Exception:
+        logger.error(f"Failed to start dataserver: {traceback.format_exc()}")
+        dataserver_client = None
+
+
+def stop_dataserver() -> None:
+    """
+    Stop the dataserver if it is running.
+    """
+    global dataserver_client
+    if dataserver_client and dataserver_client.running:
+        logger.info("Stopping dataserver...")
+        dataserver_client.stop()
+    dataserver_client = None
+
+
+def build_dataserver_payload(recommends: list[tuple[str, float]], bot: AkagiBot) -> dict | None:
+    formatted_data = []
+    last_kawa_tile = bot.last_kawa_tile
+
+    for action, confidence in recommends:
+        rec_data = {"action": action, "confidence": float(confidence)}
+
+        if action in ("chi_low", "chi_mid", "chi_high"):
+            if not last_kawa_tile:
+                formatted_data.append(rec_data)
+                continue
+            chi_candidates = bot.find_chi_candidates_simple()
+            if action == "chi_low" and bot.can_chi_low and chi_candidates.chi_low_meld is not None:
+                rec_data["tile"], rec_data["consumed"] = chi_candidates.chi_low_meld
+            elif action == "chi_mid" and bot.can_chi_mid and chi_candidates.chi_mid_meld is not None:
+                rec_data["tile"], rec_data["consumed"] = chi_candidates.chi_mid_meld
+            elif action == "chi_high" and bot.can_chi_high and chi_candidates.chi_high_meld is not None:
+                rec_data["tile"], rec_data["consumed"] = chi_candidates.chi_high_meld
+        elif action == "pon" and bot.can_pon and last_kawa_tile:
+            rec_data["tile"] = last_kawa_tile
+            rec_data["consumed"] = [last_kawa_tile[:2]] * 2
+        elif action == "kan_select" and bot.can_kan and last_kawa_tile and bot.can_daiminkan:
+            rec_data["tile"] = last_kawa_tile
+            rec_data["consumed"] = [last_kawa_tile[:2]] * 3
+
+        formatted_data.append(rec_data)
+
+    if not formatted_data:
+        return None
+
+    return {
+        "type": "recommandations",
+        "data": {
+            "recommendations": formatted_data,
+            "tehai": bot.tehai_mjai,
+            "last_kawa_tile": last_kawa_tile,
+        },
+    }
+
+
+def push_recommendations_if_enabled(mjai_msg: dict) -> None:
+    """
+    Push recommendations to dataserver (if running) for frontend consumption.
+    """
+    global dataserver_client, mjai_bot
+    if not settings.dataserver:
+        return
+    if not dataserver_client or not dataserver_client.running:
+        return
+    if not mjai_bot:
+        return
+    if "meta" not in mjai_msg or "q_values" not in mjai_msg["meta"]:
+        return
+
+    try:
+        recommends: list[tuple[str, float]] = meta_to_recommend(mjai_msg["meta"], mjai_bot.is_3p)
+        payload = build_dataserver_payload(recommends, mjai_bot)
+        if not payload:
+            return
+        Thread(target=lambda: dataserver_client.update_data(payload), daemon=True).start()
+        logger.debug("Pushed recommendations to dataserver.")
+    except Exception:
+        logger.error(f"Error sending recommendations to dataserver: {traceback.format_exc()}")
 
 # ============================================= #
 #               Settings Screen                 #
@@ -219,9 +319,10 @@ class SettingsScreen(Screen):
     @on(Button.Pressed, "#settings_save_button")
     def settings_save_button_clicked(self) -> None:
         """Handle Button.Pressed message sent by Save button."""
-        global settings, mjai_controller, mitm_client, autoplay
+        global settings, mjai_controller, mitm_client, autoplay, dataserver_client
         local_settings = self.get_settings()["settings"]
         logger.info(f"Verifying settings: {local_settings}")
+        previous_dataserver_enabled = settings.dataserver
         try:
             jsonschema.validate(local_settings, get_schema())
             logger.info("Settings are valid, saving...")
@@ -234,6 +335,10 @@ class SettingsScreen(Screen):
             update_model = local_settings["model"] != settings.model
             # Reload settings
             settings.update(get_settings())
+            if previous_dataserver_enabled and not settings.dataserver:
+                stop_dataserver()
+            elif (not previous_dataserver_enabled) and settings.dataserver:
+                start_dataserver_if_enabled()
             self.app.notify(
                 "Settings saved successfully, restart is required to apply changes.",
                 title="Settings Saved",
@@ -932,6 +1037,7 @@ class AkagiApp(App):
     CSS_PATH = "client.tcss"
 
     BINDINGS = [
+        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
         ("t", "random_theme", "Random Theme"),
         ("h", "help_screen", "Help"),
         ("z", "help_screen_zh", "Help (中文)"),
@@ -1064,6 +1170,7 @@ class AkagiApp(App):
                 best_action.update_best_action(mjai_response)
                 recommendation: Recommendations = self.query_one("#recommendation")
                 recommendation.update_recommendation(mjai_response)
+                push_recommendations_if_enabled(mjai_response)
                 # ============================================= #
                 #             Autoplay and Actions              #
                 # ============================================= #
@@ -1185,6 +1292,54 @@ class AkagiApp(App):
         """
         self.push_screen(LogsScreen())
 
+def run_headless() -> None:
+    """
+    Run Akagi without the TUI.
+    """
+    global mitm_client, mjai_controller, mjai_bot, stop_event
+
+    logger.info("Starting Akagi in headless mode (TUI disabled)...")
+    stop_event = ThreadEvent()
+
+    def _handle_stop(signum, _frame):
+        logger.info(f"Received signal {signum}, stopping Akagi...")
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, _handle_stop)
+    signal.signal(signal.SIGINT, _handle_stop)
+
+    start_dataserver_if_enabled()
+    logger.info(f"MITM Proxy: {settings.mitm.host}:{settings.mitm.port} ({settings.mitm.type})")
+    mitm_client = Client()
+    mitm_client.start()
+
+    logger.info("Starting MJAI controller")
+    mjai_controller = Controller()
+    mjai_bot = AkagiBot()
+
+    try:
+        while not stop_event.is_set():
+            if not mitm_client.running:
+                time.sleep(0.1)
+                continue
+
+            mjai_msgs = mitm_client.dump_messages()
+            if mjai_msgs:
+                mjai_response = mjai_controller.react(mjai_msgs)
+                logger.debug(f"<- {mjai_response}")
+                mjai_bot.react(input_list=mjai_msgs)
+                push_recommendations_if_enabled(mjai_response)
+
+            time.sleep(1 / 20)
+    except KeyboardInterrupt:
+        logger.info("Stopping Akagi...")
+    finally:
+        if mitm_client and mitm_client.running:
+            mitm_client.stop()
+        stop_dataserver()
+        logger.info("Akagi stopped")
+        sys.exit(0)
+
 def main():
     """
     Main entry point for Akagi.
@@ -1192,6 +1347,11 @@ def main():
     global mitm_client, mjai_controller, mjai_bot, settings, autoplay
 
     logger.info("Starting Akagi...")
+    if not settings.tui:
+        run_headless()
+        return
+
+    start_dataserver_if_enabled()
     logger.info(f"MITM Proxy: {settings.mitm.host}:{settings.mitm.port} ({settings.mitm.type})")
     mitm_client = Client()
     logger.info(f"Starting MJAI controller")
@@ -1207,6 +1367,8 @@ def main():
         app.run()
     except KeyboardInterrupt:
         logger.info("Stopping Akagi...")
-    mitm_client.stop()
-    logger.info("Akagi stopped")
-    sys.exit(0)
+    finally:
+        mitm_client.stop()
+        stop_dataserver()
+        logger.info("Akagi stopped")
+        sys.exit(0)

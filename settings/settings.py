@@ -1,5 +1,6 @@
 import os
 import json
+import copy
 import jsonschema
 from jsonschema.exceptions import ValidationError
 import dataclasses
@@ -8,6 +9,70 @@ from pathlib import Path
 from .logger import logger
 
 FILE_PATH = Path(__file__).resolve().parent
+
+
+def get_default_settings() -> dict:
+    """
+    Default settings template. A fresh copy should be used each time to avoid mutation.
+    """
+    return {
+        "mitm": {
+            "type": "majsoul",
+            "host": "127.0.0.1",
+            "port": 7880,
+        },
+        "model": "mortal",
+        "theme": "textual-dark",
+        "ot_server": {
+            "server": "http://127.0.0.1:5000",
+            "online": False,
+            "api_key": "your_api_key",
+        },
+        "dataserver": True,
+        "tui": True,
+        "autoplay": False,
+        "auto_switch_model": True,
+        "autoplay_time": {
+            "first_tile": 5.0,
+            "rand_min": 1.0,
+            "rand_max": 3.0,
+            "candidate": 0.5,
+        },
+        "recommendation_temperature": 0.3,
+    }
+
+
+def ensure_default_settings(settings: dict) -> bool:
+    """
+    Ensure required settings exist, filling missing entries with defaults.
+
+    Args:
+        settings (dict): Settings dictionary to patch.
+
+    Returns:
+        bool: True if any defaults were added.
+    """
+    default_settings = get_default_settings()
+    updated = False
+
+    for key, default_value in default_settings.items():
+        if key not in settings or settings.get(key) is None:
+            settings[key] = copy.deepcopy(default_value)
+            updated = True
+            continue
+
+        if isinstance(default_value, dict):
+            if not isinstance(settings[key], dict):
+                settings[key] = copy.deepcopy(default_value)
+                updated = True
+                continue
+
+            for sub_key, sub_value in default_value.items():
+                if sub_key not in settings[key] or settings[key].get(sub_key) is None:
+                    settings[key][sub_key] = copy.deepcopy(sub_value)
+                    updated = True
+
+    return updated
 
 
 class MITMType(Enum):
@@ -45,6 +110,8 @@ class Settings:
     theme: str
     model: str
     ot: OTConfig
+    dataserver: bool
+    tui: bool
     autoplay: bool
     auto_switch_model: bool
     autoplay_time: AutoplayTimeConfig
@@ -64,6 +131,8 @@ class Settings:
         self.ot.server = settings["ot_server"]["server"]
         self.ot.online = settings["ot_server"]["online"]
         self.ot.api_key = settings["ot_server"]["api_key"]
+        self.dataserver = settings.get("dataserver", True)
+        self.tui = settings.get("tui", True)
         self.autoplay = settings["autoplay"]
         self.auto_switch_model = settings["auto_switch_model"]
         self.autoplay_time = AutoplayTimeConfig(
@@ -121,6 +190,8 @@ class Settings:
                     "online": self.ot.online,
                     "api_key": self.ot.api_key
                 },
+                "dataserver": self.dataserver,
+                "tui": self.tui,
                 "autoplay": self.autoplay,
                 "auto_switch_model": self.auto_switch_model,
                 "autoplay_time": {
@@ -153,6 +224,7 @@ def load_settings() -> Settings:
     if not (FILE_PATH / "settings.schema.json").exists():
         raise FileNotFoundError("settings.schema.json not found")
     
+    defaults_added = False
     try:
         # Load settings
         with open(FILE_PATH / "settings.json", "r") as f:
@@ -162,34 +234,13 @@ def load_settings() -> Settings:
         logger.warning("Backup settings.json to settings.json.bak")
         os.rename(FILE_PATH / "settings.json", FILE_PATH / "settings.json.bak")
         logger.warning("Creating new settings.json")
+        default_settings = get_default_settings()
         with open(FILE_PATH / "settings.json", "w") as f:
-            json.dump({
-                "mitm": {
-                    "type": "majsoul",
-                    "host": "127.0.0.1",
-                    "port": 7880
-                },
-                "model": "mortal",
-                "theme": "textual-dark",
-                "ot_server": {
-                    "server": "http://127.0.0.1:5000",
-                    "online": False,
-                    "api_key": "your_api_key"
-                },
-                "autoplay": False,
-                "auto_switch_model": True,
-                "autoplay_time": {
-                    "first_tile": 5,
-                    "rand_min": 1,
-                    "rand_max": 3,
-                    "candidate": 0.5
-                },
-                "recommendation_temperature": 0.3
-            }, f, indent=4)
+            json.dump(default_settings, f, indent=4)
         logger.info(f"Created new settings.json with default values")
-        # Load settings again
-        with open(FILE_PATH / "settings.json", "r") as f:
-            settings = json.load(f)
+        settings = copy.deepcopy(default_settings)
+
+    defaults_added = ensure_default_settings(settings)
 
     # Load schema
     with open(FILE_PATH / "settings.schema.json", "r") as f:
@@ -198,6 +249,9 @@ def load_settings() -> Settings:
     # Validate settings
     # This will raise an exception if the settings are invalid
     jsonschema.validate(settings, schema)
+    if defaults_added:
+        save_settings(settings)
+        logger.info(f"Updated {FILE_PATH / 'settings.json'} with missing default values")
 
     # Parse settings
     return Settings(
@@ -213,6 +267,8 @@ def load_settings() -> Settings:
             online=settings["ot_server"]["online"],
             api_key=settings["ot_server"]["api_key"]
         ),
+        dataserver=settings["dataserver"],
+        tui=settings["tui"],
         autoplay=settings["autoplay"],
         auto_switch_model=settings["auto_switch_model"],
         autoplay_time=AutoplayTimeConfig(
