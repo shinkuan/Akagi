@@ -5,6 +5,7 @@ loguru==0.7.3
 textual==3.0.0
 requests==2.32.3
 jsonschema==4.23.0
+aiohttp==3.12.14
 
 # Majsoul
 protobuf==5.29.3

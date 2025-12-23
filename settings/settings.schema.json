@@ -8,7 +8,13 @@
         "type": {
           "type": "string",
           "description": "The type of MITM service to use.",
-          "enum": ["amatsuki", "majsoul", "riichi_city", "tenhou", "unified"]
+          "enum": [
+            "amatsuki",
+            "majsoul",
+            "riichi_city",
+            "tenhou",
+            "unified"
+          ]
         },
         "host": {
           "type": "string",
@@ -22,7 +28,11 @@
           "maximum": 65535
         }
       },
-      "required": ["type", "host", "port"],
+      "required": [
+        "type",
+        "host",
+        "port"
+      ],
       "additionalProperties": false
     },
     "model": {
@@ -50,8 +60,20 @@
           "description": "The API key for the online service."
         }
       },
-      "required": ["server", "online", "api_key"],
+      "required": [
+        "server",
+        "online",
+        "api_key"
+      ],
       "additionalProperties": false
+    },
+    "dataserver": {
+      "type": "boolean",
+      "description": "Whether to enable the SSE dataserver for streaming recommendations."
+    },
+    "tui": {
+      "type": "boolean",
+      "description": "Whether to launch the textual TUI (disable for headless mode)."
     },
     "autoplay": {
       "type": "boolean",
@@ -82,7 +104,12 @@
           "description": "Delay in seconds for chi pon kan candidate selection."
         }
       },
-      "required": ["first_tile", "rand_min", "rand_max", "candidate"],
+      "required": [
+        "first_tile",
+        "rand_min",
+        "rand_max",
+        "candidate"
+      ],
       "additionalProperties": false
     },
     "recommendation_temperature": {
@@ -90,7 +117,17 @@
       "description": "Temperature setting for recommendation softmax scaling."
     }
   },
-  "required": ["mitm", "model", "theme", "ot_server", "autoplay", "auto_switch_model", "recommendation_temperature"],
+  "required": [
+    "mitm",
+    "model",
+    "theme",
+    "ot_server",
+    "dataserver",
+    "tui",
+    "autoplay",
+    "auto_switch_model",
+    "recommendation_temperature"
+  ],
   "description": "Settings for the application.",
   "additionalProperties": false
 }
