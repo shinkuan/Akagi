@@ -1,23 +1,17 @@
-<br/>
-<p align="center">
+<div align="center">
   <img src="https://github.com/shinkuan/RandomStuff/assets/35415788/db94b436-c3d4-4c57-893e-8db2074d2d22" width="50%">
-  <h1 align="center">Akagi</h3>
+  <h1 align="center">Akagi</h1>
 
-  <p align="center">
-「死ねば助かるのに………」- 赤木しげる<br>
-<br>
-    <br/>
-    <br/>
-    <a href="https://discord.gg/Z2wjXUK8bN">Ask me anything about this at Discord</a>
-    <br/>
-    <br/>
-    <a href="./README_ZH.md">中文</a>
-    <br/>
-    <a href="https://github.com/shinkuan/Akagi/issues">Report Bug</a>
-    .
-    <a href="https://github.com/shinkuan/Akagi/issues">Request Feature</a>
-  </p>
-</p>
+  <div align="center">
+  「死ねば助かるのに………」- 赤木しげる<br>
+  <div align="center">
+  <a href="./README_ZH.md">简体中文</a> | <a href="./README_TW.md">繁體中文</a>
+  <br/>
+  <a href="https://github.com/shinkuan/Akagi/issues">Report Bug</a> | <a href="https://github.com/shinkuan/Akagi/issues">Request Feature</a> | 
+  <a href="https://discord.gg/Z2wjXUK8bN">Ask me anything about this at Discord</a>
+  </div>
+  </div>
+</div>
 
 <p align="center">
   <a href="https://github.com/shinkuan/Akagi"><img src="https://img.shields.io/github/stars/shinkuan/Akagi?logo=github" alt="GitHub stars" /></a>
