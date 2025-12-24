@@ -1,24 +1,25 @@
 import os
+
 os.environ["LOGURU_AUTOINIT"] = "False"
 import re
 import sys
 import json
 import time
-import atexit
 import random
-import pathlib
 import traceback
 import jsonschema
 import subprocess
+import signal
 from pathlib import Path
 from sys import executable
-from threading import Thread
+from threading import Thread, Event as ThreadEvent
 from functools import partial
 from datetime import datetime
 
 from rich.text import Text
 from textual import on
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.css.query import NoMatches
 from textual.message import Message
@@ -27,31 +28,191 @@ from textual.screen import Screen
 from textual.coordinate import Coordinate
 from textual.theme import Theme
 from textual.widget import Widget
-from textual.widgets import (Button, Checkbox, Footer, Header, Input, Label, Select, Switch,
-                             LoadingIndicator, Log, Markdown, Pretty, Rule, Tabs, Tab,
-                             Digits, Static, RichLog, DataTable, ContentSwitcher,
-                             Markdown, MarkdownViewer)
+from textual.widgets import (
+    Button,
+    Checkbox,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Select,
+    Switch,
+    LoadingIndicator,
+    Log,
+    Markdown,
+    Pretty,
+    Rule,
+    Tabs,
+    Tab,
+    Digits,
+    Static,
+    RichLog,
+    DataTable,
+    ContentSwitcher,
+    Markdown,
+    MarkdownViewer,
+)
 
 from .logger import logger
-from .misc import TILE_2_UNICODE_ART_RICH, VERTICAL_RULE, EMPTY_VERTICAL_RULE, ADDITIONAL_THEMES
+from .misc import (
+    TILE_2_UNICODE_ART_RICH,
+    VERTICAL_RULE,
+    EMPTY_VERTICAL_RULE,
+    ADDITIONAL_THEMES,
+)
 from .libriichi_helper import meta_to_recommend
 from mitm.client import Client
 from mjai_bot.bot import AkagiBot
 from mjai_bot.controller import Controller
 from autoplay.autoplay import AutoPlay
-from settings import MITMType, Settings, load_settings, get_settings, get_schema, verify_settings, save_settings
+from dataserver.dataserver import DataServer
+from settings import (
+    MITMType,
+    Settings,
+    load_settings,
+    get_settings,
+    get_schema,
+    verify_settings,
+    save_settings,
+)
 from settings.settings import settings
 
 mitm_client: Client = None
 mjai_controller: Controller = None
 mjai_bot: AkagiBot = None
 autoplay: AutoPlay = None
+dataserver_client: DataServer = None
+stop_event: ThreadEvent | None = None
+
+
+def start_dataserver_if_enabled() -> None:
+    """
+    Start the dataserver thread when enabled in settings.
+    """
+    global dataserver_client
+    if not settings.dataserver:
+        logger.info("Dataserver disabled in settings, skipping startup.")
+        return
+
+    if dataserver_client and dataserver_client.running:
+        return
+
+    try:
+        dataserver_client = DataServer()
+        dataserver_client.start()
+        logger.info("Dataserver started on 0.0.0.0:8765")
+    except Exception:
+        logger.error(f"Failed to start dataserver: {traceback.format_exc()}")
+        dataserver_client = None
+
+
+def stop_dataserver() -> None:
+    """
+    Stop the dataserver if it is running.
+    """
+    global dataserver_client
+    if dataserver_client and dataserver_client.running:
+        logger.info("Stopping dataserver...")
+        dataserver_client.stop()
+    dataserver_client = None
+
+
+def build_dataserver_payload(
+    recommends: list[tuple[str, float]], bot: AkagiBot
+) -> dict | None:
+    formatted_data = []
+    last_kawa_tile = bot.last_kawa_tile
+
+    for action, confidence in recommends:
+        rec_data = {"action": action, "confidence": float(confidence)}
+
+        if action in ("chi_low", "chi_mid", "chi_high"):
+            if not last_kawa_tile:
+                formatted_data.append(rec_data)
+                continue
+            chi_candidates = bot.find_chi_candidates_simple()
+            if (
+                action == "chi_low"
+                and bot.can_chi_low
+                and chi_candidates.chi_low_meld is not None
+            ):
+                rec_data["tile"], rec_data["consumed"] = chi_candidates.chi_low_meld
+            elif (
+                action == "chi_mid"
+                and bot.can_chi_mid
+                and chi_candidates.chi_mid_meld is not None
+            ):
+                rec_data["tile"], rec_data["consumed"] = chi_candidates.chi_mid_meld
+            elif (
+                action == "chi_high"
+                and bot.can_chi_high
+                and chi_candidates.chi_high_meld is not None
+            ):
+                rec_data["tile"], rec_data["consumed"] = chi_candidates.chi_high_meld
+        elif action == "pon" and bot.can_pon and last_kawa_tile:
+            rec_data["tile"] = last_kawa_tile
+            rec_data["consumed"] = [last_kawa_tile[:2]] * 2
+        elif (
+            action == "kan_select"
+            and bot.can_kan
+            and last_kawa_tile
+            and bot.can_daiminkan
+        ):
+            rec_data["tile"] = last_kawa_tile
+            rec_data["consumed"] = [last_kawa_tile[:2]] * 3
+
+        formatted_data.append(rec_data)
+
+    if not formatted_data:
+        return None
+
+    return {
+        "type": "recommandations",
+        "data": {
+            "recommendations": formatted_data,
+            "tehai": bot.tehai_mjai,
+            "last_kawa_tile": last_kawa_tile,
+        },
+    }
+
+
+def push_recommendations_if_enabled(mjai_msg: dict) -> None:
+    """
+    Push recommendations to dataserver (if running) for frontend consumption.
+    """
+    global dataserver_client, mjai_bot
+    if not settings.dataserver:
+        return
+    if not dataserver_client or not dataserver_client.running:
+        return
+    if not mjai_bot:
+        return
+    if "meta" not in mjai_msg or "q_values" not in mjai_msg["meta"]:
+        return
+
+    try:
+        recommends: list[tuple[str, float]] = meta_to_recommend(
+            mjai_msg["meta"], mjai_bot.is_3p
+        )
+        payload = build_dataserver_payload(recommends, mjai_bot)
+        if not payload:
+            return
+        Thread(
+            target=lambda: dataserver_client.update_data(payload), daemon=True
+        ).start()
+        logger.debug("Pushed recommendations to dataserver.")
+    except Exception:
+        logger.error(
+            f"Error sending recommendations to dataserver: {traceback.format_exc()}"
+        )
+
 
 # ============================================= #
 #               Settings Screen                 #
 # ============================================= #
 class SettingsScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "back")]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -96,20 +257,35 @@ class SettingsScreen(Screen):
         )
         scrollable_container.border_title = "Settings"
         yield scrollable_container
-        
-    def generate_settings_ui(self, schema: dict, settings: dict, previous_names: str, name: str, is_outer=False) -> Widget:
+
+    def generate_settings_ui(
+        self,
+        schema: dict,
+        settings: dict,
+        previous_names: str,
+        name: str,
+        is_outer=False,
+    ) -> Widget:
         match schema["type"]:
             case "object":
                 containers = []
                 for key, value in schema["properties"].items():
                     if key not in settings:
                         raise ValueError(f"Invalid settings: {key} not found")
-                    containers.append(self.generate_settings_ui(value, settings[key], f"{previous_names}{name}-", key))
+                    containers.append(
+                        self.generate_settings_ui(
+                            value, settings[key], f"{previous_names}{name}-", key
+                        )
+                    )
                 if is_outer:
                     containers.append(
                         Horizontal(
-                            Button("Save", variant="success", id="settings_save_button"),
-                            Button("Cancel", variant="error", id="settings_cancel_button"),
+                            Button(
+                                "Save", variant="success", id="settings_save_button"
+                            ),
+                            Button(
+                                "Cancel", variant="error", id="settings_cancel_button"
+                            ),
                             id="settings_button_container",
                         )
                     )
@@ -131,49 +307,79 @@ class SettingsScreen(Screen):
                 if "enum" in schema:
                     return Horizontal(
                         Label(f"{name}: ", classes="settings__key"),
-                        Select.from_values(schema["enum"], value=settings, id=f"{previous_names}{name}", classes="settings__select"),
+                        Select.from_values(
+                            schema["enum"],
+                            value=settings,
+                            id=f"{previous_names}{name}",
+                            classes="settings__select",
+                        ),
                         classes="settings__row",
                         id=f"{previous_names}{name}",
                     )
                 else:
                     return Horizontal(
                         Label(f"{name}: ", classes="settings__key"),
-                        Input(value=settings, id=f"{previous_names}{name}", type="text", classes="settings__input"),
+                        Input(
+                            value=settings,
+                            id=f"{previous_names}{name}",
+                            type="text",
+                            classes="settings__input",
+                        ),
                         classes="settings__row",
                         id=f"{previous_names}{name}",
                     )
             case "number":
                 return Horizontal(
                     Label(f"{name}: ", classes="settings__key"),
-                    Input(value=str(settings), id=f"{previous_names}{name}", type="number", classes="settings__input"),
+                    Input(
+                        value=str(settings),
+                        id=f"{previous_names}{name}",
+                        type="number",
+                        classes="settings__input",
+                    ),
                     classes="settings__row",
                     id=f"{previous_names}{name}",
                 )
             case "integer":
                 return Horizontal(
                     Label(f"{name}: ", classes="settings__key"),
-                    Input(value=str(settings), id=f"{previous_names}{name}", type="integer", classes="settings__input"),
+                    Input(
+                        value=str(settings),
+                        id=f"{previous_names}{name}",
+                        type="integer",
+                        classes="settings__input",
+                    ),
                     classes="settings__row",
                     id=f"{previous_names}{name}",
                 )
             case "boolean":
                 return Horizontal(
                     Label(f"{name}: ", classes="settings__key"),
-                    Switch(value=settings, id=f"{previous_names}{name}", classes="settings__switch"),
+                    Switch(
+                        value=settings,
+                        id=f"{previous_names}{name}",
+                        classes="settings__switch",
+                    ),
                     classes="settings__row",
                     id=f"{previous_names}{name}",
                 )
             case "array":
-                raise ValueError(f"Invalid schema: {schema['type']} is not a valid type")
+                raise ValueError(
+                    f"Invalid schema: {schema['type']} is not a valid type"
+                )
             case _:
-                raise ValueError(f"Invalid schema: {schema['type']} is not a valid type")
+                raise ValueError(
+                    f"Invalid schema: {schema['type']} is not a valid type"
+                )
 
     def get_settings(self) -> dict:
         """
         Get settings from the UI.
         """
         settings = {}
-        settings_scrollable_container = self.query_one("#settings__scrollable_container")
+        settings_scrollable_container = self.query_one(
+            "#settings__scrollable_container"
+        )
         for child in settings_scrollable_container.children:
             if isinstance(child, Vertical):
                 key = child.id.split("-")[-1]
@@ -182,7 +388,7 @@ class SettingsScreen(Screen):
                 key = child.id.split("-")[-1]
                 settings[key] = self.get_settings_from_horizontal(child)
         return settings
-    
+
     def get_settings_from_vertical(self, vertical: Vertical) -> dict:
         settings = {}
         for child in vertical.children:
@@ -195,8 +401,10 @@ class SettingsScreen(Screen):
                 key = child.id.split("-")[-1]
                 settings[key] = self.get_settings_from_horizontal(child)
         return settings
-    
-    def get_settings_from_horizontal(self, horizontal: Horizontal) -> str | int | bool | float | None:
+
+    def get_settings_from_horizontal(
+        self, horizontal: Horizontal
+    ) -> str | int | bool | float | None:
         for child in horizontal.children:
             if isinstance(child, Label):
                 continue
@@ -219,21 +427,25 @@ class SettingsScreen(Screen):
     @on(Button.Pressed, "#settings_save_button")
     def settings_save_button_clicked(self) -> None:
         """Handle Button.Pressed message sent by Save button."""
-        global settings, mjai_controller, mitm_client, autoplay
+        global settings, mjai_controller, mitm_client, autoplay, dataserver_client
         local_settings = self.get_settings()["settings"]
         logger.info(f"Verifying settings: {local_settings}")
+        previous_dataserver_enabled = settings.dataserver
         try:
             jsonschema.validate(local_settings, get_schema())
             logger.info("Settings are valid, saving...")
             save_settings(local_settings)
             logger.info("Settings saved")
             notify_restart_mitm = (
-                (local_settings["mitm"]["type"] != settings.mitm.type.value) and
-                mitm_client.running
-            )
+                local_settings["mitm"]["type"] != settings.mitm.type.value
+            ) and mitm_client.running
             update_model = local_settings["model"] != settings.model
             # Reload settings
             settings.update(get_settings())
+            if previous_dataserver_enabled and not settings.dataserver:
+                stop_dataserver()
+            elif (not previous_dataserver_enabled) and settings.dataserver:
+                start_dataserver_if_enabled()
             self.app.notify(
                 "Settings saved successfully, restart is required to apply changes.",
                 title="Settings Saved",
@@ -297,11 +509,13 @@ class SettingsScreen(Screen):
         """Handle Button.Pressed message sent by Cancel button."""
         self.app.pop_screen()
 
+
 # ============================================= #
 #                Models Screen                  #
 # ============================================= #
 class ModelsScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "back")]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.windows: list = []
@@ -315,9 +529,17 @@ class ModelsScreen(Screen):
         windows_names = [window.name for window in self.windows]
         yield ScrollableContainer(
             Static("Models", id="models_label"),
-            Select.from_values(mjai_controller.available_bots_names, id="models_select"),
-            Static("Warning: This will restart the bot, do not change model during a match!", id="models_warning"),
-            Static("Warning: To play 3P Mahjong, a 3P model is needed.", id="models_warning2"),
+            Select.from_values(
+                mjai_controller.available_bots_names, id="models_select"
+            ),
+            Static(
+                "Warning: This will restart the bot, do not change model during a match!",
+                id="models_warning",
+            ),
+            Static(
+                "Warning: To play 3P Mahjong, a 3P model is needed.",
+                id="models_warning2",
+            ),
             Static("Autoplay Window", id="autoplay_window_label"),
             Select.from_values(windows_names, id="models_window_select"),
             Button("Select", variant="primary", id="models_select_button"),
@@ -332,14 +554,16 @@ class ModelsScreen(Screen):
         models_select: Select = self.query_one("#models_select")
         selected_model = models_select.value
         if selected_model != Select.BLANK:
-            selected_model_index = mjai_controller.available_bots_names.index(selected_model)
+            selected_model_index = mjai_controller.available_bots_names.index(
+                selected_model
+            )
             if mjai_controller.choose_bot_index(selected_model_index):
                 logger.info(f"Selected model: {selected_model}")
                 settings.model = selected_model
                 settings.save()
             else:
                 logger.error(f"Failed to select model: {selected_model}")
-        
+
         selected_window: Select = self.query_one("#models_window_select")
         selected_window_name = selected_window.value
         if selected_window_name != Select.BLANK:
@@ -350,11 +574,13 @@ class ModelsScreen(Screen):
 
         self.app.pop_screen()
 
+
 # ============================================= #
 #                 Logs Screen                   #
 # ============================================= #
 class LogsScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "back")]
+
     def __init__(self, *args, **kwargs):
         self.log_names: set[str] = set()
         self.log_paths: dict[str, tuple[datetime, Path]] = {}
@@ -366,14 +592,19 @@ class LogsScreen(Screen):
     def compose(self) -> ComposeResult:
         self.update_files()
         tabs = [
-            Tab(label=name, id=f"logs_tab_{name}", disabled=False) for name in sorted(self.log_names)
+            Tab(label=name, id=f"logs_tab_{name}", disabled=False)
+            for name in sorted(self.log_names)
         ]
         yield Header(name="Logs")
         yield Tabs(*tabs, id="logs_tabs")
         yield RichLog(
-            max_lines=1000, min_width=80, wrap=False,
-            highlight=True, markup=True, auto_scroll=True,
-            id="logs_log"
+            max_lines=1000,
+            min_width=80,
+            wrap=False,
+            highlight=True,
+            markup=True,
+            auto_scroll=True,
+            id="logs_log",
         )
         yield Button("Refresh", variant="primary", id="logs_refresh_button")
         yield Footer()
@@ -426,13 +657,17 @@ class LogsScreen(Screen):
         logs_tabs: Tabs = self.query_one("#logs_tabs")
         for name in self.log_names:
             if name not in original_log_names:
-                logs_tabs.add_tab(Tab(label=name, id=f"logs_tab_{name}", disabled=False))
+                logs_tabs.add_tab(
+                    Tab(label=name, id=f"logs_tab_{name}", disabled=False)
+                )
+
 
 # ============================================= #
 #                 Help Screen                   #
 # ============================================= #
 class HelpScreen(Screen):
     BINDINGS = [("escape", "app.pop_screen", "back")]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -446,8 +681,10 @@ class HelpScreen(Screen):
         yield Markdown(help_text, open_links=True, id="help_markdown")
         yield Footer()
 
+
 class HelpScreenZH(Screen):
     BINDINGS = [("escape", "app.pop_screen", "back")]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -461,6 +698,7 @@ class HelpScreenZH(Screen):
         yield Markdown(help_text, open_links=True, id="help_markdown_zh")
         yield Footer()
 
+
 # ============================================= #
 #                    Akagi                      #
 # ============================================= #
@@ -468,6 +706,7 @@ class TableRecord(Vertical):
     """
     Table record widget.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
 
@@ -476,10 +715,12 @@ class TableRecord(Vertical):
         for i in range(4):
             yield Label(f"Player {i}", id=f"table_record_player_{i}")
 
+
 class Tehai(Horizontal):
     """
     Tehai widget.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
 
@@ -487,7 +728,7 @@ class Tehai(Horizontal):
         for i in range(13):
             yield Label(TILE_2_UNICODE_ART_RICH["?"], id=f"tehai_{i}")
         yield Label(VERTICAL_RULE, id="tehai_rule")
-        yield Label(TILE_2_UNICODE_ART_RICH["?"], id="tehai_13") # Tsumo
+        yield Label(TILE_2_UNICODE_ART_RICH["?"], id="tehai_13")  # Tsumo
         self.border_title = "Tehai"
 
     def update_tehai(self) -> None:
@@ -517,10 +758,12 @@ class Tehai(Horizontal):
             tehai_label: Label = self.query_one(f"#tehai_{i}")
             tehai_label.update(TILE_2_UNICODE_ART_RICH["?"])
 
+
 class Consume(Horizontal):
     """
     Consume widget.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
 
@@ -541,10 +784,12 @@ class Consume(Horizontal):
             consume_label: Label = self.query_one(f"#consume_{i}")
             consume_label.update(TILE_2_UNICODE_ART_RICH["?"])
 
+
 class Recommendation(Horizontal):
     """
     Recommendation widget.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
 
@@ -569,7 +814,7 @@ class Recommendation(Horizontal):
             "none": "None",
             "nukidora": "Nukidora",
         }
-        if (recommend[0] in action_name):
+        if recommend[0] in action_name:
             action = action_name[recommend[0]]
         else:
             action = "Dahai"
@@ -577,7 +822,7 @@ class Recommendation(Horizontal):
         recommendation_button: Button = self.query_one("#recommendation_button")
         recommendation_tile: Label = self.query_one("#recommendation_tile")
         recommendation_rule: Label = self.query_one("#recommendation_rule")
-        recommendation_consume: Consume = self.query_one("#recommendation_consume")        
+        recommendation_consume: Consume = self.query_one("#recommendation_consume")
         recommendation_score: Digits = self.query_one("#recommendation_score")
 
         recommendation_button.label = action
@@ -594,33 +839,43 @@ class Recommendation(Horizontal):
             if recommend[0] == "chi_low":
                 assert mjai_bot.can_chi_low
                 assert chi_candidates.chi_low_meld is not None
-                recommendation_tile.update(TILE_2_UNICODE_ART_RICH[chi_candidates.chi_low_meld[0]])
+                recommendation_tile.update(
+                    TILE_2_UNICODE_ART_RICH[chi_candidates.chi_low_meld[0]]
+                )
                 recommendation_rule.update(VERTICAL_RULE)
                 recommendation_consume.update_consume(chi_candidates.chi_low_meld[1])
             elif recommend[0] == "chi_mid":
                 assert mjai_bot.can_chi_mid
                 assert chi_candidates.chi_mid_meld is not None
-                recommendation_tile.update(TILE_2_UNICODE_ART_RICH[chi_candidates.chi_mid_meld[0]])
+                recommendation_tile.update(
+                    TILE_2_UNICODE_ART_RICH[chi_candidates.chi_mid_meld[0]]
+                )
                 recommendation_rule.update(VERTICAL_RULE)
                 recommendation_consume.update_consume(chi_candidates.chi_mid_meld[1])
             elif recommend[0] == "chi_high":
                 assert mjai_bot.can_chi_high
                 assert chi_candidates.chi_high_meld is not None
-                recommendation_tile.update(TILE_2_UNICODE_ART_RICH[chi_candidates.chi_high_meld[0]])
+                recommendation_tile.update(
+                    TILE_2_UNICODE_ART_RICH[chi_candidates.chi_high_meld[0]]
+                )
                 recommendation_rule.update(VERTICAL_RULE)
                 recommendation_consume.update_consume(chi_candidates.chi_high_meld[1])
         elif recommend[0] in ("pon"):
             assert mjai_bot.can_pon
             recommendation_tile.update(TILE_2_UNICODE_ART_RICH[mjai_bot.last_kawa_tile])
             recommendation_rule.update(VERTICAL_RULE)
-            recommendation_consume.update_consume([mjai_bot.last_kawa_tile[:2], mjai_bot.last_kawa_tile[:2]])
+            recommendation_consume.update_consume(
+                [mjai_bot.last_kawa_tile[:2], mjai_bot.last_kawa_tile[:2]]
+            )
         elif recommend[0] in ("kan_select"):
             assert mjai_bot.can_kan
             if mjai_bot.can_daiminkan:
                 # When we can daiminkan, this is the only way to kan.
-                recommendation_tile.update(TILE_2_UNICODE_ART_RICH[mjai_bot.last_kawa_tile])
+                recommendation_tile.update(
+                    TILE_2_UNICODE_ART_RICH[mjai_bot.last_kawa_tile]
+                )
                 recommendation_rule.update(VERTICAL_RULE)
-                recommendation_consume.update_consume([mjai_bot.last_kawa_tile[:2]]*3)
+                recommendation_consume.update_consume([mjai_bot.last_kawa_tile[:2]] * 3)
             else:
                 # We don't know the tile to kan, so we use "?"
                 # At some rare cases, we can have multiple kan options
@@ -632,11 +887,15 @@ class Recommendation(Horizontal):
         elif recommend[0] in ("hora"):
             assert mjai_bot.can_agari
             if mjai_bot.can_ron_agari:
-                recommendation_tile.update(TILE_2_UNICODE_ART_RICH[mjai_bot.last_kawa_tile])
+                recommendation_tile.update(
+                    TILE_2_UNICODE_ART_RICH[mjai_bot.last_kawa_tile]
+                )
                 recommendation_rule.update(EMPTY_VERTICAL_RULE)
                 recommendation_consume.clear_consume()
             elif mjai_bot.can_tsumo_agari:
-                recommendation_tile.update(TILE_2_UNICODE_ART_RICH[mjai_bot.last_self_tsumo])
+                recommendation_tile.update(
+                    TILE_2_UNICODE_ART_RICH[mjai_bot.last_self_tsumo]
+                )
                 recommendation_rule.update(EMPTY_VERTICAL_RULE)
                 recommendation_consume.clear_consume()
         elif recommend[0] in ("ryukyoku"):
@@ -684,18 +943,22 @@ class Recommendation(Horizontal):
         if recommendation_button.label == "Reach":
             # I think Mortal can tolerate getting multiple reach
             # https://github.com/Equim-chan/Mortal/blob/3ec7a80f0f34446e9fd51c5df4a2940706874fe7/libriichi/src/state/update.rs#L665
-            mitm_client.messages.put({
-                "type": "reach",
-                "actor": mjai_controller.bot.player_id,
-            })
+            mitm_client.messages.put(
+                {
+                    "type": "reach",
+                    "actor": mjai_controller.bot.player_id,
+                }
+            )
         elif recommendation_button.label == "Kan":
             # TODO
             pass
+
 
 class Recommendations(Vertical):
     """
     Recommendations widget.
     """
+
     RECOMMENDATION_COUNT = 3
 
     def __init__(self, *args, **kwargs):
@@ -721,11 +984,13 @@ class Recommendations(Vertical):
             else:
                 recommend.clear_recommendation()
 
+
 class BestAction(Horizontal):
     # TODO: When action is None, fails to update
     """
     Best action widget.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
 
@@ -751,7 +1016,7 @@ class BestAction(Horizontal):
             "none": "None",
             "nukidora": "Nukidora",
         }
-        if (mjai_msg["type"] in action_name):
+        if mjai_msg["type"] in action_name:
             action = action_name[mjai_msg["type"]]
         else:
             action = "Unknown"
@@ -778,7 +1043,9 @@ class BestAction(Horizontal):
                 best_action_rule.update(VERTICAL_RULE)
                 best_action_consume.update_consume(mjai_msg["consumed"])
             case "ankan":
-                best_action_tile.update(TILE_2_UNICODE_ART_RICH[mjai_msg["consumed"][0]])
+                best_action_tile.update(
+                    TILE_2_UNICODE_ART_RICH[mjai_msg["consumed"][0]]
+                )
                 best_action_rule.update(VERTICAL_RULE)
                 best_action_consume.update_consume(mjai_msg["consumed"][1:])
             case "reach" | "hora" | "ryukyoku":
@@ -801,18 +1068,22 @@ class BestAction(Horizontal):
         if best_action_button_action.label == "Reach":
             # I think Mortal can tolerate getting multiple reach
             # https://github.com/Equim-chan/Mortal/blob/3ec7a80f0f34446e9fd51c5df4a2940706874fe7/libriichi/src/state/update.rs#L665
-            mitm_client.messages.put({
-                "type": "reach",
-                "actor": mjai_controller.bot.player_id,
-            })
+            mitm_client.messages.put(
+                {
+                    "type": "reach",
+                    "actor": mjai_controller.bot.player_id,
+                }
+            )
         elif best_action_button_action.label == "Kan":
             # TODO
             pass
+
 
 class BotStatus(Vertical):
     """
     Bot status widget.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(**kwargs)
 
@@ -827,26 +1098,26 @@ class BotStatus(Vertical):
             "note",
         ]
         ROW_TYPE = [
-            ("player_id",       None, ""),
-            ("target_actor",    None, ""),
-            ("target_actor_rel",None, ""),
-            ("can_act",         None, ""),
-            ("can_discard",     None, ""),
-            ("can_riichi",      None, ""),
-            ("can_chi",         None, ""),
-            ("can_chi_low",     None, ""),
-            ("can_chi_mid",     None, ""),
-            ("can_chi_high",    None, ""),
-            ("can_pon",         None, ""),
-            ("can_kan",         None, ""),
-            ("can_daiminkan",   None, ""),
-            ("can_ankan",       None, ""),
-            ("can_kakan",       None, ""),
-            ("can_agari",       None, ""),
-            ("can_ron_agari",   None, ""),
+            ("player_id", None, ""),
+            ("target_actor", None, ""),
+            ("target_actor_rel", None, ""),
+            ("can_act", None, ""),
+            ("can_discard", None, ""),
+            ("can_riichi", None, ""),
+            ("can_chi", None, ""),
+            ("can_chi_low", None, ""),
+            ("can_chi_mid", None, ""),
+            ("can_chi_high", None, ""),
+            ("can_pon", None, ""),
+            ("can_kan", None, ""),
+            ("can_daiminkan", None, ""),
+            ("can_ankan", None, ""),
+            ("can_kakan", None, ""),
+            ("can_agari", None, ""),
+            ("can_ron_agari", None, ""),
             ("can_tsumo_agari", None, ""),
-            ("can_ryukyoku",    None, ""),
-            ("can_pass",        None, ""),
+            ("can_ryukyoku", None, ""),
+            ("can_pass", None, ""),
         ]
         mjai_bot_status.add_columns(*COLUMN_NAMES)
         mjai_bot_status.add_rows(ROW_TYPE)
@@ -867,25 +1138,44 @@ class BotStatus(Vertical):
 
         mjai_bot_status: DataTable = self.query_one("#mjai_bot_status")
         attributes = [
-            mjai_bot.player_id, mjai_bot.target_actor, mjai_bot.target_actor_rel, mjai_bot.can_act,
-            mjai_bot.can_discard, mjai_bot.can_riichi, mjai_bot.can_chi, mjai_bot.can_chi_low,
-            mjai_bot.can_chi_mid, mjai_bot.can_chi_high, mjai_bot.can_pon, mjai_bot.can_kan,
-            mjai_bot.can_daiminkan, mjai_bot.can_ankan, mjai_bot.can_kakan, mjai_bot.can_agari,
-            mjai_bot.can_ron_agari, mjai_bot.can_tsumo_agari, mjai_bot.can_ryukyoku, mjai_bot.can_pass
+            mjai_bot.player_id,
+            mjai_bot.target_actor,
+            mjai_bot.target_actor_rel,
+            mjai_bot.can_act,
+            mjai_bot.can_discard,
+            mjai_bot.can_riichi,
+            mjai_bot.can_chi,
+            mjai_bot.can_chi_low,
+            mjai_bot.can_chi_mid,
+            mjai_bot.can_chi_high,
+            mjai_bot.can_pon,
+            mjai_bot.can_kan,
+            mjai_bot.can_daiminkan,
+            mjai_bot.can_ankan,
+            mjai_bot.can_kakan,
+            mjai_bot.can_agari,
+            mjai_bot.can_ron_agari,
+            mjai_bot.can_tsumo_agari,
+            mjai_bot.can_ryukyoku,
+            mjai_bot.can_pass,
         ]
         for row, attribute in enumerate(attributes):
             if isinstance(attribute, bool):
                 new_attribute = Text(str(attribute))
                 new_attribute.stylize("green" if attribute else "red")
-                mjai_bot_status.update_cell_at(Coordinate(row=row, column=1), new_attribute)
+                mjai_bot_status.update_cell_at(
+                    Coordinate(row=row, column=1), new_attribute
+                )
             else:
                 mjai_bot_status.update_cell_at(Coordinate(row=row, column=1), attribute)
+
 
 class ContentSwitcherCustom(ContentSwitcher):
     """
     Custom content switcher widget.
     When clicked, it switches to the next child widget.
     """
+
     def __init__(self, *args, **kwargs):
         self.children_ids = []
         super().__init__(*args, **kwargs)
@@ -905,33 +1195,40 @@ class ContentSwitcherCustom(ContentSwitcher):
                 self.current = self.children_ids[(i + 1) % len(self.children_ids)]
                 break
 
+
 class MJAIInLog(RichLog):
     """
     MJAI In Log widget.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     def on_mount(self) -> None:
         self.border_title = "MJAI In"
 
+
 class MJAIOutLog(RichLog):
     """
     MJAI Out Log widget.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     def on_mount(self) -> None:
         self.border_title = "MJAI Out"
 
+
 class AkagiApp(App):
     """
     Main application class for Akagi.
     """
+
     CSS_PATH = "client.tcss"
 
     BINDINGS = [
+        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
         ("t", "random_theme", "Random Theme"),
         ("h", "help_screen", "Help"),
         ("z", "help_screen_zh", "Help (中文)"),
@@ -980,7 +1277,9 @@ class AkagiApp(App):
                 title="Bot Error",
                 severity="error",
             )
-            logger.error("No bot selected, please make sure you have bots installed in ./mjai_bot directory")
+            logger.error(
+                "No bot selected, please make sure you have bots installed in ./mjai_bot directory"
+            )
 
         # ============================================= #
         #                    MITM                       #
@@ -998,14 +1297,22 @@ class AkagiApp(App):
             ContentSwitcherCustom(
                 BotStatus(id="bot_status"),
                 MJAIOutLog(
-                    max_lines=1000, min_width=80, wrap=False,
-                    highlight=True, markup=True, auto_scroll=True,
-                    id="mjai_out_log"
+                    max_lines=1000,
+                    min_width=80,
+                    wrap=False,
+                    highlight=True,
+                    markup=True,
+                    auto_scroll=True,
+                    id="mjai_out_log",
                 ),
                 MJAIInLog(
-                    max_lines=1000, min_width=80, wrap=False,
-                    highlight=True, markup=True, auto_scroll=True,
-                    id="mjai_in_log"
+                    max_lines=1000,
+                    min_width=80,
+                    wrap=False,
+                    highlight=True,
+                    markup=True,
+                    auto_scroll=True,
+                    id="mjai_in_log",
                 ),
                 id="content_switcher",
                 initial="mjai_out_log",
@@ -1049,8 +1356,11 @@ class AkagiApp(App):
                 mjai_bot.react(input_list=mjai_msgs)
                 mjai_out_log: RichLog = self.query_one("#mjai_out_log")
                 if (
-                    ((mjai_response["type"] != "none" or mjai_bot.can_act   ) and (not mjai_bot.is_3p)) or
-                    ((mjai_response["type"] != "none" or mjai_bot.can_act_3p) and (    mjai_bot.is_3p))
+                    (mjai_response["type"] != "none" or mjai_bot.can_act)
+                    and (not mjai_bot.is_3p)
+                ) or (
+                    (mjai_response["type"] != "none" or mjai_bot.can_act_3p)
+                    and (mjai_bot.is_3p)
                 ):
                     mjai_out_log.write(mjai_response)
                 # ============================================= #
@@ -1064,12 +1374,16 @@ class AkagiApp(App):
                 best_action.update_best_action(mjai_response)
                 recommendation: Recommendations = self.query_one("#recommendation")
                 recommendation.update_recommendation(mjai_response)
+                push_recommendations_if_enabled(mjai_response)
                 # ============================================= #
                 #             Autoplay and Actions              #
                 # ============================================= #
                 if (
-                    ((mjai_response["type"] != "none" or mjai_bot.can_act   ) and (not mjai_bot.is_3p)) or
-                    ((mjai_response["type"] != "none" or mjai_bot.can_act_3p) and (    mjai_bot.is_3p))
+                    (mjai_response["type"] != "none" or mjai_bot.can_act)
+                    and (not mjai_bot.is_3p)
+                ) or (
+                    (mjai_response["type"] != "none" or mjai_bot.can_act_3p)
+                    and (mjai_bot.is_3p)
                 ):
                     if settings.autoplay:
                         self.set_timer(0.1, partial(self.autoplay, mjai_response))
@@ -1105,7 +1419,7 @@ class AkagiApp(App):
             logger.warning("Autoplay is not supported for this MJAI type")
             return
 
-        if (not autoplay.check_window()):
+        if not autoplay.check_window():
             self.find_autoplay_window()
         try:
             act_result = autoplay.act(mjai_response)
@@ -1125,10 +1439,12 @@ class AkagiApp(App):
             )
             return
         if mjai_response["type"] == "reach":
-            mitm_client.messages.put({
-                "type": "reach",
-                "actor": mjai_controller.bot.player_id,
-            })
+            mitm_client.messages.put(
+                {
+                    "type": "reach",
+                    "actor": mjai_controller.bot.player_id,
+                }
+            )
 
     def action_random_theme(self) -> None:
         """
@@ -1137,7 +1453,7 @@ class AkagiApp(App):
         theme: str = random.choice(list(self.available_themes.keys()))
         self.theme = theme
         logger.info(f"Theme changed to {theme}")
-    
+
     def action_help_screen(self) -> None:
         """
         Show the help screen.
@@ -1170,7 +1486,7 @@ class AkagiApp(App):
         Open the settings screen.
         """
         self.push_screen(SettingsScreen())
-   
+
     @on(Button.Pressed, "#option3_button")
     def model_button_clicked(self) -> None:
         """
@@ -1185,6 +1501,58 @@ class AkagiApp(App):
         """
         self.push_screen(LogsScreen())
 
+
+def run_headless() -> None:
+    """
+    Run Akagi without the TUI.
+    """
+    global mitm_client, mjai_controller, mjai_bot, stop_event
+
+    logger.info("Starting Akagi in headless mode (TUI disabled)...")
+    stop_event = ThreadEvent()
+
+    def _handle_stop(signum, _frame):
+        logger.info(f"Received signal {signum}, stopping Akagi...")
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, _handle_stop)
+    signal.signal(signal.SIGINT, _handle_stop)
+
+    start_dataserver_if_enabled()
+    logger.info(
+        f"MITM Proxy: {settings.mitm.host}:{settings.mitm.port} ({settings.mitm.type})"
+    )
+    mitm_client = Client()
+    mitm_client.start()
+
+    logger.info("Starting MJAI controller")
+    mjai_controller = Controller()
+    mjai_bot = AkagiBot()
+
+    try:
+        while not stop_event.is_set():
+            if not mitm_client.running:
+                time.sleep(0.1)
+                continue
+
+            mjai_msgs = mitm_client.dump_messages()
+            if mjai_msgs:
+                mjai_response = mjai_controller.react(mjai_msgs)
+                logger.debug(f"<- {mjai_response}")
+                mjai_bot.react(input_list=mjai_msgs)
+                push_recommendations_if_enabled(mjai_response)
+
+            time.sleep(1 / 20)
+    except KeyboardInterrupt:
+        logger.info("Stopping Akagi...")
+    finally:
+        if mitm_client and mitm_client.running:
+            mitm_client.stop()
+        stop_dataserver()
+        logger.info("Akagi stopped")
+        sys.exit(0)
+
+
 def main():
     """
     Main entry point for Akagi.
@@ -1192,7 +1560,14 @@ def main():
     global mitm_client, mjai_controller, mjai_bot, settings, autoplay
 
     logger.info("Starting Akagi...")
-    logger.info(f"MITM Proxy: {settings.mitm.host}:{settings.mitm.port} ({settings.mitm.type})")
+    if not settings.tui:
+        run_headless()
+        return
+
+    start_dataserver_if_enabled()
+    logger.info(
+        f"MITM Proxy: {settings.mitm.host}:{settings.mitm.port} ({settings.mitm.type})"
+    )
     mitm_client = Client()
     logger.info(f"Starting MJAI controller")
     mjai_controller = Controller()
@@ -1207,6 +1582,8 @@ def main():
         app.run()
     except KeyboardInterrupt:
         logger.info("Stopping Akagi...")
-    mitm_client.stop()
-    logger.info("Akagi stopped")
-    sys.exit(0)
+    finally:
+        mitm_client.stop()
+        stop_dataserver()
+        logger.info("Akagi stopped")
+        sys.exit(0)
