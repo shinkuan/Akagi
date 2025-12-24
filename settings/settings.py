@@ -233,32 +233,41 @@ def load_settings() -> Settings:
         Settings: Parsed settings
     """
 
-    # Check file exists
-    if not (FILE_PATH / "settings.json").exists():
-        raise FileNotFoundError("settings.json not found")
-    if not (FILE_PATH / "settings.schema.json").exists():
+    settings_path = FILE_PATH / "settings.json"
+    schema_path = FILE_PATH / "settings.schema.json"
+
+    if not schema_path.exists():
         raise FileNotFoundError("settings.schema.json not found")
 
-    defaults_added = False
-    try:
-        # Load settings
-        with open(FILE_PATH / "settings.json", "r") as f:
-            settings = json.load(f)
-    except json.JSONDecodeError as e:
-        logger.error(f"settings.json corrupted: {e}")
-        logger.warning("Backup settings.json to settings.json.bak")
-        os.rename(FILE_PATH / "settings.json", FILE_PATH / "settings.json.bak")
-        logger.warning("Creating new settings.json")
+    settings = None
+
+    # Create default settings if missing or empty
+    if (not settings_path.exists()) or settings_path.stat().st_size == 0:
+        logger.warning("settings.json missing or empty, creating default settings.json")
         default_settings = get_default_settings()
-        with open(FILE_PATH / "settings.json", "w") as f:
+        with open(settings_path, "w") as f:
             json.dump(default_settings, f, indent=4)
-        logger.info(f"Created new settings.json with default values")
         settings = copy.deepcopy(default_settings)
+
+    if settings is None:
+        try:
+            with open(settings_path, "r") as f:
+                settings = json.load(f)
+        except json.JSONDecodeError as e:
+            logger.error(f"settings.json corrupted: {e}")
+            logger.warning("Backup settings.json to settings.json.bak")
+            os.rename(settings_path, FILE_PATH / "settings.json.bak")
+            logger.warning("Creating new settings.json")
+            default_settings = get_default_settings()
+            with open(settings_path, "w") as f:
+                json.dump(default_settings, f, indent=4)
+            logger.info(f"Created new settings.json with default values")
+            settings = copy.deepcopy(default_settings)
 
     defaults_added = ensure_default_settings(settings)
 
     # Load schema
-    with open(FILE_PATH / "settings.schema.json", "r") as f:
+    with open(schema_path, "r") as f:
         schema = json.load(f)
 
     # Validate settings
