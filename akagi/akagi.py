@@ -3,16 +3,12 @@ os.environ["LOGURU_AUTOINIT"] = "False"
 import re
 import sys
 import json
-import time
-import atexit
 import random
-import pathlib
 import traceback
 import jsonschema
 import subprocess
 from pathlib import Path
 from sys import executable
-from threading import Thread
 from functools import partial
 from datetime import datetime
 
@@ -39,6 +35,7 @@ from mitm.client import Client
 from mjai_bot.bot import AkagiBot
 from mjai_bot.controller import Controller
 from autoplay.autoplay import AutoPlay, AUTOPLAY_PRIVATE
+from dataserver.controller import DataServerController
 from settings import MITMType, Settings, load_settings, get_settings, get_schema, verify_settings, save_settings
 from settings.settings import settings
 
@@ -46,6 +43,7 @@ mitm_client: Client = None
 mjai_controller: Controller = None
 mjai_bot: AkagiBot = None
 autoplay: AutoPlay = None
+dataserver_controller: DataServerController = DataServerController()
 
 # ============================================= #
 #               Settings Screen                 #
@@ -224,6 +222,7 @@ class SettingsScreen(Screen):
         global settings, mjai_controller, mitm_client, autoplay
         local_settings = self.get_settings()["settings"]
         logger.info(f"Verifying settings: {local_settings}")
+        previous_dataserver_enabled = settings.dataserver.enable
         try:
             jsonschema.validate(local_settings, get_schema())
             if AUTOPLAY_PRIVATE:
@@ -242,6 +241,10 @@ class SettingsScreen(Screen):
             update_thinker = local_settings["autoplay_thinker"] != settings.autoplay_thinker
             # Reload settings
             settings.update(get_settings())
+            if previous_dataserver_enabled and not settings.dataserver.enable:
+                dataserver_controller.stop()
+            elif (not previous_dataserver_enabled) and settings.dataserver.enable:
+                dataserver_controller.start()
             self.app.notify(
                 "Settings saved successfully, restart is required to apply changes.",
                 title="Settings Saved",
@@ -1085,6 +1088,7 @@ class AkagiApp(App):
                 best_action.update_best_action(mjai_response)
                 recommendation: Recommendations = self.query_one("#recommendation")
                 recommendation.update_recommendation(mjai_response)
+                dataserver_controller.push(mjai_response, mjai_bot)
                 # ============================================= #
                 #             Autoplay and Actions              #
                 # ============================================= #
@@ -1216,6 +1220,7 @@ def main():
     global mitm_client, mjai_controller, mjai_bot, settings, autoplay
 
     logger.info("Starting Akagi...")
+    dataserver_controller.start()
     logger.info(f"MITM Proxy: {settings.mitm.host}:{settings.mitm.port} ({settings.mitm.type})")
     mitm_client = Client()
     logger.info(f"Starting MJAI controller")
@@ -1231,6 +1236,10 @@ def main():
         app.run()
     except KeyboardInterrupt:
         logger.info("Stopping Akagi...")
-    mitm_client.stop()
-    logger.info("Akagi stopped")
-    sys.exit(0)
+    except Exception:
+        logger.error(f"App crashed: {traceback.format_exc()}")
+    finally:
+        mitm_client.stop()
+        dataserver_controller.stop()
+        logger.info("Akagi stopped")
+        sys.exit(0)

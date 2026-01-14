@@ -321,12 +321,14 @@ class MortalEngine:
                 assert r.status_code == 200
                 is_online = True
                 r_json = r.json()
+                logger.info("Using online model to predict")
                 return r_json['actions'], r_json['q_out'], r_json['masks'], r_json['is_greedy']
             except:
                 is_online = False
                 pass
         # ==================================== #
         try:
+            logger.info("Using local model to predict")
             with (
                 torch.autocast(self.device.type, enabled=self.enable_amp),
                 torch.inference_mode(),

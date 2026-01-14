@@ -11,6 +11,11 @@
         "online": false,
         "api_key": "your_api_key"
     },
+    "dataserver": {
+        "enable": true,
+        "host": "0.0.0.0",
+        "port": 7881
+    },
     "autoplay": false,
     "auto_switch_model": true,
     "autoplay_thinker": "default",

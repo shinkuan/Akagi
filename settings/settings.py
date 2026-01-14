@@ -1,5 +1,6 @@
 import os
 import json
+import copy
 import jsonschema
 from jsonschema.exceptions import ValidationError
 import dataclasses
@@ -8,6 +9,74 @@ from pathlib import Path
 from .logger import logger
 
 FILE_PATH = Path(__file__).resolve().parent
+
+
+def get_default_settings() -> dict:
+    """
+    Default settings template. A fresh copy should be used each time to avoid mutation.
+    """
+    return {
+        "mitm": {"type": "majsoul", "host": "127.0.0.1", "port": 7880},
+        "model": "mortal",
+        "theme": "textual-dark",
+        "ot_server": {
+            "server": "http://127.0.0.1:5000",
+            "online": False,
+            "api_key": "your_api_key",
+        },
+        "dataserver": {"enable": True, "host": "0.0.0.0", "port": 7881},
+        "autoplay": False,
+        "auto_switch_model": True,
+        "autoplay_thinker": "default",
+        "default_thinker": {
+            "max_delay": 8.0,
+            "min_delay": 1.0,
+            "add_random_delay": True,
+            "add_random_delay_min": 1.0,
+            "add_random_delay_max": 3.0,
+            "first_tile_discard": 4.0,
+            "can_riichi_think": 2.0,
+            "close_q_threshold": 0.005,
+            "two_close_q_think": 2.0,
+            "confident_q_threshold": 0.995,
+            "confident_q_max_delay": 2.0,
+            "kan_think": 0.5,
+        },
+        "recommendation_temperature": 0.1,
+    }
+
+
+def fill_defaults(settings: dict) -> bool:
+    """
+    Ensure required settings exist, filling missing entries with defaults.
+
+    Args:
+        settings (dict): Settings dictionary to patch.
+
+    Returns:
+        bool: True if any defaults were added.
+    """
+    default_settings = get_default_settings()
+    updated = False
+
+    for key, default_value in default_settings.items():
+        if key not in settings or settings.get(key) is None:
+            settings[key] = copy.deepcopy(default_value)
+            updated = True
+            continue
+
+        if isinstance(default_value, dict):
+            if not isinstance(settings[key], dict):
+                settings[key] = copy.deepcopy(default_value)
+                updated = True
+                continue
+
+            for sub_key, sub_value in default_value.items():
+                if sub_key not in settings[key] or settings[key].get(sub_key) is None:
+                    settings[key][sub_key] = copy.deepcopy(sub_value)
+                    updated = True
+
+    return updated
 
 
 class MITMType(Enum):
@@ -25,6 +94,12 @@ class ServiceConfig:
 @dataclasses.dataclass
 class MITMConfig(ServiceConfig):
     type: MITMType
+
+@dataclasses.dataclass
+class DataServerConfig:
+    enable: bool
+    host: str
+    port: int
 
 @dataclasses.dataclass
 class OTConfig:
@@ -53,6 +128,7 @@ class Settings:
     theme: str
     model: str
     ot: OTConfig
+    dataserver: DataServerConfig
     autoplay: bool
     auto_switch_model: bool
     autoplay_thinker: str
@@ -73,6 +149,9 @@ class Settings:
         self.ot.server = settings["ot_server"]["server"]
         self.ot.online = settings["ot_server"]["online"]
         self.ot.api_key = settings["ot_server"]["api_key"]
+        self.dataserver.enable = settings["dataserver"]["enable"]
+        self.dataserver.host = settings["dataserver"]["host"]
+        self.dataserver.port = int(settings["dataserver"]["port"])
         self.autoplay = settings["autoplay"]
         self.auto_switch_model = settings["auto_switch_model"]
         self.autoplay_thinker = settings["autoplay_thinker"]
@@ -139,6 +218,11 @@ class Settings:
                     "online": self.ot.online,
                     "api_key": self.ot.api_key
                 },
+                "dataserver": {
+                    "enable": self.dataserver.enable,
+                    "host": self.dataserver.host,
+                    "port": self.dataserver.port
+                },
                 "autoplay": self.autoplay,
                 "auto_switch_model": self.auto_switch_model,
                 "autoplay_thinker": self.autoplay_thinker,
@@ -180,6 +264,7 @@ def load_settings() -> Settings:
     if not (FILE_PATH / "settings.schema.json").exists():
         raise FileNotFoundError("settings.schema.json not found")
     
+    defaults_added = False
     try:
         # Load settings
         with open(FILE_PATH / "settings.json", "r") as f:
@@ -189,43 +274,13 @@ def load_settings() -> Settings:
         logger.warning("Backup settings.json to settings.json.bak")
         os.rename(FILE_PATH / "settings.json", FILE_PATH / "settings.json.bak")
         logger.warning("Creating new settings.json")
+        default_settings = get_default_settings()
         with open(FILE_PATH / "settings.json", "w") as f:
-            json.dump({
-                "mitm": {
-                    "type": "majsoul",
-                    "host": "127.0.0.1",
-                    "port": 7880
-                },
-                "model": "mortal",
-                "theme": "textual-dark",
-                "ot_server": {
-                    "server": "http://127.0.0.1:5000",
-                    "online": False,
-                    "api_key": "your_api_key"
-                },
-                "autoplay": False,
-                "auto_switch_model": True,
-                "autoplay_thinker": "default",
-                "default_thinker": {
-                    "max_delay": 8.0,
-                    "min_delay": 1.0,
-                    "add_random_delay": True,
-                    "add_random_delay_min": 1.0,
-                    "add_random_delay_max": 3.0,
-                    "first_tile_discard": 4.0,
-                    "can_riichi_think": 2.0,
-                    "close_q_threshold": 0.005,
-                    "two_close_q_think": 2.0,
-                    "confident_q_threshold": 0.995,
-                    "confident_q_max_delay": 2.0,
-                    "kan_think": 0.5
-                },
-                "recommendation_temperature": 0.3
-            }, f, indent=4)
+            json.dump(default_settings, f, indent=4)
         logger.info(f"Created new settings.json with default values")
-        # Load settings again
-        with open(FILE_PATH / "settings.json", "r") as f:
-            settings = json.load(f)
+        settings = copy.deepcopy(default_settings)
+
+    defaults_added = fill_defaults(settings)
 
     # Load schema
     with open(FILE_PATH / "settings.schema.json", "r") as f:
@@ -234,9 +289,12 @@ def load_settings() -> Settings:
     # Validate settings
     # This will raise an exception if the settings are invalid
     jsonschema.validate(settings, schema)
+    if defaults_added:
+        save_settings(settings)
+        logger.info(f"Updated {FILE_PATH / 'settings.json'} with missing default values")
 
     # Parse settings
-    return Settings(
+    settings_obj = Settings(
         mitm=MITMConfig(
             host=settings["mitm"]["host"],
             port=settings["mitm"]["port"],
@@ -248,6 +306,11 @@ def load_settings() -> Settings:
             server=settings["ot_server"]["server"],
             online=settings["ot_server"]["online"],
             api_key=settings["ot_server"]["api_key"]
+        ),
+        dataserver=DataServerConfig(
+            enable=settings["dataserver"]["enable"],
+            host=settings["dataserver"]["host"],
+            port=int(settings["dataserver"]["port"]),
         ),
         autoplay=settings["autoplay"],
         auto_switch_model=settings["auto_switch_model"],
@@ -268,6 +331,8 @@ def load_settings() -> Settings:
         ),
         recommendation_temperature=settings["recommendation_temperature"]
     )
+    settings_obj.save_ot_settings()
+    return settings_obj
 
 def get_schema() -> dict:
     """
