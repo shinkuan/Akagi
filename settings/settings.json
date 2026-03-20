@@ -11,12 +11,12 @@
         "online": false,
         "api_key": "your_api_key"
     },
-    "autoplay": false,
+    "autoplay": true,
     "auto_switch_model": true,
     "autoplay_time": {
         "first_tile": 5.0,
         "rand_min": 1.0,
-        "rand_max": 3.0,
+        "rand_max": 4.0,
         "candidate": 0.5
     },
     "recommendation_temperature": 0.3

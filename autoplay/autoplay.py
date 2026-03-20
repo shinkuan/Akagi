@@ -1,85 +1,141 @@
+import win32gui
+
 from .logger import logger
 from settings.settings import settings, MITMType
-    
-class AutoPlay(object):
+
+
+class WindowObject:
+    """Represents a visible desktop window."""
+    def __init__(self, hwnd: int, name: str):
+        self.hwnd = hwnd
+        self.name = name
+
+    def __repr__(self):
+        return f"WindowObject(hwnd={self.hwnd}, name={self.name!r})"
+
+
+def _enum_visible_windows() -> list[WindowObject]:
+    """Return all currently visible, titled windows."""
+    windows: list[WindowObject] = []
+
+    def _cb(hwnd, _):
+        if win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd)
+            if title:
+                windows.append(WindowObject(hwnd, title))
+
+    win32gui.EnumWindows(_cb, None)
+    return windows
+
+
+class AutoPlay:
     def __init__(self):
-        pass
-        
+        self._bot = None
+        self._impl = None   # game-specific implementation (e.g. MajsoulAutoPlay)
+
+    # ------------------------------------------------------------------
+    # Target window property (kept for API compatibility)
+    # ------------------------------------------------------------------
+
     @property
-    def target_window(self) -> None:
-        """
-        Returns the target window object.
-        The target window is the first visible window in the list of windows.
-        """
+    def target_window(self) -> WindowObject | None:
+        if self._impl is None:
+            return None
+        hwnd = getattr(self._impl, "_hwnd", 0)
+        if hwnd and win32gui.IsWindow(hwnd):
+            return WindowObject(hwnd, win32gui.GetWindowText(hwnd))
         return None
 
-    def set_bot(self, bot):
-        """
-        Args:
-            bot (AkagiBot): The AkagiBot instance to be used.
+    # ------------------------------------------------------------------
+    # Setup
+    # ------------------------------------------------------------------
 
-        Returns:
-            None: No return value.
-        """
-        pass
+    def set_bot(self, bot) -> None:
+        self._bot = bot
+        if self._impl is not None:
+            self._impl._bot = bot
 
-    def set_autoplay(self):
-        """
-        Args:
-            autoplay (AutoPlayBase): The AutoPlayBase instance to be used.
-
-        Returns:
-            None: No return value.
-        """
+    def set_autoplay(self) -> None:
+        """Instantiate the game-specific autoplay backend."""
         match settings.mitm.type:
-            case MITMType.AMATSUKI:
-                return
             case MITMType.MAJSOUL:
-                return
-            case MITMType.RIICHI_CITY:
-                return
-            case MITMType.TENHOU:
-                return
-            case MITMType.UNIFIED:
-                return
+                from .majsoul import MajsoulAutoPlay
+                self._impl = MajsoulAutoPlay(self._bot)
+                logger.info("AutoPlay: Majsoul backend initialised")
+            case MITMType.AMATSUKI | MITMType.RIICHI_CITY:
+                logger.warning(
+                    f"AutoPlay: {settings.mitm.type.value} is not yet implemented"
+                )
+                self._impl = None
+            case MITMType.TENHOU | MITMType.UNIFIED:
+                logger.info(
+                    f"AutoPlay: {settings.mitm.type.value} does not support autoplay"
+                )
+                self._impl = None
             case _:
-                logger.error(f"Unknown MITM type: {settings.mitm.type}")
-                return
+                logger.error(f"AutoPlay: unknown MITM type {settings.mitm.type}")
+                self._impl = None
 
-    def get_windows(self) -> list:
-        """
-        Returns a list of WindowObject instances for all visible windows.
-        Each WindowObject contains the window handle (hwnd) and window name.
-        """
-        return []
-    
+    # ------------------------------------------------------------------
+    # Window management
+    # ------------------------------------------------------------------
+
+    def get_windows(self) -> list[WindowObject]:
+        return _enum_visible_windows()
+
     def select_window(self, hwnd: int) -> None:
-        """
-        Selects a window by its handle (hwnd).
-        """
-        pass
+        if self._impl is not None:
+            self._impl.set_window(hwnd)
+            logger.info(f"AutoPlay: window selected hwnd={hwnd}")
 
     def check_window(self) -> bool:
+        if self._impl is None:
+            return False
+        hwnd = getattr(self._impl, "_hwnd", 0)
+        return bool(hwnd and win32gui.IsWindow(hwnd))
+
+    def auto_select_window(self) -> WindowObject | None:
         """
-        Checks if the target window is valid and visible.
-        Returns True if the target window is valid, False otherwise.
+        Try to find the Majsoul game window automatically.
+        Returns the matched WindowObject, or None if not found.
         """
-        return False
-    
-    def auto_select_window(self) -> None:
-        """
-        Automatically selects the window based on the current settings.
-        """
-        pass
+        if self._impl is None:
+            return None
+
+        from .majsoul import MAJSOUL_WINDOW_KEYWORDS
+        for win in _enum_visible_windows():
+            if any(kw in win.name.lower() for kw in MAJSOUL_WINDOW_KEYWORDS):
+                self._impl.set_window(win.hwnd)
+                logger.info(f"AutoPlay: auto-selected window {win}")
+                return win
+
+        logger.warning("AutoPlay: could not auto-select a game window")
+        return None
+
+    # ------------------------------------------------------------------
+    # In-game action
+    # ------------------------------------------------------------------
 
     def act(self, mjai_msg: dict) -> bool:
-        """
-        Given a MJAI message, this method processes the message and performs the corresponding action.
+        if self._impl is None:
+            return False
+        if not self.check_window():
+            return False
+        return self._impl.act(mjai_msg)
 
-        Args:
-            mjai_msg (dict): The MJAI message to process.
+    # ------------------------------------------------------------------
+    # Lobby: find and join next game
+    # ------------------------------------------------------------------
 
-        Returns:
-            bool: True if the action was performed, False otherwise.
+    def join_next_game(self) -> None:
         """
-        pass
+        Navigate the lobby to start a new Silver Room 4-player South match.
+        No-op if the backend is not available or no window is selected.
+        """
+        if self._impl is None:
+            logger.warning("AutoPlay: join_next_game called but no backend available")
+            return
+        if not self.check_window():
+            logger.warning("AutoPlay: join_next_game called but game window not found")
+            return
+        self._impl.join_next_game()

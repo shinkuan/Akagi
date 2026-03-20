@@ -1067,6 +1067,12 @@ class AkagiApp(App):
                 # ============================================= #
                 #             Autoplay and Actions              #
                 # ============================================= #
+                if settings.autoplay:
+                    for mjai_msg in mjai_msgs:
+                        if mjai_msg.get("type") == "end_game":
+                            logger.info("AutoPlay: end_game detected, scheduling lobby navigation")
+                            self.set_timer(0.5, autoplay.join_next_game)
+                            break
                 if (
                     ((mjai_response["type"] != "none" or mjai_bot.can_act   ) and (not mjai_bot.is_3p)) or
                     ((mjai_response["type"] != "none" or mjai_bot.can_act_3p) and (    mjai_bot.is_3p))

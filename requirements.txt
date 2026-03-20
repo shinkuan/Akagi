@@ -1,5 +1,8 @@
 # Basic
 mjai==0.2.1
+pywin32
+pyautogui
+Pillow
 mitmproxy==11.1.2
 loguru==0.7.3
 textual==3.0.0
