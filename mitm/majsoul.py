@@ -70,7 +70,7 @@ class ClientWebSocket(ClientWebSocketABC):
             logger.error(f"WebSocket connection closed from unactivated flow: {flow.id}")
 
 async def start_proxy(host, port):
-    opts = options.Options(listen_host=host, listen_port=port)
+    opts = options.Options(listen_host=host, listen_port=port, ssl_insecure=True)
     master = DumpMaster(
         opts,
         with_termlog=False,

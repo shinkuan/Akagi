@@ -1,10 +1,32 @@
+import threading
 from typing import Self
 from enum import Enum
 from functools import cmp_to_key
 from .liqi import LiqiProto, MsgType
 from ..bridge_base import BridgeBase
 from ..logger import logger
-        
+
+# Thread-safe storage for the latest operation list from server.
+# Used by autoplay to find the correct chi combination index.
+_last_op_lock = threading.Lock()
+_last_op_list = []
+
+# Monotonically increasing counter for ActionDiscardTile events,
+# so autoplay can detect if a discard was silently ignored.
+_discard_counter = 0
+
+
+def get_last_operation_list():
+    """Return the last operation list received from the server."""
+    with _last_op_lock:
+        return list(_last_op_list)
+
+
+def get_discard_counter():
+    """Return monotonic counter incremented on each ActionDiscardTile."""
+    with _last_op_lock:
+        return _discard_counter
+
 MS_TILE_2_MJAI_TILE = {
     '0m': '5mr',
     '1m': '1m',
@@ -310,6 +332,9 @@ class MajsoulBridge(BridgeBase):
                 )
             # dahai
             if liqi_message['data']['name'] == 'ActionDiscardTile':
+                global _discard_counter
+                with _last_op_lock:
+                    _discard_counter += 1
                 actor = liqi_message['data']['data']['seat']
                 self.lastDiscard = actor
                 pai = MS_TILE_2_MJAI_TILE[liqi_message['data']['data']['tile']]
@@ -478,6 +503,10 @@ class MajsoulBridge(BridgeBase):
                 return ret
             if 'data' in liqi_message['data']:
                 if 'operation' in liqi_message['data']['data']:
+                    global _last_op_list
+                    op_data = liqi_message['data']['data']['operation']
+                    with _last_op_lock:
+                        _last_op_list = op_data.get('operationList', [])
                     return ret
         # end_game
         if liqi_message['method'] == '.lq.NotifyGameEndResult' or liqi_message['method'] == '.lq.NotifyGameTerminate':

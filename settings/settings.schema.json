@@ -88,9 +88,29 @@
     "recommendation_temperature": {
       "type": "number",
       "description": "Temperature setting for recommendation softmax scaling."
+    },
+    "autoplay_account": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" }
+      }
+    },
+    "autoplay_mode": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["4p_south", "4p_east", "3p_south", "3p_east"] },
+        "room": { "type": "string", "enum": ["bronze", "silver", "gold", "jade", "throne"] }
+      }
+    },
+    "autoplay_headless": {
+      "type": "boolean"
+    },
+    "model_path": {
+      "type": "string",
+      "description": "Path to the Mortal model file (.pth), relative to mjai_bot/mortal/ directory."
     }
   },
   "required": ["mitm", "model", "theme", "ot_server", "autoplay", "auto_switch_model", "recommendation_temperature"],
-  "description": "Settings for the application.",
-  "additionalProperties": false
+  "description": "Settings for the application."
 }

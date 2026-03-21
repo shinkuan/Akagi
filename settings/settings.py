@@ -40,6 +40,16 @@ class AutoplayTimeConfig:
     candidate: float
 
 @dataclasses.dataclass
+class AutoplayAccountConfig:
+    username: str
+    password: str
+
+@dataclasses.dataclass
+class AutoplayModeConfig:
+    type: str    # "4p_south", "4p_east", "3p_south", "3p_east"
+    room: str    # "gold", "silver", "jade", "throne"
+
+@dataclasses.dataclass
 class Settings:
     mitm: MITMConfig
     theme: str
@@ -49,6 +59,10 @@ class Settings:
     auto_switch_model: bool
     autoplay_time: AutoplayTimeConfig
     recommendation_temperature: float
+    autoplay_account: AutoplayAccountConfig
+    autoplay_mode: AutoplayModeConfig
+    autoplay_headless: bool
+    model_path: str
     def update(self, settings: dict) -> None:
         """
         Update settings from a dictionary
@@ -73,6 +87,20 @@ class Settings:
             candidate=settings["autoplay_time"]["candidate"]
         )
         self.recommendation_temperature = settings["recommendation_temperature"]
+        if "autoplay_account" in settings:
+            self.autoplay_account = AutoplayAccountConfig(
+                username=settings["autoplay_account"]["username"],
+                password=settings["autoplay_account"]["password"]
+            )
+        if "autoplay_mode" in settings:
+            self.autoplay_mode = AutoplayModeConfig(
+                type=settings["autoplay_mode"]["type"],
+                room=settings["autoplay_mode"]["room"]
+            )
+        if "autoplay_headless" in settings:
+            self.autoplay_headless = settings["autoplay_headless"]
+        if "model_path" in settings:
+            self.model_path = settings["model_path"]
         self.save_ot_settings()
 
     def save_ot_settings(self) -> None:
@@ -129,7 +157,17 @@ class Settings:
                     "rand_max": self.autoplay_time.rand_max,
                     "candidate": self.autoplay_time.candidate
                 },
-                "recommendation_temperature": self.recommendation_temperature
+                "recommendation_temperature": self.recommendation_temperature,
+                "autoplay_account": {
+                    "username": self.autoplay_account.username,
+                    "password": self.autoplay_account.password
+                },
+                "autoplay_mode": {
+                    "type": self.autoplay_mode.type,
+                    "room": self.autoplay_mode.room
+                },
+                "autoplay_headless": self.autoplay_headless,
+                "model_path": self.model_path
             }, f, indent=4)
         # Save the settings to the file
         logger.info(f"Saved settings to {FILE_PATH / 'settings.json'}")
@@ -184,7 +222,17 @@ def load_settings() -> Settings:
                     "rand_max": 3,
                     "candidate": 0.5
                 },
-                "recommendation_temperature": 0.3
+                "recommendation_temperature": 0.3,
+                "autoplay_account": {
+                    "username": "",
+                    "password": ""
+                },
+                "autoplay_mode": {
+                    "type": "4p_south",
+                    "room": "gold"
+                },
+                "autoplay_headless": False,
+                "model_path": "mortal.pth"
             }, f, indent=4)
         logger.info(f"Created new settings.json with default values")
         # Load settings again
@@ -221,7 +269,17 @@ def load_settings() -> Settings:
             rand_max=settings["autoplay_time"]["rand_max"],
             candidate=settings["autoplay_time"]["candidate"]
         ),
-        recommendation_temperature=settings["recommendation_temperature"]
+        recommendation_temperature=settings["recommendation_temperature"],
+        autoplay_account=AutoplayAccountConfig(
+            username=settings.get("autoplay_account", {}).get("username", ""),
+            password=settings.get("autoplay_account", {}).get("password", "")
+        ),
+        autoplay_mode=AutoplayModeConfig(
+            type=settings.get("autoplay_mode", {}).get("type", "4p_south"),
+            room=settings.get("autoplay_mode", {}).get("room", "gold")
+        ),
+        autoplay_headless=settings.get("autoplay_headless", False),
+        model_path=settings.get("model_path", "mortal.pth")
     )
 
 def get_schema() -> dict:

@@ -71,7 +71,7 @@ class Controller(object):
                     logger.error(f"Event: {event}")
                     continue
             if self.starting_game:
-                return {"type": "none"}
+                return {"type": "none", "can_act": False}
             events = self.temp_mjai_msg + events
             self.temp_mjai_msg = []
             ans = self.bot.react(json.dumps(events, separators=(",", ":")))

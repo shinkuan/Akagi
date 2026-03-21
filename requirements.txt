@@ -12,3 +12,12 @@ protobuf==5.29.3
 # PyTorch
 torch==2.5.1
 numpy==2.1.2
+
+# Autoplay
+playwright==1.49.0
+
+# WebUI
+fastapi==0.115.0
+uvicorn==0.30.0
+websockets==12.0
+watchdog==4.0.0
