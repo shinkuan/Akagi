@@ -351,13 +351,14 @@ class MajsoulAutomation:
 
             if valid_tiles:
                 if tile in valid_tiles:
-                    # Tsumo tile is a valid riichi discard
+                    # Model's chosen tile is valid
                     riichi_tile = tile
-                    moqie = True
+                    moqie = mjai_action.get("tsumogiri", False)
                 else:
-                    # Tsumo tile is not valid; use first valid option
+                    # Model's tile not in valid list; pick first valid option
                     riichi_tile = valid_tiles[0]
                     moqie = False
+                    logger.warning(f"Riichi: model tile {tile} not in valid={valid_tiles}")
                 logger.info(f"Riichi: valid={valid_tiles}, using={riichi_tile} moqie={moqie}")
             else:
                 # Fallback: use tsumo tile (may fail if invalid)

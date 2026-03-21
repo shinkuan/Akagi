@@ -88,33 +88,24 @@ class Bot:
             return_action = self.model.react(json.dumps(e, separators=(",", ":")))
 
         if return_action is None:
+            # Model didn't react to any event - no action needed
+            # can_act=False tells the caller NOT to send a skip RPC
+            raw_data = {"type":"none", "can_act": False}
             # ========== Online Server =========== #
             if model.ot_settings['online']:
-                raw_data = {
-                    "type":"none",
-                    "meta": {
-                        "online": model.is_online
-                    }
-                }
-                return_action = json.dumps(raw_data, separators=(",", ":"))
-            else:
-                return_action = json.dumps({"type":"none"}, separators=(",", ":"))
+                raw_data["meta"] = {"online": model.is_online}
             # ==================================== #
-            return return_action
+            return json.dumps(raw_data, separators=(",", ":"))
         else:
+            # Model reacted - either a real action or explicit pass
+            # can_act=True tells the caller this is a deliberate decision
+            raw_data = json.loads(return_action)
+            raw_data["can_act"] = True
             # ========== Online Server =========== #
             if model.ot_settings['online']:
-                if "meta" in return_action:
-                    raw_data = json.loads(return_action)
-                    raw_data["meta"]["online"] = model.is_online
-                    return_action = json.dumps(raw_data, separators=(",", ":"))
-                else:
-                    raw_data = json.loads(return_action)
-                    raw_data["meta"] = {"online": model.is_online}
-                    return_action = json.dumps(raw_data, separators=(",", ":"))
+                if "meta" not in raw_data:
+                    raw_data["meta"] = {}
+                raw_data["meta"]["online"] = model.is_online
             # ==================================== #
-            # raw_data = json.loads(return_action)
-            # del raw_data["meta"]
-            # return json.dumps(raw_data, separators=(",", ":"))
-            return return_action
+            return json.dumps(raw_data, separators=(",", ":"))
 
