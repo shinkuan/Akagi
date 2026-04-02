@@ -9,6 +9,7 @@ import SettingsPanel from '@/components/SettingsPanel';
 import StreamPlayer from '@/components/StreamPlayer';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { APP_SPLASH_DELAY_MS, TOAST_DURATION_DEFAULT } from '@/config/constants';
+import { PLATFORM_DEFAULTS, PLATFORMS } from '@/config/platforms';
 import { GameContext } from '@/contexts/GameContext';
 import { fetchSettingsApi, useSettings } from '@/hooks/useSettings';
 import { useTheme } from '@/hooks/useTheme';
@@ -89,10 +90,13 @@ function Dashboard({ settingsPromise }: DashboardProps) {
     try {
       // 启动前重新拉取设置，确保配置最新
       const currentSettings = await fetchSettingsApi().catch(() => initialSettings);
+      const fallbackUrl =
+        PLATFORM_DEFAULTS[currentSettings.platform]?.url ?? PLATFORM_DEFAULTS[PLATFORMS.MAJSOUL].url;
+      const launchUrl = currentSettings.game_url?.trim() || fallbackUrl;
 
       // 将 URL、MITM 状态与平台配置传给 Electron
       await window.electron.invoke('start-game', {
-        url: currentSettings.game_url,
+        url: launchUrl,
         useMitm: currentSettings.mitm.enabled,
         platform: currentSettings.platform,
       });

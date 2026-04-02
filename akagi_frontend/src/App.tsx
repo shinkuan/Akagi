@@ -10,6 +10,7 @@ import { LaunchScreen } from '@/components/LaunchScreen';
 import { SettingsProvider } from '@/components/SettingsProvider';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { APP_STARTUP_MIN_DELAY_MS } from '@/config/constants';
+import { PLATFORM_DEFAULTS, PLATFORMS } from '@/config/platforms';
 import { useConnectionConfig } from '@/hooks/useConnectionConfig';
 import { fetchSettingsApi } from '@/hooks/useSettings';
 import { useTilePreloader } from '@/hooks/useTilePreloader';
@@ -61,8 +62,8 @@ function AppInner() {
         return {
           log_level: 'INFO',
           locale: 'zh-CN',
-          game_url: '',
-          platform: 'majsoul',
+          game_url: PLATFORM_DEFAULTS[PLATFORMS.MAJSOUL].url,
+          platform: PLATFORMS.MAJSOUL,
           mitm: { enabled: false, host: '127.0.0.1', port: 6789, upstream: '' },
           server: {
             host: apiBase.split('://')[1]?.split(':')[0] || '127.0.0.1',

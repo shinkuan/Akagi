@@ -186,7 +186,7 @@ def get_default_settings_dict() -> dict:
     return {
         "log_level": "INFO",
         "locale": detect_system_locale(),
-        "game_url": "",
+        "game_url": DEFAULT_GAME_URLS[Platform.MAJSOUL],
         "platform": Platform.MAJSOUL.value,
         "mitm": {
             "enabled": False,
@@ -206,9 +206,8 @@ def get_default_settings_dict() -> dict:
 
 
 def get_settings_dict() -> dict:
-    """从 settings.json 读取设置"""
-    with open(SETTINGS_JSON_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    """返回当前设置"""
+    return asdict(local_settings)
 
 
 def verify_settings(data: dict) -> bool:
