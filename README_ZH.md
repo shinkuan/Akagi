@@ -466,7 +466,19 @@ python -m venv .venv
 # Linux/macOS
 source .venv/bin/activate
 
-pip install -e .
+pip install -e .[dev]
+cd ..
+```
+#### Libriichi 初始化
+
+在`lib`目录中，将对应平台的`.pyd/.so`复制为对应的`libriichi[3p].{pyd|so}`。
+
+```bash
+cd lib
+# Windows
+cp libriichi-*.pyd libriichi.pyd
+cp libriichi3p-*.pyd libriichi3p.pyd
+
 cd ..
 ```
 

@@ -467,7 +467,18 @@ python -m venv .venv
 # Linux/macOS
 source .venv/bin/activate
 
-pip install -e .
+pip install -e .[dev]
+cd ..
+```
+
+#### Libriichi Setup
+
+```bash
+cd lib
+# Windows
+cp libriichi-*.pyd libriichi.pyd
+cp libriichi3p-*.pyd libriichi3p.pyd
+
 cd ..
 ```
 
