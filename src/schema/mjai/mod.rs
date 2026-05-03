@@ -254,6 +254,39 @@ mod tests {
         }
         let out = serde_json::to_string(&ev).unwrap();
         assert_eq!(out, with_pai);
+
+        // Explicit null pai (a buggy bot might emit this) deserializes
+        // to None and re-serializes without the key, identical to the
+        // bridge form.
+        let null_pai = r#"{"type":"reach","actor":2,"pai":null}"#;
+        let ev: MjaiEvent = serde_json::from_str(null_pai).unwrap();
+        match &ev {
+            MjaiEvent::Reach { actor, pai } => {
+                assert_eq!(*actor, 2);
+                assert!(pai.is_none(), "explicit null must deserialize to None");
+            }
+            other => panic!("expected Reach, got {other:?}"),
+        }
+        assert_eq!(
+            serde_json::to_string(&ev).unwrap(),
+            r#"{"type":"reach","actor":2}"#,
+            "null pai must serialize as omitted",
+        );
+
+        // Empty-string pai is currently accepted as Some("") since
+        // Tile is an unvalidated alias for String. Frontend treats
+        // empty as falsy and falls back to glyph-only rendering, so
+        // round-trip preserves it without crashing the schema layer.
+        let empty_pai = r#"{"type":"reach","actor":3,"pai":""}"#;
+        let ev: MjaiEvent = serde_json::from_str(empty_pai).unwrap();
+        match &ev {
+            MjaiEvent::Reach { actor, pai } => {
+                assert_eq!(*actor, 3);
+                assert_eq!(pai.as_deref(), Some(""));
+            }
+            other => panic!("expected Reach, got {other:?}"),
+        }
+        assert_eq!(serde_json::to_string(&ev).unwrap(), empty_pai);
     }
 
     /// Backward compat: 4p log lines from before `num_players` was added must
