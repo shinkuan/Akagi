@@ -384,7 +384,7 @@ impl MajsoulBridge {
             });
         }
         if is_riichi {
-            events.push(MjaiEvent::Reach { actor });
+            events.push(MjaiEvent::Reach { actor, pai: None });
         }
         events.push(MjaiEvent::Dahai {
             actor,
@@ -2317,7 +2317,7 @@ mod tests {
         ));
         assert_eq!(events.len(), 2);
         match &events[0] {
-            MjaiEvent::Reach { actor } => assert_eq!(*actor, 1),
+            MjaiEvent::Reach { actor, .. } => assert_eq!(*actor, 1),
             other => panic!("expected Reach first, got {other:?}"),
         }
         match &events[1] {
@@ -2344,7 +2344,7 @@ mod tests {
             ACTION_DISCARD_TILE,
             json!({ "seat": 0, "tile": "9m", "moqie": true, "is_wliqi": true }),
         ));
-        assert!(matches!(events[0], MjaiEvent::Reach { actor: 0 }));
+        assert!(matches!(events[0], MjaiEvent::Reach { actor: 0, .. }));
         assert_eq!(bridge.pending_reach_accepted, Some(0));
     }
 

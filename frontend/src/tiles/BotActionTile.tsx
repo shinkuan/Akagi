@@ -98,15 +98,20 @@ function describe(r: BotResponse, t: (k: string, opts?: Record<string, unknown>)
         mahgen: mjaiToMahgen([r.consumed[0]]),
       }
     case 'reach':
-      // Discard tile selection lives in a separate dahai response — needs
-      // mjai⇄mortal protocol work to merge. Show glyph + label only.
+      // The Mortal bot wrapper peeks the post-reach dahai by replaying
+      // the event log into a throwaway Bot and reading off its next
+      // action; when that succeeds, `pai` carries the predicted
+      // riichi-discard tile so the HUD can render mahgen up-front
+      // (Majsoul fuses declaring + discarding into one click). Bridge-
+      // emitted reach events leave `pai` undefined and we fall back to
+      // glyph + label only.
       return {
         glyph: reachGlyph,
         color: '#e06c20',
         glyphColor: '#e06c20',
         labelKey: 'mahjong.reach',
-        extra: '',
-        mahgen: '',
+        extra: r.pai ?? '',
+        mahgen: r.pai ? mjaiToMahgen([r.pai]) : '',
       }
     case 'hora':
       return r.actor === r.target

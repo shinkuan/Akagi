@@ -142,7 +142,7 @@ pub fn aggregate(input: AggregateInput<'_>) -> Option<GameRecord> {
                 }
             }
 
-            MjaiEvent::Reach { actor } => {
+            MjaiEvent::Reach { actor, .. } => {
                 if let Some(me) = our_seat {
                     if *actor == me {
                         riichi_declared = true;
@@ -443,7 +443,7 @@ mod tests {
         let events = vec![
             start_game_4p(2),
             start_kyoku("E", 0, vec![25000, 25000, 25000, 25000]),
-            MjaiEvent::Reach { actor: 2 },
+            MjaiEvent::Reach { actor: 2, pai: None },
             MjaiEvent::ReachAccepted { actor: 2 },
             MjaiEvent::Dahai {
                 actor: 2,
@@ -593,7 +593,7 @@ mod tests {
         let events = vec![
             start_game_4p(0),
             start_kyoku("E", 0, vec![25000, 25000, 25000, 25000]),
-            MjaiEvent::Reach { actor: 0 },
+            MjaiEvent::Reach { actor: 0, pai: None },
             MjaiEvent::ReachAccepted { actor: 0 }, // -1000 to seat 0
             MjaiEvent::Ryukyoku {
                 deltas: Some(vec![1500, -1500, 0, 0]),

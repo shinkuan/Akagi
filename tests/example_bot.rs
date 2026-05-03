@@ -132,7 +132,7 @@ async fn declares_riichi_when_tenpai_with_two_waits() {
         .expect("react");
 
     match resp.action {
-        MjaiEvent::Reach { actor: 2 } => {}
+        MjaiEvent::Reach { actor: 2, .. } => {}
         other => panic!("expected reach by seat 2, got {other:?}"),
     }
     assert!(resp.meta.is_none(), "rule-based bot has no meta payload");
@@ -172,7 +172,7 @@ async fn discards_min_shanten_when_one_shanten() {
 
     match resp.action {
         MjaiEvent::Dahai { actor: 0, .. } => {}
-        MjaiEvent::Reach { actor: 0 } => {} // tenpai-shaped fallthrough is OK
+        MjaiEvent::Reach { actor: 0, .. } => {} // tenpai-shaped fallthrough is OK
         other => panic!("expected dahai/reach, got {other:?}"),
     }
 

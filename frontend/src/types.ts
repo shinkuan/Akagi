@@ -11,7 +11,7 @@ export type MjaiEvent =
   | { type: 'kakan'; actor: number; pai: string; consumed: [string, string, string] }
   | { type: 'ankan'; actor: number; consumed: [string, string, string, string] }
   | { type: 'dora'; dora_marker: string }
-  | { type: 'reach'; actor: number }
+  | { type: 'reach'; actor: number; pai?: string }
   | { type: 'reach_accepted'; actor: number }
   | { type: 'hora'; actor: number; target: number; deltas?: number[]; ura_markers?: string[] }
   | { type: 'ryukyoku'; deltas?: number[] }

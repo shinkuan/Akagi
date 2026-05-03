@@ -110,6 +110,14 @@ pub enum MjaiEvent {
 
     Reach {
         actor: Actor,
+        /// Non-spec extension: when set, names the tile the bot would
+        /// discard if the riichi declaration is accepted. Bots that
+        /// peek the post-reach dahai can populate this so the HUD can
+        /// surface the predicted riichi tile up-front (Majsoul fuses
+        /// declaring + discarding into one click). Bridge-emitted reach
+        /// events leave it None.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pai: Option<Tile>,
     },
     ReachAccepted {
         actor: Actor,
@@ -212,6 +220,40 @@ mod tests {
             let actual: Value = serde_json::from_str(&out).unwrap();
             assert_eq!(expected, actual, "3p round-trip mismatch: {line}");
         }
+    }
+
+    /// Reach is wire-compatible with bare `{"type":"reach","actor":N}` (the
+    /// shape every bridge emits) but accepts an optional `pai` field that
+    /// the Mortal bot wrapper populates with the speculated riichi-discard
+    /// tile so the HUD can show it up-front. Bridge-shaped reach must
+    /// round-trip without inventing a `pai` key.
+    #[test]
+    fn reach_pai_is_optional_and_round_trips() {
+        // Bridge form: no pai. Deserializes to None, serializes back without pai.
+        let plain = r#"{"type":"reach","actor":0}"#;
+        let ev: MjaiEvent = serde_json::from_str(plain).unwrap();
+        match &ev {
+            MjaiEvent::Reach { actor, pai } => {
+                assert_eq!(*actor, 0);
+                assert!(pai.is_none(), "bridge reach must have pai=None");
+            }
+            other => panic!("expected Reach, got {other:?}"),
+        }
+        let out = serde_json::to_string(&ev).unwrap();
+        assert_eq!(out, plain, "None pai must not be serialized");
+
+        // Bot form: pai populated by post-reach speculation.
+        let with_pai = r#"{"type":"reach","actor":1,"pai":"5p"}"#;
+        let ev: MjaiEvent = serde_json::from_str(with_pai).unwrap();
+        match &ev {
+            MjaiEvent::Reach { actor, pai } => {
+                assert_eq!(*actor, 1);
+                assert_eq!(pai.as_deref(), Some("5p"));
+            }
+            other => panic!("expected Reach, got {other:?}"),
+        }
+        let out = serde_json::to_string(&ev).unwrap();
+        assert_eq!(out, with_pai);
     }
 
     /// Backward compat: 4p log lines from before `num_players` was added must

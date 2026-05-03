@@ -413,7 +413,7 @@ impl TenhouBridge {
             .get("step")
             .and_then(|v| v.as_str().and_then(|s| s.parse::<u8>().ok()).or(v.as_u64().map(|n| n as u8)));
         let events = match step {
-            Some(1) => vec![MjaiEvent::Reach { actor }],
+            Some(1) => vec![MjaiEvent::Reach { actor, pai: None }],
             Some(2) => {
                 if actor == self.state.seat {
                     self.state.in_riichi = true;
@@ -935,7 +935,7 @@ mod tests {
             r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"0,1,2,3,4,5,6,7,8,9,10,11,12"}"#,
         );
         let e1 = parse_one(&mut b, r#"{"tag":"REACH","who":"0","step":"1"}"#);
-        assert!(matches!(e1[0], MjaiEvent::Reach { actor: 0 }));
+        assert!(matches!(e1[0], MjaiEvent::Reach { actor: 0, .. }));
         let e2 = parse_one(&mut b, r#"{"tag":"REACH","who":"0","step":"2","ten":"240,250,250,260"}"#);
         assert!(matches!(e2[0], MjaiEvent::ReachAccepted { actor: 0 }));
     }

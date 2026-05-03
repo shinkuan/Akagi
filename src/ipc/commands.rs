@@ -908,7 +908,7 @@ fn mjai_event_actor(event: &crate::schema::MjaiEvent) -> Option<u8> {
         | E::Daiminkan { actor, .. }
         | E::Kakan { actor, .. }
         | E::Ankan { actor, .. }
-        | E::Reach { actor }
+        | E::Reach { actor, .. }
         | E::ReachAccepted { actor }
         | E::Hora { actor, .. }
         | E::Kita { actor, .. } => Some(*actor),
