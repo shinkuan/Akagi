@@ -28,7 +28,9 @@ pub enum CaptureMode {
 pub struct ChromiumConfig {
     /// Absolute path to a chrome/chromium binary. `""` = auto-detect.
     pub executable: String,
-    /// User-data-dir for the controlled profile. `""` = `<user_config_root>/chrome-profile`.
+    /// User-data-dir for the controlled profile. `""` = exe-adjacent
+    /// `chrome-profile/` (resolved via `util::resolve_dir`, with an
+    /// AppImage / read-only fallback to `<user_config_root>/chrome-profile`).
     pub user_data_dir: String,
     /// URL to navigate to on launch. `""` = don't auto-navigate (open new tab page).
     pub start_url: String,

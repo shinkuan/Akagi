@@ -17,9 +17,11 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 /// Resolve the user-data-dir path for the controlled Chromium instance.
-/// `configured` empty → `<user_config_root>/chrome-profile`. Otherwise
-/// `configured` is treated as an absolute path (relative paths are not
-/// supported here — there's no meaningful root for them).
+/// `configured` empty → exe-adjacent `chrome-profile/` via
+/// [`crate::util::resolve_dir`], so a portable zip keeps everything
+/// (config, logs, profile) in one folder. Otherwise `configured` is
+/// treated as an absolute path (relative paths are not supported here
+/// — there's no meaningful root for them).
 pub fn resolve_profile_dir(configured: &str) -> Result<PathBuf> {
     if !configured.is_empty() {
         let p = PathBuf::from(configured);
@@ -30,8 +32,7 @@ pub fn resolve_profile_dir(configured: &str) -> Result<PathBuf> {
         }
         return Ok(p);
     }
-    crate::util::user_subdir("chrome-profile")
-        .ok_or_else(|| anyhow!("could not resolve user config dir for chrome profile"))
+    Ok(crate::util::resolve_dir(Path::new("./chrome-profile")))
 }
 
 /// Detect and clear `SingletonLock` / `SingletonSocket` / `SingletonCookie`
@@ -177,9 +178,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_default_uses_user_subdir() {
+    fn resolve_default_lands_at_chrome_profile() {
         let p = resolve_profile_dir("").unwrap();
-        // ends with chrome-profile, regardless of OS-specific prefix
+        // ends with chrome-profile regardless of which arm of resolve_dir
+        // fired (exe-adjacent on portable, user_root on AppImage).
         assert!(
             p.ends_with("chrome-profile"),
             "expected ending in chrome-profile: {}",

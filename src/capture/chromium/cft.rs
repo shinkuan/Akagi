@@ -2,14 +2,15 @@
 //!
 //! Lets users without a system Chrome install one on demand from
 //! Google's official CfT distribution. Avoids bundling a ~150MB browser
-//! in the Akagi installer; downloads are runtime-only into the user's
-//! config dir, never the read-only AppImage squashfs.
+//! with the Akagi binary; downloads are runtime-only into a
+//! `chrome-for-testing/` directory next to the binary (or the user
+//! config dir as a fallback — see [`install_root`]).
 //!
 //! Manifest URLs (Google):
 //! - All versions: <https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json>
 //! - Channel pins: <https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json>
 //!
-//! Install layout under `<user_config_root>/chrome-for-testing/<version>/`:
+//! Install layout under `<install_root>/<version>/`:
 //! - Linux: `chrome-linux64/chrome`
 //! - macOS: `chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`
 //!   (or `chrome-mac-x64/...` on Intel)
@@ -75,10 +76,16 @@ pub fn cft_platform() -> Option<&'static str> {
     }
 }
 
-/// Top-level CfT install dir: `<user_config_root>/chrome-for-testing/`.
+/// Top-level CfT install dir.
+///
+/// Resolved via [`crate::util::resolve_dir`] so a portable zip keeps the
+/// downloaded browser next to the binary (single-folder install). On
+/// AppImage / read-only mounts the resolver falls back to
+/// `<user_config_root>/chrome-for-testing/`.
 pub fn install_root() -> Result<PathBuf> {
-    crate::util::user_subdir("chrome-for-testing")
-        .ok_or_else(|| anyhow!("could not resolve user config dir"))
+    Ok(crate::util::resolve_dir(Path::new(
+        "./chrome-for-testing",
+    )))
 }
 
 /// Per-version install dir: `<install_root>/<version>/`.

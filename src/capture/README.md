@@ -61,14 +61,20 @@ Lazy create on first frame, ref-count clean-up on close.
 
 ## Path conventions
 
-For data the backend writes at runtime (Chromium profile, future
+For data the backend writes at runtime (Chromium profile, downloaded
 Chrome-for-Testing install, etc.):
 
-- Use `crate::util::user_subdir(name)` — always returns
-  `<user_config_root>/<name>` (XDG on Linux, Application Support on
-  macOS, AppData\Roaming on Windows).
-- Do **not** use `crate::util::resolve_dir` — its exe-dir-first
-  fallback is wrong for AppImage (read-only squashfs).
+- Use `crate::util::resolve_dir(Path::new("./<name>"))` — exe-adjacent
+  first, with an AppImage / user-config fallback baked in. This keeps
+  the portable zip distribution single-folder: the chrome profile and
+  the downloaded CfT browser sit next to the binary alongside `logs/`,
+  `history/`, `ca/`, `mjai_bot/`, so moving / backing up / removing the
+  app is one folder operation.
+- `crate::util::user_subdir(name)` is still available for callers that
+  *must* use the OS user-config dir regardless of where the binary
+  lives. None of the capture code currently needs that — `resolve_dir`
+  already routes to user-config under AppImage and similar read-only
+  mounts.
 
 ## Phasing
 
