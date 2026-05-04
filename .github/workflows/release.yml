@@ -42,12 +42,10 @@ jobs:
   build:
     needs: guard
     if: ${{ always() && (needs.guard.result == 'success' || needs.guard.result == 'skipped') }}
-    name: ${{ matrix.target }} (${{ matrix.variant }})
+    name: ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14, windows-latest]
-        variant: [with-runtime, no-runtime]
         include:
           # Linux: ubuntu-22.04 keeps glibc old enough that the binaries
           # run on most user machines without forced glibc upgrades.
@@ -67,11 +65,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # Per-(target,variant) cache
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ${{ matrix.target }}-${{ matrix.variant }}
+          shared-key: ${{ matrix.target }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -114,9 +111,9 @@ jobs:
             patchelf \
             libfuse2
 
-      # Cache fetched python + uv tarballs by version triple.
+      # Cache fetched python + uv tarballs by version triple. The runtime
+      # is shipped inside every zip, so the fetch is unconditional.
       - name: Cache bundled runtime
-        if: matrix.variant == 'with-runtime'
         uses: actions/cache@v4
         with:
           path: |
@@ -125,7 +122,6 @@ jobs:
           key: runtime-${{ matrix.target }}-py${{ env.PYTHON_VERSION }}-pbs${{ env.PBS_RELEASE }}-uv${{ env.UV_VERSION }}
 
       - name: Fetch python+uv
-        if: matrix.variant == 'with-runtime'
         shell: bash
         env:
           PYTHON_VERSION: ${{ env.PYTHON_VERSION }}
@@ -133,45 +129,25 @@ jobs:
           UV_VERSION: ${{ env.UV_VERSION }}
         run: bash scripts/fetch-runtime.sh "${{ matrix.target }}"
 
+      # `--no-bundle` skips the (now empty) installer phase. We keep
+      # `cargo tauri build` (vs. plain `cargo build`) so the
+      # `beforeBuildCommand` in tauri.conf.json — `npm ci && npm run
+      # build` — still runs and the frontend is rebuilt fresh.
       - name: Build
         shell: bash
         env:
           NO_STRIP: '1'
-        run: cargo tauri build --target ${{ matrix.target }}
+        run: cargo tauri build --no-bundle --target ${{ matrix.target }}
 
-      # Rename outputs with the variant suffix so artifacts from both
-      # lanes can coexist in the same release. Uses `find` instead of
-      # bash globstar — macOS ships bash 3.2 which has no globstar.
-      #
-      # `-setup.exe` (not `*.exe`): NSIS drops `t32.exe`, `t64.exe`,
-      # `w32.exe`, `w64.exe` plugin/bootstrap binaries next to the main
-      # installer; only the `*-setup.exe` is the actual user-facing one.
-      - name: Collect artifacts
+      - name: Package zip
         shell: bash
-        run: |
-          set -euo pipefail
-          mkdir dist
-          OUT="target/${{ matrix.target }}/release/bundle"
-          find "$OUT" -type f \( \
-              -name '*.deb' -o \
-              -name '*.rpm' -o \
-              -name '*.AppImage' -o \
-              -name '*.dmg' -o \
-              -name '*.msi' -o \
-              -name '*-setup.exe' \
-            \) -print0 | while IFS= read -r -d '' f; do
-            base="$(basename "$f")"
-            name="${base%.*}"
-            ext="${base##*.}"
-            cp "$f" "dist/${name}-${{ matrix.variant }}.${ext}"
-          done
-          ls -la dist
+        run: bash scripts/package-zip.sh "${{ matrix.target }}"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: akagi-${{ matrix.target }}-${{ matrix.variant }}
-          path: dist/*
+          name: akagi-${{ matrix.target }}
+          path: dist/*.zip
           if-no-files-found: error
           retention-days: 14
 

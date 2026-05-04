@@ -147,25 +147,25 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
 ### A. 安裝官方 Release
 
+Akagi 以 portable zip 發佈 — 每個平台一個自帶所需檔案的資料夾。
 從 [Releases](https://github.com/shinkuan/Akagi/releases) 下載
-最新版本，並依照你的作業系統挑選檔案：
+對應作業系統的 zip,解壓縮到任何你有寫入權限的位置(例如
+`~/Apps/`、桌面),然後直接執行裡面的 binary 即可。設定檔、紀錄、
+歷史對局、CA 憑證以及 bot 都會建立在 binary 旁邊,所以搬移 /
+備份 / 解除安裝就只是搬移 / 複製 / 刪除整個資料夾。
 
 | OS | 檔案 | 備註 |
 |---|---|---|
-| Windows | `*.msi` 或 `*-setup.exe` | x86_64；雙擊執行安裝程式即可。 |
-| macOS | `*.dmg` | Apple Silicon（aarch64）。拖入 `/Applications`。 |
-| Linux | `*.AppImage` / `*.deb` / `*.rpm` | 在 `ubuntu-22.04` 上建置（glibc 2.35）。 |
+| Windows | `akagi-<version>-windows-x64.zip` | x86_64。需要 WebView2(Win10 1803+ 與 Win11 已預載)。SmartScreen 會警告 — 點 *More info → Run anyway*。 |
+| macOS | `akagi-<version>-macos-arm64.zip` | Apple Silicon。未簽章,解壓後執行一次 `xattr -cr <解壓後資料夾>`,或第一次右鍵 → *Open*。 |
+| Linux | `akagi-<version>-linux-x64.zip` | 在 `ubuntu-22.04` 上建置(glibc 2.35+)。需要 WebKit2GTK 4.1(`apt install libwebkit2gtk-4.1-0` / `dnf install webkit2gtk4.1` / `pacman -S webkit2gtk-4.1`)。 |
 
-每個版本皆有兩種變體：
-
-- **`with-runtime`** — 內建 `python-build-standalone` 3.12 +
-  `uv`（約 150 MB）。bot 開箱即用。
-- **`no-runtime`** — 較精簡；需系統已安裝 Python 3.12 與
-  `uv` 並可在 `PATH` 找到。
+每個 zip 都將 `python-build-standalone` 3.12 + `uv` 一併放在
+binary 旁邊,bot 開箱即用,不需另外安裝系統 Python。
 
 首次啟動時會引導你完成語言、平台、抓包
-模式、選用的 bot 安裝（Mortal）以及 CA 信任（僅 MITM
-模式才需要）。
+模式、選用的 bot 安裝(Mortal)以及 CA 信任(僅 MITM
+模式才需要)。
 
 ### B. Chromium 模式（不需信任 CA）
 
@@ -549,26 +549,30 @@ alpha.8 已完成：
 **執行 / 建置**
 
 ```bash
-# Debug — 啟動 GUI；Vite dev-server 由 Tauri 代理
+# Debug — 啟動 GUI;Vite dev-server 由 Tauri 代理
 cargo run
 
 # 指定設定檔路徑
 cargo run -- --config ./my-config.toml
 
-# Release bundle（.deb / .rpm / .AppImage / .dmg / .msi / .exe）
+# 為當前目標建置 portable zip
 cargo install tauri-cli --locked          # 若尚未安裝
-cargo tauri build
+bash scripts/fetch-runtime.sh             # 抓取 runtime/<triple>/
+cargo tauri build --no-bundle             # 產出 target/<triple>/release/akagi
+bash scripts/package-zip.sh <target-triple>
+# → dist/akagi-<version>-<os>-<arch>.zip
 
-# 僅啟動前端 dev（Vite 在 :1420）
+# 僅啟動前端 dev(Vite 在 :1420)
 cd frontend && npm ci && npm run dev
 ```
 
-**選用：內建執行環境**
+**內建執行環境**
 
 `scripts/fetch-runtime.sh <target-triple>` 會下載對應目標的
-`python-build-standalone` 3.12 與 `uv`，並放置於 `runtime/`。
-Tauri 會透過 `bundle.resources` 把它們納入打包，使最終
-App 即使沒有系統 Python 也能運作。
+`python-build-standalone` 3.12 與 `uv`,並放置於 `runtime/`。
+`scripts/package-zip.sh` 接著會把這個目錄複製到 zip 內的
+binary 旁邊;`src/bot/runtime.rs` 在執行時會用 exe-adjacent
+方式找到它,因此最終的 App 即使使用者沒有系統 Python 也能運作。
 
 ## 測試
 
@@ -590,19 +594,17 @@ cargo test --release     # 用於效能 bench
 ## Releases 與 CI
 
 GitHub Actions [`release.yml`](./.github/workflows/release.yml)
-會在 tag 推送（`v3.*`）或手動觸發時建置：
+會在 tag 推送(`v3.*`)或手動觸發時建置,每個目標產出一個
+portable zip:
 
-| OS runner | 目標 |
-|---|---|
-| `ubuntu-22.04`（glibc 2.35） | `.deb`、`.rpm`、`.AppImage` |
-| `macos-14`（aarch64） | `.dmg` |
-| `windows-latest` | `.msi`、`-setup.exe` |
+| OS runner | 目標 | 產出檔案 |
+|---|---|---|
+| `ubuntu-22.04`(glibc 2.35) | `x86_64-unknown-linux-gnu` | `akagi-<version>-linux-x64.zip` |
+| `macos-14` | `aarch64-apple-darwin` | `akagi-<version>-macos-arm64.zip` |
+| `windows-latest` | `x86_64-pc-windows-msvc` | `akagi-<version>-windows-x64.zip` |
 
-每個 OS 兩種變體：
-
-- **`with-runtime`** — 內附 `python-build-standalone` 3.12 + `uv`。
-- **`no-runtime`** — 較精簡；需系統已有 Python 3.12 與
-  `uv` 並可在 `PATH` 找到。
+每個 zip 都將 `python-build-standalone` 3.12 + `uv` 一併放在
+binary 旁邊,bot 不需另外安裝系統 Python 即可運作。
 
 Tag 必須位於 `v3` 分支。
 

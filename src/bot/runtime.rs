@@ -2,13 +2,16 @@
 //!
 //! Two modes:
 //!
-//! - **Bundled**: `<resource_dir>/runtime/python/<triple>/...` and
-//!   `<resource_dir>/runtime/uv/<triple>/uv` are shipped inside the Tauri
-//!   resource bundle. This is what end users get from a packaged build —
-//!   zero Python install required.
+//! - **Bundled**: `runtime/python/<triple>/...` and `runtime/uv/<triple>/uv`
+//!   ship next to the binary in the portable zip distribution. The locator
+//!   checks the exe-adjacent layout first; the Tauri-managed
+//!   `app.path().resource_dir()` is checked as a secondary fallback so
+//!   `cargo run` from a checkout (and any future Tauri-bundled target) keeps
+//!   working. Zero Python install required for end users.
 //! - **System**: `python3` and `uv` are looked up on `PATH` via the `which`
-//!   crate. Used during development (`cargo run` from a checkout) and as a
-//!   graceful fallback if the bundled binaries are missing.
+//!   crate. Used during development (`cargo run` from a checkout without a
+//!   populated `runtime/`) and as a graceful fallback if the bundled
+//!   binaries are missing.
 //!
 //! Per-bot venvs live under `<bot_dir>/.akagi/venv` so they don't clash with
 //! a developer's own `.venv` if they happen to keep one in the bot folder.
@@ -52,9 +55,20 @@ impl PythonRuntime {
 
     /// Locate bundled binaries first, then fall back to system PATH.
     ///
-    /// `resource_dir` is the Tauri-managed resource path (e.g.
-    /// `app.path().resource_dir()`); pass `None` outside Tauri.
+    /// Lookup order:
+    /// 1. **Exe-adjacent**: `<exe_parent>/runtime/{python,uv}/<triple>/...` —
+    ///    this is the portable zip layout users get from Releases.
+    /// 2. **Resource dir**: the Tauri-managed `app.path().resource_dir()` —
+    ///    secondary fallback so `cargo run` and any future Tauri-bundled
+    ///    install (`/usr/lib/akagi/`, `.app/Contents/Resources/`) keep
+    ///    working.
+    /// 3. **System PATH**: `python3` and `uv` resolved via the `which` crate.
+    ///
+    /// Pass `None` for `resource_dir` outside Tauri (tests, CLI tools).
     pub fn locate(resource_dir: Option<&Path>) -> Result<Self> {
+        if let Some(rt) = try_bundled_exe_adjacent() {
+            return Ok(rt);
+        }
         if let Some(rd) = resource_dir {
             if let Some(rt) = try_bundled(rd) {
                 return Ok(rt);
@@ -186,6 +200,21 @@ pub async fn reset_sync_state(bot_dir: &Path) {
     let akagi = bot_dir.join(AKAGI_DIR);
     let _ = tokio::fs::remove_file(akagi.join(STAMP_FILE)).await;
     let _ = tokio::fs::remove_dir_all(akagi.join(VENV_DIR)).await;
+}
+
+/// Look for the bundled runtime in the directory containing the running
+/// executable. This is the layout shipped by the portable zip
+/// distribution: `<exe_parent>/runtime/{python,uv}/<triple>/...`.
+///
+/// On Linux/macOS, `tauri::path::resource_dir()` does not return
+/// exe-adjacent paths in a portable layout — it tries Tauri-bundled
+/// install locations like `/usr/lib/akagi/` and returns `Err` or a
+/// non-existent path otherwise. Checking exe-adjacent here ensures the
+/// portable zip works without depending on Tauri's resource resolution.
+fn try_bundled_exe_adjacent() -> Option<PythonRuntime> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    try_bundled(exe_dir)
 }
 
 fn try_bundled(resource_dir: &Path) -> Option<PythonRuntime> {
@@ -440,6 +469,17 @@ mod tests {
     fn try_bundled_returns_none_when_runtime_dir_empty() {
         let tmp = TempDir::new().unwrap();
         assert!(try_bundled(tmp.path()).is_none());
+    }
+
+    /// Regression: portable zip relies on `try_bundled_exe_adjacent` to
+    /// find `<exe_parent>/runtime/...` because Tauri's `resource_dir()`
+    /// doesn't return exe-adjacent on Linux/macOS in a portable layout.
+    /// In the test runner the binary lives in `target/<profile>/deps/`
+    /// with no `runtime/` next to it, so this must return `None` (and
+    /// must not panic on the optional chain).
+    #[test]
+    fn try_bundled_exe_adjacent_returns_none_when_runtime_missing() {
+        assert!(try_bundled_exe_adjacent().is_none());
     }
 
     /// Regression: AppImage runtimes export `PYTHONHOME` / `PYTHONPATH`

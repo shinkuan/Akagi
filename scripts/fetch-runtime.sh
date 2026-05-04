@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
 # Fetch python-build-standalone + uv for a target triple and drop them
-# into <repo-root>/runtime/{python,uv}/<triple>/ so the Tauri bundler
-# (and `cargo tauri dev`) ships them as resources. `try_bundled` in
-# src/bot/runtime.rs picks them up via `resource_dir/runtime/...`.
+# into <repo-root>/runtime/{python,uv}/<triple>/. `scripts/package-zip.sh`
+# copies that tree next to the binary in the portable zip; `try_bundled`
+# in src/bot/runtime.rs then picks it up exe-adjacent at runtime.
 #
 # Usage:
 #   scripts/fetch-runtime.sh                         # host triple

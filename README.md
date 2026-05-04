@@ -153,22 +153,22 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
 ### A. Install a release
 
-Grab the latest build from
-[Releases](https://github.com/shinkuan/Akagi/releases) and pick the
-file for your OS:
+Akagi ships as a portable zip — one self-contained folder per platform.
+Download the file for your OS from
+[Releases](https://github.com/shinkuan/Akagi/releases), unzip anywhere
+you have write permission (e.g. `~/Apps/`, Desktop), and run the binary.
+Configuration, logs, history, the CA cert, and bots all live next to
+the binary, so moving / backing up / uninstalling is just moving /
+copying / deleting the folder.
 
 | OS | File | Notes |
 |---|---|---|
-| Windows | `*.msi` or `*-setup.exe` | x86_64; double-click and follow the installer. |
-| macOS | `*.dmg` | Apple Silicon (aarch64). Drag into `/Applications`. |
-| Linux | `*.AppImage` / `*.deb` / `*.rpm` | Built on `ubuntu-22.04` (glibc 2.35). |
+| Windows | `akagi-<version>-windows-x64.zip` | x86_64. Requires WebView2 (preinstalled on Win10 1803+ / Win11). SmartScreen will warn — *More info → Run anyway*. |
+| macOS | `akagi-<version>-macos-arm64.zip` | Apple Silicon. Unsigned: run `xattr -cr <unzipped folder>` once, or right-click → *Open* the first time. |
+| Linux | `akagi-<version>-linux-x64.zip` | Built on `ubuntu-22.04` (glibc 2.35+). Requires WebKit2GTK 4.1 (`apt install libwebkit2gtk-4.1-0` / `dnf install webkit2gtk4.1` / `pacman -S webkit2gtk-4.1`). |
 
-Two release variants are published:
-
-- **`with-runtime`** — bundles `python-build-standalone` 3.12 + `uv`
-  (~150 MB). Bots run out of the box.
-- **`no-runtime`** — slimmer; expects a system Python 3.12 +
-  `uv` on `PATH`.
+Each zip bundles `python-build-standalone` 3.12 + `uv` next to the
+binary, so bots run out of the box without any system Python install.
 
 On first launch the **Setup wizard** walks you through language,
 platform, capture mode, optional bot install (Mortal), and CA trust
@@ -569,20 +569,25 @@ cargo run
 # Pass a custom config path
 cargo run -- --config ./my-config.toml
 
-# Release bundle (.deb / .rpm / .AppImage / .dmg / .msi / .exe)
+# Build a portable zip for the current target
 cargo install tauri-cli --locked          # if not already installed
-cargo tauri build
+bash scripts/fetch-runtime.sh             # populate runtime/<triple>/
+cargo tauri build --no-bundle             # writes target/<triple>/release/akagi
+bash scripts/package-zip.sh <target-triple>
+# → dist/akagi-<version>-<os>-<arch>.zip
 
 # Frontend dev only (Vite on :1420)
 cd frontend && npm ci && npm run dev
 ```
 
-**Optional bundled runtime**
+**Bundled runtime**
 
 `scripts/fetch-runtime.sh <target-triple>` downloads
 `python-build-standalone` 3.12 + `uv` for the target and stages them
-under `runtime/`. Tauri picks them up via `bundle.resources` so the
-shipped app works without a system Python.
+under `runtime/`. `scripts/package-zip.sh` then copies that tree next
+to the binary inside the zip; `src/bot/runtime.rs` finds it
+exe-adjacent at runtime, so the shipped app works without a system
+Python install.
 
 ## Testing
 
@@ -604,19 +609,16 @@ cargo test --release     # for the perf bench
 ## Releases & CI
 
 GitHub Actions [`release.yml`](./.github/workflows/release.yml) builds
-on tag push (`v3.*`) or manual dispatch:
+on tag push (`v3.*`) or manual dispatch. One portable zip per target:
 
-| OS runner | Targets |
-|---|---|
-| `ubuntu-22.04` (glibc 2.35) | `.deb`, `.rpm`, `.AppImage` |
-| `macos-14` (aarch64) | `.dmg` |
-| `windows-latest` | `.msi`, `-setup.exe` |
+| OS runner | Target | Artifact |
+|---|---|---|
+| `ubuntu-22.04` (glibc 2.35) | `x86_64-unknown-linux-gnu` | `akagi-<version>-linux-x64.zip` |
+| `macos-14` | `aarch64-apple-darwin` | `akagi-<version>-macos-arm64.zip` |
+| `windows-latest` | `x86_64-pc-windows-msvc` | `akagi-<version>-windows-x64.zip` |
 
-Two variants per OS:
-
-- **`with-runtime`** — bundles `python-build-standalone` 3.12 + `uv`.
-- **`no-runtime`** — slim; expects system Python 3.12 + `uv` on
-  `PATH`.
+Each zip ships `python-build-standalone` 3.12 + `uv` next to the
+binary, so bots run without a system Python install.
 
 Tags must be on the `v3` branch.
 
