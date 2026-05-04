@@ -34,8 +34,7 @@ pub fn spawn(exe: &Path, profile: &Path, cfg: &ChromiumConfig) -> Result<Child> 
         .arg("--disable-background-networking")
         .arg("--disable-sync")
         .arg("--metrics-recording-only")
-        .arg("--no-pings")
-        .arg("--mute-audio");
+        .arg("--no-pings");
     if cfg!(target_os = "linux") {
         // Chromium occasionally crashes on Linux when /dev/shm is small (e.g. Docker).
         cmd.arg("--disable-dev-shm-usage");
