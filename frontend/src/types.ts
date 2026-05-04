@@ -97,6 +97,20 @@ export type DetectedBrowser = {
 /// PascalCase JSON: `"Majsoul"`, `"Tenhou"`).
 export type PlatformKind = 'Majsoul' | 'Tenhou'
 
+export type MajsoulAutoplayConfig = {
+  pre_click_delay_min_ms: number
+  pre_click_delay_max_ms: number
+  inter_click_delay_ms: number
+  hover_delay_ms: number
+  click_hold_ms: number
+  dealer_first_discard_extra_delay_ms: number
+}
+
+export type AutoplayConfig = {
+  enabled: boolean
+  majsoul: MajsoulAutoplayConfig
+}
+
 export type AppConfig = {
   general: { language: string; first_run_completed: boolean }
   logging: { dir: string; level: string; all_level: string }
@@ -104,6 +118,7 @@ export type AppConfig = {
   proxy: { enabled: boolean; addr: string; ca_dir: string }
   bot: { enabled: boolean; active_4p: string; active_3p: string; auto_sync: boolean; dir: string }
   capture: CaptureConfig
+  autoplay: AutoplayConfig
 }
 
 export type FieldKind = 'string' | 'bool' | 'int' | 'float' | 'enum'

@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod autoplay;
 pub mod bot;
 pub mod bridge;
 pub mod capture;
@@ -108,6 +109,7 @@ pub fn run() {
     let bot_enabled = cfg.bot.enabled;
     let proxy_enabled = cfg.proxy.enabled;
     let bot_cfg = cfg.bot.clone();
+    let autoplay_enabled = cfg.autoplay.enabled;
 
     // Game-state tracker handle is built up front so AppState can carry
     // the Arc, but the consumer task is spawned inside `.setup()` once
@@ -222,6 +224,30 @@ pub fn run() {
                         .await
                         {
                             error!("Bot manager failed: {e:#}");
+                        }
+                    });
+                }
+
+                if autoplay_enabled {
+                    let cfg_for_ap = state.config.clone();
+                    let ctx_for_ap = state.autoplay_context.clone();
+                    let tracker_for_ap = state.game_tracker.clone();
+                    let mjai_for_ap = mjai_bus.clone();
+                    let resp_for_ap = bot_response_bus.clone();
+                    state
+                        .autoplay_manager_started
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = autoplay::run_autoplay_manager(
+                            cfg_for_ap,
+                            ctx_for_ap,
+                            tracker_for_ap,
+                            mjai_for_ap,
+                            resp_for_ap,
+                        )
+                        .await
+                        {
+                            error!("Autoplay manager failed: {e:#}");
                         }
                     });
                 }

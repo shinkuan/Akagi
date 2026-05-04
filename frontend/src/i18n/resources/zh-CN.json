@@ -298,7 +298,22 @@
     "ui_scale_hint": "缩放整个应用的字号、间距与控件，仅本机保存。",
     "unsaved_title": "尚未保存的更改",
     "unsaved_desc": "你有尚未保存的设置更改。请选择保存后离开、放弃更改，或留在此页继续编辑。",
-    "save_and_leave": "保存并离开"
+    "save_and_leave": "保存并离开",
+    "autoplay": {
+      "title": "自动打牌",
+      "enable": "启用自动打牌",
+      "enable_help": "启用后 Akagi 会自动在雀魂界面上点击 bot 选定的动作。需要 Chromium 抓包模式以及打开的游戏标签页。",
+      "platform_note": "目前仅支持雀魂。",
+      "requires_chromium": "自动打牌需要使用 Chromium 抓包模式。",
+      "pre_click_delay_min": "点击前延迟 (最小, ms)",
+      "pre_click_delay_max": "点击前延迟 (最大, ms)",
+      "inter_click_delay": "连续点击间延迟 (ms)",
+      "hover_delay": "按下前的悬停时间 (ms)",
+      "hover_delay_hint": "雀魂判定牌面点击需要在 mousedown 前悬停 100ms 以上。低于此值点击可能被吃掉。",
+      "click_hold": "按住时间 (ms)",
+      "dealer_first_discard_extra_delay": "庄家首打额外延迟 (ms)",
+      "dealer_first_discard_extra_delay_hint": "庄家被发 14 张牌时雀魂会播放整理手牌动画，期间的点击会被吃掉。约 2000ms 可覆盖大多数设备。"
+    }
   },
   "setup": {
     "title": "Akagi 设置",

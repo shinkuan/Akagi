@@ -137,6 +137,7 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
         platform,
         mjai_bus: state.mjai_bus.clone(),
         notify_bus: state.notify_bus.clone(),
+        autoplay: Some(state.autoplay_context.clone()),
     };
     let status_bus = state.capture_status_bus.clone();
     let control = state.capture_control.clone();

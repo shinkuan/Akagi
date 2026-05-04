@@ -298,7 +298,22 @@
     "ui_scale_hint": "Scales typography, spacing, and controls across the app. Saved locally.",
     "unsaved_title": "Unsaved changes",
     "unsaved_desc": "You have unsaved settings changes. Save them before leaving, discard them, or stay on this page.",
-    "save_and_leave": "Save & leave"
+    "save_and_leave": "Save & leave",
+    "autoplay": {
+      "title": "Autoplay",
+      "enable": "Enable autoplay",
+      "enable_help": "When enabled, Akagi clicks the bot's chosen action on the Mahjong Soul board automatically. Requires the Chromium capture mode and a running game tab.",
+      "platform_note": "Mahjong Soul only.",
+      "requires_chromium": "Autoplay requires the Chromium capture mode.",
+      "pre_click_delay_min": "Pre-click delay (min, ms)",
+      "pre_click_delay_max": "Pre-click delay (max, ms)",
+      "inter_click_delay": "Inter-click delay (ms)",
+      "hover_delay": "Hover delay before press (ms)",
+      "hover_delay_hint": "Mouse must hover for ≥100ms before mousedown for Mahjong Soul to register a tile click. Lower values risk dropped clicks.",
+      "click_hold": "Click hold (ms)",
+      "dealer_first_discard_extra_delay": "Dealer first-discard extra delay (ms)",
+      "dealer_first_discard_extra_delay_hint": "Mahjong Soul plays a hand-sort animation when the dealer is dealt all 14 tiles. Clicks during the animation are dropped. ~2000ms covers most devices."
+    }
   },
   "setup": {
     "title": "Akagi Setup",

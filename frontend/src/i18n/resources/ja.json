@@ -298,7 +298,22 @@
     "ui_scale_hint": "アプリ全体のフォントサイズ・余白・コントロールをスケールします。ローカルにのみ保存されます。",
     "unsaved_title": "未保存の変更",
     "unsaved_desc": "未保存の設定変更があります。保存して離れる、変更を破棄する、またはこのページに留まるか選択してください。",
-    "save_and_leave": "保存して離れる"
+    "save_and_leave": "保存して離れる",
+    "autoplay": {
+      "title": "自動操作",
+      "enable": "自動操作を有効化",
+      "enable_help": "有効にすると、ボットが選んだ操作をAkagiが雀魂のクライアント上で自動的にクリックします。Chromiumキャプチャモードと開いているゲームタブが必要です。",
+      "platform_note": "雀魂のみ対応。",
+      "requires_chromium": "自動操作にはChromiumキャプチャモードが必要です。",
+      "pre_click_delay_min": "クリック前の待機 (最小, ms)",
+      "pre_click_delay_max": "クリック前の待機 (最大, ms)",
+      "inter_click_delay": "クリック間の待機 (ms)",
+      "hover_delay": "押下前のホバー時間 (ms)",
+      "hover_delay_hint": "雀魂が牌のクリックを認識するには、mousedown前に100ms以上のホバーが必要です。短すぎるとクリックが無視されます。",
+      "click_hold": "ボタン押下保持 (ms)",
+      "dealer_first_discard_extra_delay": "親の初打追加待機 (ms)",
+      "dealer_first_discard_extra_delay_hint": "雀魂は親に14枚配られた後に手牌整列アニメーションを再生し、その間のクリックは無視されます。2000ms前後でほぼ吸収できます。"
+    }
   },
   "setup": {
     "title": "Akagi セットアップ",

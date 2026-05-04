@@ -298,7 +298,22 @@
     "ui_scale_hint": "縮放整個應用的字級、間距與控制元件，僅本機儲存。",
     "unsaved_title": "尚未儲存的變更",
     "unsaved_desc": "你有尚未儲存的設定變更。請選擇儲存後離開、放棄變更，或留在此頁繼續編輯。",
-    "save_and_leave": "儲存並離開"
+    "save_and_leave": "儲存並離開",
+    "autoplay": {
+      "title": "自動打牌",
+      "enable": "啟用自動打牌",
+      "enable_help": "啟用後 Akagi 會自動在雀魂介面上點擊 bot 選定的動作。需要 Chromium 擷取模式以及開啟中的遊戲分頁。",
+      "platform_note": "目前僅支援雀魂。",
+      "requires_chromium": "自動打牌需要使用 Chromium 擷取模式。",
+      "pre_click_delay_min": "點擊前延遲 (最小, ms)",
+      "pre_click_delay_max": "點擊前延遲 (最大, ms)",
+      "inter_click_delay": "連續點擊間延遲 (ms)",
+      "hover_delay": "按下前的滑鼠停留時間 (ms)",
+      "hover_delay_hint": "雀魂判定牌面點擊需要在 mousedown 前停留 100ms 以上。低於此值點擊可能被吃掉。",
+      "click_hold": "按住時間 (ms)",
+      "dealer_first_discard_extra_delay": "莊家初打額外延遲 (ms)",
+      "dealer_first_discard_extra_delay_hint": "莊家被發 14 張牌時雀魂會播放整理手牌動畫，期間的點擊會被吃掉。約 2000ms 可覆蓋一般裝置。"
+    }
   },
   "setup": {
     "title": "Akagi 設定",

@@ -230,6 +230,8 @@ export function Settings() {
         </CardContent>
       </Card>
 
+      <AutoplayCard draft={draft} setDraft={setDraft} />
+
       <Dialog
         open={blocker.state === 'blocked'}
         onOpenChange={(open) => {
@@ -395,6 +397,144 @@ function PlatformCard({
           </Select>
         </Field>
         <p className="text-xs text-muted-foreground">{t(info.descriptionKey)}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function AutoplayCard({
+  draft,
+  setDraft,
+}: {
+  draft: AppConfig
+  setDraft: (c: AppConfig) => void
+}) {
+  const { t } = useTranslation()
+  const ap = draft.autoplay ?? {
+    enabled: false,
+    majsoul: {
+      pre_click_delay_min_ms: 1000,
+      pre_click_delay_max_ms: 3000,
+      inter_click_delay_ms: 300,
+      hover_delay_ms: 150,
+      click_hold_ms: 50,
+      dealer_first_discard_extra_delay_ms: 2000,
+    },
+  }
+  const captureIsChromium = draft.capture?.mode === 'chromium'
+  const setApField = (patch: Partial<typeof ap>) =>
+    setDraft({ ...draft, autoplay: { ...ap, ...patch } })
+  const setMajsoulField = (patch: Partial<typeof ap.majsoul>) =>
+    setDraft({
+      ...draft,
+      autoplay: { ...ap, majsoul: { ...ap.majsoul, ...patch } },
+    })
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('settings.autoplay.title')}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <Toggle
+          label={t('settings.autoplay.enable')}
+          value={ap.enabled}
+          onChange={(v) => setApField({ enabled: v })}
+        />
+        <p className="text-xs text-muted-foreground">
+          {t('settings.autoplay.enable_help')}
+        </p>
+        {ap.enabled && !captureIsChromium && (
+          <p className="text-xs text-amber-500">
+            {t('settings.autoplay.requires_chromium')}
+          </p>
+        )}
+        <Field label={t('settings.autoplay.pre_click_delay_min')}>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={ap.majsoul.pre_click_delay_min_ms}
+            onChange={(e) =>
+              setMajsoulField({
+                pre_click_delay_min_ms: Number(e.target.value || 0),
+              })
+            }
+          />
+        </Field>
+        <Field label={t('settings.autoplay.pre_click_delay_max')}>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={ap.majsoul.pre_click_delay_max_ms}
+            onChange={(e) =>
+              setMajsoulField({
+                pre_click_delay_max_ms: Number(e.target.value || 0),
+              })
+            }
+          />
+        </Field>
+        <Field label={t('settings.autoplay.inter_click_delay')}>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={ap.majsoul.inter_click_delay_ms}
+            onChange={(e) =>
+              setMajsoulField({
+                inter_click_delay_ms: Number(e.target.value || 0),
+              })
+            }
+          />
+        </Field>
+        <Field
+          label={t('settings.autoplay.hover_delay')}
+          hint={t('settings.autoplay.hover_delay_hint')}
+        >
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={ap.majsoul.hover_delay_ms}
+            onChange={(e) =>
+              setMajsoulField({
+                hover_delay_ms: Number(e.target.value || 0),
+              })
+            }
+          />
+        </Field>
+        <Field label={t('settings.autoplay.click_hold')}>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={ap.majsoul.click_hold_ms}
+            onChange={(e) =>
+              setMajsoulField({
+                click_hold_ms: Number(e.target.value || 0),
+              })
+            }
+          />
+        </Field>
+        <Field
+          label={t('settings.autoplay.dealer_first_discard_extra_delay')}
+          hint={t('settings.autoplay.dealer_first_discard_extra_delay_hint')}
+        >
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={ap.majsoul.dealer_first_discard_extra_delay_ms}
+            onChange={(e) =>
+              setMajsoulField({
+                dealer_first_discard_extra_delay_ms: Number(e.target.value || 0),
+              })
+            }
+          />
+        </Field>
+        <p className="text-xs text-muted-foreground">
+          {t('settings.autoplay.platform_note')}
+        </p>
       </CardContent>
     </Card>
   )

@@ -20,6 +20,7 @@
 //! page-scoped WS today. If real-world testing shows otherwise, expand
 //! the polling to include `browser.targets()` and filter on type.
 
+use crate::autoplay::AutoplayContext;
 use crate::bridge::Direction;
 use crate::capture::flow::{slugify, FlowBridges};
 use crate::event_bus::MjaiBus;
@@ -105,14 +106,29 @@ pub fn diff_pages(prev: &HashSet<String>, current: &HashSet<String>) -> (Vec<Str
     (adds, removes)
 }
 
+/// Hosts whose WebSocket creation hands the page handle to autoplay.
+/// `maj-soul.com` covers en/cn/jp portals; `mahjongsoul.com` is the
+/// Yostar mirror.
+const AUTOPLAY_HOST_HINTS: &[&str] = &["maj-soul.com", "mahjongsoul.com"];
+
+fn is_autoplay_target_url(ws_url: &str) -> bool {
+    AUTOPLAY_HOST_HINTS.iter().any(|h| ws_url.contains(h))
+}
+
 /// Run the CDP loop until the browser disconnects or an unrecoverable
 /// error occurs. Frames flow through `bridges` into `mjai_bus`, and each
 /// frame is also recorded into `inspector` for the Logs → Inspector tab.
+///
+/// `autoplay` is `Some` only on the chromium backend when the autoplay
+/// feature is wired (`AppState.autoplay_context`). On Majsoul WS open
+/// we publish the page handle into it; autoplay reads it back to dispatch
+/// `Input.dispatchMouseEvent`. Passing `None` makes the loop bridge-only.
 pub async fn run(
     endpoint: &str,
     bridges: Arc<FlowBridges<FlowKey>>,
     mjai_bus: MjaiBus,
     inspector: InspectorWriter,
+    autoplay: Option<Arc<AutoplayContext>>,
 ) -> Result<()> {
     info!("CDP connecting to {endpoint}");
     let (browser_owned, mut handler) = Browser::connect(endpoint)
@@ -175,6 +191,7 @@ pub async fn run(
                     bridges.clone(),
                     mjai_bus.clone(),
                     inspector.clone(),
+                    autoplay.clone(),
                 )
                 .await
                 {
@@ -216,6 +233,7 @@ async fn attach_page(
     bridges: Arc<FlowBridges<FlowKey>>,
     mjai_bus: MjaiBus,
     inspector: InspectorWriter,
+    autoplay: Option<Arc<AutoplayContext>>,
 ) -> Result<JoinHandle<()>> {
     page.execute(NetworkEnableParams::default())
         .await
@@ -238,6 +256,10 @@ async fn attach_page(
         .context("subscribe webSocketClosed")?;
 
     let handle = tokio::spawn(async move {
+        // Track the most recent autoplay-target request id for this page,
+        // so we know which WS close to react to when clearing the page
+        // handle from the autoplay context.
+        let mut autoplay_request_id: Option<String> = None;
         loop {
             tokio::select! {
                 Some(ev) = on_created.next() => {
@@ -249,6 +271,27 @@ async fn attach_page(
                     let slug = slugify(&ev.url);
                     let _ = bridges.acquire(key, &slug, &label);
                     debug!("ws created: {} (target {target_id} request {})", ev.url, ev.request_id.inner());
+
+                    // If this is the platform's WS (Majsoul), capture
+                    // the owning page so autoplay can dispatch input
+                    // into it. Multi-tab user: most-recent wins, per
+                    // the plan.
+                    if let Some(ctx) = &autoplay {
+                        if is_autoplay_target_url(&ev.url) {
+                            let mut guard = ctx.page.write().await;
+                            if guard.is_some() {
+                                warn!(
+                                    "autoplay: replacing page handle on new WS for target {target_id}"
+                                );
+                            }
+                            *guard = Some(page.clone());
+                            autoplay_request_id = Some(ev.request_id.inner().clone());
+                            info!(
+                                "autoplay: page handle bound to target {target_id} via WS {}",
+                                ev.url
+                            );
+                        }
+                    }
                 }
                 Some(ev) = on_recv.next() => {
                     let opcode = ev.response.opcode as i64;
@@ -327,6 +370,17 @@ async fn attach_page(
                     // direction's task is holding a clone.
                     let bridge = bridges.acquire(key.clone(), "ws", "ws frame");
                     bridges.release(&key, bridge);
+
+                    // If this is the autoplay-target WS, drop our hold
+                    // on the page handle. The next reconnection (game
+                    // restart, network blip) re-binds it from `on_created`.
+                    if let (Some(ctx), Some(req)) = (&autoplay, &autoplay_request_id) {
+                        if *req == *ev.request_id.inner() {
+                            *ctx.page.write().await = None;
+                            autoplay_request_id = None;
+                            debug!("autoplay: page handle cleared on WS close for target {target_id}");
+                        }
+                    }
                 }
                 else => break,
             }

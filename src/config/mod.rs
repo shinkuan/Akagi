@@ -1,3 +1,4 @@
+mod autoplay;
 mod bot;
 mod capture;
 mod general;
@@ -5,6 +6,7 @@ mod logging;
 mod platform;
 mod proxy;
 
+pub use autoplay::{AutoplayConfig, MajsoulAutoplayConfig};
 pub use bot::BotConfig;
 pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig};
 pub use general::GeneralConfig;
@@ -24,6 +26,7 @@ pub struct AppConfig {
     pub proxy: ProxyConfig,
     pub bot: BotConfig,
     pub capture: CaptureConfig,
+    pub autoplay: AutoplayConfig,
 }
 
 enum ResolvedPath {

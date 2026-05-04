@@ -14,6 +14,7 @@ pub mod chromium;
 pub mod flow;
 pub mod hudsucker_backend;
 
+use crate::autoplay::AutoplayContext;
 use crate::config::Platform;
 use crate::event_bus::{MjaiBus, NotifyBus};
 use crate::logger::Session;
@@ -81,6 +82,11 @@ pub struct CaptureCtx {
     pub platform: Platform,
     pub mjai_bus: MjaiBus,
     pub notify_bus: NotifyBus,
+    /// Shared with the autoplay manager. The chromium backend writes the
+    /// per-tab `Page` handle here when it observes a Majsoul WS;
+    /// autoplay reads it to dispatch `Input.dispatchMouseEvent`. The
+    /// MITM backend simply ignores this — it has no `Page`.
+    pub autoplay: Option<Arc<AutoplayContext>>,
 }
 
 /// A capture transport. Implementors run a long-lived I/O loop until

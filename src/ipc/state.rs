@@ -16,6 +16,7 @@
 //! succeeded.
 
 use crate::analysis::runner::AnalysisCache;
+use crate::autoplay::AutoplayContext;
 use crate::bot::PythonRuntime;
 use crate::config::AppConfig;
 use crate::event_bus::{
@@ -105,6 +106,16 @@ pub struct AppState {
     /// finishes) without ever spawning twice. There is no off-switch:
     /// once started, the manager runs for the lifetime of the process.
     pub bot_manager_started: Arc<AtomicBool>,
+    /// Shared with the chromium capture backend (which writes the page
+    /// handle on Majsoul WS open) and the `AutoplayManager` (which reads
+    /// it to dispatch input). Always present; `enabled = false` in
+    /// config simply suppresses the manager spawn — the context still
+    /// exists so a runtime toggle works without re-plumbing.
+    pub autoplay_context: Arc<AutoplayContext>,
+    /// Set to `true` once an `AutoplayManager` has been spawned for this
+    /// process. Used by `update_config` to start the manager on a
+    /// runtime false→true flip of `autoplay.enabled` without re-spawning.
+    pub autoplay_manager_started: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -146,6 +157,8 @@ impl AppState {
             runtime,
             syncs_in_flight: Arc::new(Mutex::new(HashSet::new())),
             bot_manager_started: Arc::new(AtomicBool::new(false)),
+            autoplay_context: Arc::new(AutoplayContext::new()),
+            autoplay_manager_started: Arc::new(AtomicBool::new(false)),
         }
     }
 }

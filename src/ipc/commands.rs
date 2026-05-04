@@ -40,6 +40,21 @@ fn claim_bot_manager_spawn(bot_enabled: bool, flag: &std::sync::atomic::AtomicBo
             .is_ok()
 }
 
+/// Same once-per-process gating as the bot variant, but for the autoplay
+/// manager. Toggling `autoplay.enabled` back to false leaves the manager
+/// alive — it just becomes a no-op because every bot response is gated
+/// on a fresh `cfg.autoplay.enabled` read.
+fn claim_autoplay_manager_spawn(
+    autoplay_enabled: bool,
+    flag: &std::sync::atomic::AtomicBool,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    autoplay_enabled
+        && flag
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+}
+
 fn entry_to_info(e: &BotEntry) -> BotInfo {
     BotInfo {
         name: e.name.clone(),
@@ -81,6 +96,7 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
     let new_platform = new_config.platform.kind;
     let bot_cfg = new_config.bot.clone();
     let bot_now_enabled = new_config.bot.enabled;
+    let autoplay_now_enabled = new_config.autoplay.enabled;
     *state.config.write().await = new_config;
 
     // Sync the history recorder's platform tag immediately. Subsequent
@@ -141,6 +157,29 @@ pub async fn update_config(new_config: AppConfig, state: State<'_, AppState>) ->
                 // Setup failure: clear the flag so a follow-up
                 // update_config (e.g. the user fixing the bot dir and
                 // saving again) gets another shot at spawning.
+                started_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+    }
+
+    if claim_autoplay_manager_spawn(autoplay_now_enabled, &state.autoplay_manager_started) {
+        let cfg_for_ap = state.config.clone();
+        let ctx_for_ap = state.autoplay_context.clone();
+        let tracker_for_ap = state.game_tracker.clone();
+        let mjai_for_ap = state.mjai_bus.clone();
+        let resp_for_ap = state.bot_response_bus.clone();
+        let started_flag = state.autoplay_manager_started.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = crate::autoplay::run_autoplay_manager(
+                cfg_for_ap,
+                ctx_for_ap,
+                tracker_for_ap,
+                mjai_for_ap,
+                resp_for_ap,
+            )
+            .await
+            {
+                tracing::error!("Autoplay manager failed: {e:#}");
                 started_flag.store(false, std::sync::atomic::Ordering::SeqCst);
             }
         });

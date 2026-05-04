@@ -38,6 +38,7 @@ futures-util = "0.3"
 dirs = "6"
 chromiumoxide = "0.9.1"
 ulid = { version = "1", features = ["serde"] }
+rand = "0.9"
 
 [dev-dependencies]
 tempfile = "3"
