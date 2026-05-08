@@ -24,6 +24,7 @@ use crate::game_state::tracker::GameTracker;
 use crate::schema::MjaiEvent;
 use riichienv_core::action::Action;
 use riichienv_core::state::legal_actions::GameStateLegalActions;
+use riichienv_core::state_3p::legal_actions::GameState3PLegalActions;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast::error::RecvError, Mutex, RwLock};
@@ -129,12 +130,7 @@ impl AutoplayManager {
             let legal_actions: Vec<Action> = if num_players == 3 {
                 tracker
                     .state_3p()
-                    .map(|s| {
-                        // 3p engine has its own GameStateLegalActions impl —
-                        // import elsewhere if needed; v1 only handles 4p clicks.
-                        let _ = s;
-                        Vec::new()
-                    })
+                    .map(|s| s._get_legal_actions_internal(our_seat))
                     .unwrap_or_default()
             } else {
                 tracker
@@ -336,3 +332,5 @@ pub async fn run_autoplay_manager(
 ) -> anyhow::Result<()> {
     AutoplayManager::new(cfg, ctx, tracker, mjai_bus).run(response_bus).await
 }
+
+
