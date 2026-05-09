@@ -116,6 +116,9 @@ pub struct PlayerSnapshot {
     /// always empty in 4p. mjai tile strings (always `"N"` in practice).
     #[serde(default)]
     pub kita_tiles: Vec<String>,
+    /// The just-drawn tile, if any. Populated for the active player only.
+    #[serde(default)]
+    pub drawn_tile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -174,6 +177,7 @@ impl GameStateSnapshot {
                     double_riichi: p.double_riichi_declared,
                     riichi_declaration_index: p.riichi_declaration_index,
                     kita_tiles: Vec::new(),
+                    drawn_tile: if i as u8 == s.current_player { s.drawn_tile.map(tid_to_mjai) } else { None },
                 }
             })
             .collect();
@@ -232,6 +236,7 @@ impl GameStateSnapshot {
                     double_riichi: p.double_riichi_declared,
                     riichi_declaration_index: p.riichi_declaration_index,
                     kita_tiles: p.kita_tiles.iter().copied().map(tid_to_mjai).collect(),
+                    drawn_tile: if i as u8 == s.current_player { s.drawn_tile.map(tid_to_mjai) } else { None },
                 }
             })
             .collect();

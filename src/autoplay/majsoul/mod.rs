@@ -169,6 +169,27 @@ impl PlatformAutoplay for MajsoulAutoplay {
                 if !pass_button_visible(ctx) {
                     return result;
                 }
+                // Extra guard: never click Pass during WaitAct (own draw turn).
+                // Stale legal_actions from the previous round can falsely expose
+                // Pass before the tracker has processed start_kyoku.
+                if ctx.snapshot.phase != crate::game_state::snapshot::Phase::WaitResponse {
+                    return result;
+                }
+                // Extra guard: only click Skip when there's an actual claim option
+                // (pon/ron/daiminkan). In 3p there's no chi, so many WaitResponse
+                // windows have no claimable actions — Majsoul shows no buttons at all
+                // and a ghost click would land on the wrong UI element.
+                let has_claim = ctx.legal_actions.iter().any(|a| {
+                    matches!(a.action_type,
+                        riichienv_core::action::ActionType::Pon
+                        | riichienv_core::action::ActionType::Daiminkan
+                        | riichienv_core::action::ActionType::Ron
+                        | riichienv_core::action::ActionType::Chi
+                    )
+                });
+                if !has_claim {
+                    return result;
+                }
                 push_random_pre_delay(&mut result.steps, ctx);
                 if let Some(button) = action_button_for(MajsoulOpType::None, ctx) {
                     result.steps.push(Step::Click {
@@ -229,40 +250,58 @@ fn plan_dahai_click(pai: &str, ctx: &ActionContext) -> Option<Step> {
         return Some(Step::Click { x_norm: x, y_norm: y });
     }
 
-    let mut tehai: Vec<String> = ctx.snapshot.players[our_seat].tehai.clone();
-    let tsumohai = ctx.last_self_tsumo;
+    let tehai: Vec<String> = ctx.snapshot.players[our_seat].tehai.clone();
+    // Prefer snapshot drawn_tile (always accurate) over last_self_tsumo
+    // (None after pon/chi/kita since no Tsumo event fires for those draws).
+    // In 3p: if snapshot_drawn is "N" but last_self_tsumo is set to something
+    // else, the snapshot predates the Kita; use last_self_tsumo (rinshan).
+    let snapshot_drawn = ctx.snapshot.players.get(our_seat)
+        .and_then(|p| p.drawn_tile.as_deref());
+    let tsumohai = match (snapshot_drawn, ctx.last_self_tsumo) {
+        (Some("N"), Some(rinshan)) => Some(rinshan),
+        (Some(t), _) => Some(t),
+        (None, fallback) => fallback,
+    };
 
-    // Detect tsumohai: hand sizes that include the just-drawn tile are
-    // 2/5/8/11/14 (mod 3 = 2). When present and known, separate it out.
-    let mut is_tsumohai = false;
-    if matches!(tehai.len(), 14 | 11 | 8 | 5 | 2) {
-        if let Some(t) = tsumohai {
-            if let Some(pos) = tehai.iter().rposition(|x| x == t) {
-                tehai.remove(pos);
-                is_tsumohai = true;
-            }
+    // Hand sizes that include the just-drawn tile: 2/5/8/11/14 (mod 3 = 2).
+    let has_tsumohai = matches!(tehai.len(), 14 | 11 | 8 | 5 | 2) && tsumohai.is_some();
+
+    // Sort the full tehai to match Majsoul visual order.
+    // riichienv always sorts hand after every draw, so this is accurate.
+    let mut sorted_tehai = tehai.clone();
+    sorted_tehai.sort_by(|a, b| compare_pai(a, b));
+
+    if has_tsumohai {
+        let t = tsumohai.unwrap();
+        if pai == t {
+            // Discarding the tsumohai: click the far-right tsumohai slot.
+            let (x, y) = get_pai_coord(13, tehai.len() - 1);
+            return Some(Step::Click { x_norm: x, y_norm: y });
         }
-    }
-    tehai.sort_by(|a, b| compare_pai(a, b));
-
-    if is_tsumohai {
-        if let Some(t) = tsumohai {
-            if pai == t {
-                let (x, y) = get_pai_coord(13, tehai.len());
-                return Some(Step::Click { x_norm: x, y_norm: y });
-            }
+        // Discarding a closed-hand tile. The tsumohai sits on the far right
+        // visually. Exclude the last occurrence of the tsumohai tile from
+        // sorted_tehai, then find pai index in the remaining tiles.
+        let tsumo_excl = sorted_tehai.iter().rposition(|x| x.as_str() == t);
+        let idx = sorted_tehai.iter().enumerate()
+            .filter(|(i, _)| Some(*i) != tsumo_excl)
+            .enumerate()
+            .find(|(_, (_, x))| x.as_str() == pai)
+            .map(|(visual_idx, _)| visual_idx)?;
+        if idx >= TILES.len() - 1 {
+            return None;
         }
+        let (x, y) = get_pai_coord(idx, tehai.len() - 1);
+        return Some(Step::Click { x_norm: x, y_norm: y });
     }
 
-    let idx = tehai.iter().position(|x| x == pai)?;
+    // No tsumohai: all tiles closed, click by sorted index directly.
+    let idx = sorted_tehai.iter().position(|x| x.as_str() == pai)?;
     if idx >= TILES.len() - 1 {
-        // No closed-hand slot 13 (only the tsumohai uses that path).
         return None;
     }
     let (x, y) = get_pai_coord(idx, tehai.len());
     Some(Step::Click { x_norm: x, y_norm: y })
 }
-
 /// True for the dealer's very first discard of a kyoku — the moment
 /// when Mahjong Soul has dealt 14 tiles, played the hand-sort animation,
 /// and is showing all 14 tiles continuously on the rack (no tsumohai
