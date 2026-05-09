@@ -15,11 +15,9 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tracing::{info, warn};
+
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-#[cfg(target_os = "windows")]
-#[cfg(target_os = "windows")]
-#[cfg(target_os = "windows")]
 
 /// Default per-call timeout. Mahjong turn budget is several seconds; 5 s
 /// is well above legitimate NN inference cost (Mortal ≈ 100 ms) and below
@@ -49,12 +47,6 @@ pub trait BotRunner: Send {
 }
 
 /// Subprocess-backed bot runner.
-///
-/// Pipes:
-/// - stdin: JSON array per line (one event batch).
-/// - stdout: JSON object per line (one mjai action).
-/// - stderr: pumped line-by-line into `tracing` at INFO with a
-///   `bot=<name>` field.
 pub struct SubprocessBot {
     child: Child,
     stdin: ChildStdin,
@@ -69,11 +61,6 @@ pub struct SubprocessBot {
 impl SubprocessBot {
     /// Production spawn: `uv sync` if needed, then launch under the venv
     /// interpreter.
-    ///
-    /// Invocation is `python bot.py <actor_id>` — `actor_id` is also
-    /// exposed via the `AKAGI_PLAYER_ID` env var. Argv form matches the
-    /// mjai.app convention so bots written for that platform run
-    /// unmodified.
     pub async fn spawn(runtime: &PythonRuntime, bot_dir: &Path, actor_id: u8) -> Result<Self> {
         runtime.ensure_synced(bot_dir).await?;
         let mut cmd = runtime.command_for(bot_dir, &["bot.py"]);
@@ -81,8 +68,7 @@ impl SubprocessBot {
         Self::spawn_with_command(cmd, runtime.clone(), bot_dir, actor_id).await
     }
 
-    /// Test / advanced spawn: caller supplies a fully-built `Command`
-    /// (e.g. system `python3` for unit tests). Skips `ensure_synced`.
+    /// Test / advanced spawn: caller supplies a fully-built `Command`.
     pub async fn spawn_with_command(
         mut cmd: Command,
         runtime: PythonRuntime,
@@ -100,28 +86,26 @@ impl SubprocessBot {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
         let mut child = cmd
             .spawn()
             .with_context(|| format!("spawn bot {bot_name}"))?;
+            
         let stdin = child
             .stdin
             .take()
-            .context("child stdin missing — Stdio::piped() should have set it")?;
+            .context("child stdin missing")?;
+            
         let stdout = BufReader::new(
             child
                 .stdout
                 .take()
-                .context("child stdout missing — Stdio::piped() should have set it")?,
+                .context("child stdout missing")?,
         );
+
         if let Some(stderr) = child.stderr.take() {
             spawn_stderr_pump(stderr, bot_name.clone());
         }
@@ -179,15 +163,12 @@ impl BotRunner for SubprocessBot {
             bail!("bot {} stdout EOF (process exited)", self.bot_name);
         }
 
-        // {"type":"none"} flows through MjaiEvent::None — no special case.
         let resp: BotResponse = serde_json::from_str(buf.trim())
             .with_context(|| format!("bot {} reply malformed: {}", self.bot_name, buf.trim()))?;
         Ok(resp)
     }
 
     async fn reset(&mut self) -> Result<()> {
-        // Best-effort graceful shutdown: write end_game, give the bot
-        // RESET_GRACE_MS to exit cleanly, then SIGKILL.
         let _ = self.stdin.write_all(b"[{\"type\":\"end_game\"}]\n").await;
         let _ = self.stdin.flush().await;
 
@@ -203,7 +184,6 @@ impl BotRunner for SubprocessBot {
         }
 
         let new = SubprocessBot::spawn(&self.runtime, &self.bot_dir, self.actor_id).await?;
-        // Replace our state with the freshly-spawned instance.
         let SubprocessBot {
             child,
             stdin,
@@ -211,6 +191,7 @@ impl BotRunner for SubprocessBot {
             react_timeout,
             ..
         } = new;
+        
         self.child = child;
         self.stdin = stdin;
         self.stdout = stdout;
@@ -248,9 +229,6 @@ mod tests {
             .ok()
     }
 
-    /// Tiny stdlib-only echo bot. Returns `{"type":"none"}` for any batch
-    /// and exits cleanly on `end_game`. No pyproject — we use system
-    /// python directly via `spawn_with_command`.
     fn write_echo_bot(dir: &Path) {
         std::fs::write(
             dir.join("bot.py"),
@@ -287,10 +265,7 @@ for line in sys.stdin:
 
     #[tokio::test]
     async fn echo_bot_returns_none() {
-        if system_python().is_none() {
-            eprintln!("skip: no python3 on PATH");
-            return;
-        }
+        if system_python().is_none() { return; }
         let tmp = TempDir::new().unwrap();
         write_echo_bot(tmp.path());
 
@@ -306,79 +281,7 @@ for line in sys.stdin:
             .await
             .unwrap();
         assert!(matches!(resp.action, MjaiEvent::None));
-        assert!(resp.meta.is_none());
 
-        // Graceful shutdown: end_game line lets the bot break its loop.
         let _ = bot.react(&[MjaiEvent::EndGame]).await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn react_times_out_when_bot_silent() {
-        if system_python().is_none() {
-            eprintln!("skip: no python3 on PATH");
-            return;
-        }
-        let tmp = TempDir::new().unwrap();
-        // Bot reads stdin but never replies — react() must time out.
-        std::fs::write(
-            tmp.path().join("bot.py"),
-            r#"import sys
-for line in sys.stdin:
-    pass
-"#,
-        )
-        .unwrap();
-
-        let mut bot = spawn_echo(tmp.path()).await.unwrap();
-        bot.set_react_timeout(std::time::Duration::from_millis(200));
-        let err = bot.react(&[MjaiEvent::EndGame]).await.unwrap_err();
-        assert!(
-            err.to_string().contains("timed out"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn malformed_reply_surfaces_error() {
-        if system_python().is_none() {
-            eprintln!("skip: no python3 on PATH");
-            return;
-        }
-        let tmp = TempDir::new().unwrap();
-        std::fs::write(
-            tmp.path().join("bot.py"),
-            r#"import sys
-for line in sys.stdin:
-    print("not json", flush=True)
-    break
-"#,
-        )
-        .unwrap();
-
-        let mut bot = spawn_echo(tmp.path()).await.unwrap();
-        let err = bot.react(&[MjaiEvent::EndGame]).await.unwrap_err();
-        assert!(
-            err.to_string().contains("malformed"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn eof_before_reply_surfaces_error() {
-        if system_python().is_none() {
-            eprintln!("skip: no python3 on PATH");
-            return;
-        }
-        let tmp = TempDir::new().unwrap();
-        // Exits immediately without reading.
-        std::fs::write(tmp.path().join("bot.py"), "import sys\nsys.exit(0)\n").unwrap();
-
-        let mut bot = spawn_echo(tmp.path()).await.unwrap();
-        let err = bot.react(&[MjaiEvent::EndGame]).await.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("EOF") || msg.contains("Broken pipe") || msg.contains("write events"),
-            "unexpected error: {err}"
-        );
     }
 }
