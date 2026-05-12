@@ -145,6 +145,15 @@ impl PlatformAutoplay for MajsoulAutoplay {
             // ----- Kita (3p 北抜き) ----------------------------------------
             MjaiEvent::Kita { actor, .. } if *actor == ctx.our_seat => {
                 push_random_pre_delay(&mut result.steps, ctx);
+                // On the opening draw of a kyoku (no kawa tile yet), add the
+                // same extra delay used for dealer first discard. Majsoul plays
+                // a tile-dealing animation after the previous kyoku ends; clicks
+                // issued during it land on the wrong target.
+                if ctx.last_kawa_tile.is_none() && ctx.cfg.dealer_first_discard_extra_delay_ms > 0 {
+                    result.steps.push(Step::Sleep {
+                        duration_ms: ctx.cfg.dealer_first_discard_extra_delay_ms,
+                    });
+                }
                 if let Some(button) = action_button_for(MajsoulOpType::Nukidora, ctx) {
                     result.steps.push(Step::Click {
                         x_norm: button.0,
@@ -591,6 +600,7 @@ mod tests {
                 double_riichi: false,
                 riichi_declaration_index: None,
                 kita_tiles: Vec::new(),
+                drawn_tile: None,
             })
             .collect();
         GameStateSnapshot {
