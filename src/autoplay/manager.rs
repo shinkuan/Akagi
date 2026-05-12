@@ -351,3 +351,117 @@ pub async fn run_autoplay_manager(
 ) -> anyhow::Result<()> {
     AutoplayManager::new(cfg, ctx, tracker, mjai_bus).run(response_bus).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::autoplay::context::AutoplayContext;
+    use crate::event_bus::mjai_bus;
+    use crate::game_state::tracker;
+
+    /// Build a minimal `AutoplayManager` suitable for unit-testing
+    /// `handle_mjai_event`. No CDP page, no config — just enough to
+    /// exercise the mjai event handler without touching async resources.
+    fn make_manager() -> AutoplayManager {
+        let bus = mjai_bus();
+        let tracker = tracker::new_handle();
+        AutoplayManager::new(
+            Arc::new(RwLock::new(AppConfig::default())),
+            Arc::new(AutoplayContext::default()),
+            tracker,
+            bus,
+        )
+    }
+
+    /// Regression: `cached_our_seat` must be populated immediately when
+    /// `StartGame` is received, before any bot response fires. Previously
+    /// the seat was only cached inside `handle_bot_response`, so the first
+    /// `Tsumo` event on the opening draw could arrive before the bot had
+    /// responded and `last_self_tsumo` would be silently missed.
+    #[test]
+    fn start_game_sets_cached_seat_immediately() {
+        let mut m = make_manager();
+
+        // Before any event — no seat cached.
+        assert!(m.state.cached_our_seat.is_none());
+
+        // StartGame with id = Some(1) — seat must be cached right away.
+        m.handle_mjai_event(&MjaiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(1),
+            num_players: 4,
+        });
+        assert_eq!(m.state.cached_our_seat, Some(1), "seat must be cached from StartGame");
+
+        // A Tsumo by our seat (1) before any bot response should be recorded.
+        m.handle_mjai_event(&MjaiEvent::Tsumo {
+            actor: 1,
+            pai: "3m".into(),
+        });
+        assert_eq!(
+            m.state.last_self_tsumo.as_deref(),
+            Some("3m"),
+            "last_self_tsumo must be recorded even before first bot response"
+        );
+    }
+
+    /// Seat is preserved across `StartKyoku` and `EndKyoku` resets so
+    /// tsumo tracking continues to work from the first draw of each round.
+    #[test]
+    fn cached_seat_survives_kyoku_reset() {
+        let mut m = make_manager();
+
+        m.handle_mjai_event(&MjaiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(2),
+            num_players: 4,
+        });
+        assert_eq!(m.state.cached_our_seat, Some(2));
+
+        m.handle_mjai_event(&MjaiEvent::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "1m".into(),
+            kyoku: 1,
+            honba: 0,
+            kyotaku: 0,
+            oya: 0,
+            scores: vec![25_000; 4],
+            tehais: vec![vec!["1m".into(); 13]; 4],
+            num_players: 4,
+        });
+        assert_eq!(m.state.cached_our_seat, Some(2), "seat must survive StartKyoku reset");
+
+        m.handle_mjai_event(&MjaiEvent::EndKyoku);
+        assert_eq!(m.state.cached_our_seat, Some(2), "seat must survive EndKyoku reset");
+    }
+
+    /// Observer/replay mode: `StartGame` with `id: None` must not cache a
+    /// stale seat from a previous game.
+    #[test]
+    fn start_game_without_id_clears_cached_seat() {
+        let mut m = make_manager();
+
+        m.handle_mjai_event(&MjaiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(0),
+            num_players: 4,
+        });
+        assert_eq!(m.state.cached_our_seat, Some(0));
+
+        // New game, observer mode — no seat.
+        m.handle_mjai_event(&MjaiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: None,
+            num_players: 4,
+        });
+        assert!(m.state.cached_our_seat.is_none(), "stale seat must be cleared");
+    }
+}
