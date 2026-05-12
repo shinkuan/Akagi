@@ -315,7 +315,7 @@
     "custom_var_primary-foreground": "Primary text",
     "custom_var_border": "Border",
     "custom_import": "Import from URL or JSON",
-    "custom_import_hint": "Paste a tweakcn share URL (https://tweakcn.com/themes/<id>), a shadcn registry URL (…/r/themes/<name>.json), or the raw JSON body. Overrides every token defined in the source.",
+    "custom_import_hint": "Paste a tweakcn URL (share /themes/<id>, editor /editor/theme?theme=<name>, or registry /r/themes/<name>.json) or the raw JSON body. Overrides every token defined in the source.",
     "custom_import_button": "Import",
     "custom_importing": "Importing…",
     "custom_import_ok": "Imported.",

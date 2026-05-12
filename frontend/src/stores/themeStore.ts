@@ -276,16 +276,33 @@ function parseTheme(raw: unknown): CustomTheme {
   }
 }
 
-// Tweakcn share pages live at `tweakcn.com/themes/<id>` (HTML) but the same
-// theme is served as JSON from `tweakcn.com/r/themes/<id>` via content
-// negotiation. Auto-rewrite so users can paste the share URL straight out
-// of the browser address bar.
+// Tweakcn surfaces a theme at three different URLs depending on where the
+// user grabs it. All three map to a single registry endpoint
+// `tweakcn.com/r/themes/<slug-or-id>` which the registry serves as JSON
+// under content negotiation. Auto-rewrite so users can paste straight out
+// of the browser address bar without thinking about it.
+//
+//   share page : tweakcn.com/themes/<id>                 (HTML gallery view)
+//   editor     : tweakcn.com/editor/theme?theme=<slug>   (HTML editor view)
+//   registry   : tweakcn.com/r/themes/<slug-or-id>       (JSON, our target)
 function normalizeThemeUrl(input: string): string {
-  const url = /^https?:\/\//i.test(input) ? input : `https://${input}`
-  return url.replace(
-    /^(https?:\/\/(?:www\.)?tweakcn\.com)\/themes\//i,
-    '$1/r/themes/',
-  )
+  const raw = /^https?:\/\//i.test(input) ? input : `https://${input}`
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    return raw
+  }
+  if (!/(^|\.)tweakcn\.com$/i.test(u.hostname)) return raw
+  if (u.pathname === '/editor/theme' && u.searchParams.has('theme')) {
+    const name = u.searchParams.get('theme') as string
+    return `${u.protocol}//${u.host}/r/themes/${encodeURIComponent(name)}`
+  }
+  const shareMatch = u.pathname.match(/^\/themes\/([^/]+)\/?$/)
+  if (shareMatch) {
+    return `${u.protocol}//${u.host}/r/themes/${shareMatch[1]}`
+  }
+  return raw
 }
 
 async function loadTheme(input: string): Promise<CustomTheme> {
