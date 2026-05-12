@@ -28,6 +28,15 @@
           if (palette && palette !== 'default') {
             document.documentElement.setAttribute('data-theme', palette);
           }
+          if (palette === 'custom') {
+            var css = localStorage.getItem('akagi.theme.css');
+            if (css) {
+              var styleEl = document.createElement('style');
+              styleEl.id = 'akagi-custom-theme';
+              styleEl.textContent = css;
+              document.head.appendChild(styleEl);
+            }
+          }
         } catch (_) {
           // Storage blocked or malformed — fall back to system dark.
           if (
