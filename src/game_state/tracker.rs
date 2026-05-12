@@ -129,6 +129,11 @@ impl GameTracker {
         } else {
             None
         };
+        let kita_patch = if let AkagiEvent::Kita { actor, .. } = ev {
+            Some(*actor as usize)
+        } else {
+            None
+        };
 
         let Some(ri) = convert::to_riichienv(ev)? else {
             return Ok(()); // Skipped (e.g. MjaiEvent::None).
@@ -169,6 +174,11 @@ impl GameTracker {
                         }
                     }
                     apply_ippatsu_patch_3p(s, ev);
+                    if let Some(actor) = kita_patch {
+                        if let Some(p) = s.players.get_mut(actor) {
+                            p.kita_tiles.push(0u8); // value unused; kita_count = len()
+                        }
+                    }
                 }
             }
         }

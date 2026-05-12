@@ -244,29 +244,29 @@ mod tests {
 fn evaluate_hora_3p_honba_ron_is_200_per_stick() {
     use riichienv_core::rule::GameRule;
     use riichienv_core::state_3p::GameState3P;
-    
-    let rule = GameRule::default_tenhou();
-    let mut s = GameState3P::new(0, true, None, 0, rule);
-    s.oya = 1; // non-dealer wins
-    s.honba = 1;
-    // Chiitoitsu hand for seat 0: 11m 22m 33p 44p 66s 77s + 8s wait
-    let hand = vec![36, 37, 40, 41, 44, 45, 48, 49, 56, 57, 60, 61, 64, 65];
-    s.players[0].hand = hand;
-    s.last_discard = Some((2, 65)); // seat 2 discards 8p
 
-    let no_honba = {
-        let mut s2 = GameState3P::new(0, true, None, 0, rule);
-        s2.oya = 1;
-        s2.honba = 0;
-        s2.players[0].hand = vec![36, 37, 40, 41, 44, 45, 48, 49, 56, 57, 60, 61, 64, 65];
-        s2.last_discard = Some((2, 65));
-        evaluate_hora_3p(&s2, 0, false).expect("winning shape")
+    let rule = GameRule::default_tenhou();
+
+    let make_state = |honba: u8| {
+        let mut s = GameState3P::new(0, true, None, 0, rule);
+        s.oya = 1;
+        s.honba = honba;
+        // Chiitoitsu: 11p 22p 33p 44p 66p 77p tenpai on 8p
+        // 136-space: 1p=36,37 2p=40,41 3p=44,45 4p=48,49 6p=56,57 7p=60,61
+        // win tile 8p = tile 64 (second copy = 65, but keep out of hand)
+        s.players[0].hand = vec![36, 37, 40, 41, 44, 45, 48, 49, 56, 57, 60, 61, 64];
+        s.last_discard = Some((2, 65)); // seat 2 discards second 8p
+        s
     };
-    let with_honba = evaluate_hora_3p(&s, 0, false).expect("winning shape");
-    
+
+    let s0 = make_state(0u8);
+    let s1 = make_state(1u8);
+    let no_honba = evaluate_hora_3p(&s0, 0, false).expect("winning shape");
+    let with_honba = evaluate_hora_3p(&s1, 0, false).expect("winning shape");
+
     let diff = with_honba.points as i32 - no_honba.points as i32;
     println!("no_honba={} with_honba={} diff={}", no_honba.points, with_honba.points, diff);
-    assert_eq!(diff, 200);
+    assert_eq!(diff, 200, "3p ron honba must be 200 per stick");
 }
 
     /// Build a closed-hand GameState where seat `actor` is in chiitoitsu
