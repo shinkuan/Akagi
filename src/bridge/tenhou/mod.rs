@@ -205,21 +205,21 @@ impl TenhouBridge {
             tehais[self.state.seat as usize] = tenhou_to_mjai(&our_hand_indices);
         }
 
-        // Sanma score remap: scores arrive in relative-seat order with a 0
-        // for the missing slot. Place each into its absolute seat. The 0-slot
-        // simply ends up unused (it never aligns to any of our 3 seats since
-        // it is not relative seat 0..2 of a real player).
-        if self.state.is_3p {
-            let mut new_scores = vec![0i32; n];
-            for (i, &s) in scores.iter().enumerate().take(4) {
-                if s == 0 {
-                    continue;
-                }
-                let abs = (i as u8 + self.state.seat) % 3;
-                new_scores[abs as usize] = s;
+        // Tenhou `ten` is in *relative* seat order (rel 0 is us). mjai's
+        // `start_kyoku.scores` is keyed by absolute seat, so remap before
+        // emitting. Sanma additionally has a 0-score slot for the missing
+        // 4th player which falls outside the 3-seat absolute range.
+        let mut new_scores = vec![0i32; n];
+        for (i, &s) in scores.iter().enumerate().take(4) {
+            if self.state.is_3p && s == 0 {
+                continue;
             }
-            scores = new_scores;
+            let abs = self.state.rel_to_abs(i as u8) as usize;
+            if abs < n {
+                new_scores[abs] = s;
+            }
         }
+        scores = new_scores;
 
         let events = vec![MjaiEvent::StartKyoku {
             bakaze: bakaze.to_string(),
@@ -767,6 +767,35 @@ mod tests {
                 for hand in tehais.iter().skip(1) {
                     assert_eq!(hand, &vec!["?".to_string(); 13]);
                 }
+            }
+            other => panic!("expected StartKyoku, got {other:?}"),
+        }
+    }
+
+    /// Regression for issue #107: Tenhou's `ten` field is in relative-seat
+    /// order (rel 0 is us), but `start_kyoku.scores` is keyed by absolute seat.
+    /// Before the fix, the yonma INIT path skipped the rel→abs remap, so when
+    /// our absolute seat ≠ 0 the scores were cyclically rotated. The user
+    /// observed it as "self always shown as player 1, shimocha/toimen/kamicha
+    /// as players 2/3/4 regardless of actual table position."
+    #[test]
+    fn init_yonma_remaps_scores_rel_to_abs() {
+        let mut b = TenhouBridge::new(None, None);
+        // TAIKYOKU oya=1 → our absolute seat = (4-1)%4 = 3.
+        parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"1"}"#);
+        // ten in relative order: us=100, shimocha=200, toimen=300, kamicha=400.
+        // Absolute mapping: rel 0 (us, abs 3), rel 1 (abs 0), rel 2 (abs 1),
+        // rel 3 (abs 2). Expected scores[abs] in 100-yen units × 100.
+        let init = r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"100,200,300,400","oya":"1","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#;
+        let events = parse_one(&mut b, init);
+        match &events[0] {
+            MjaiEvent::StartKyoku { scores, oya, .. } => {
+                assert_eq!(*oya, 0, "dealer at rel 1 from our seat 3 → abs 0");
+                assert_eq!(
+                    scores,
+                    &vec![20_000, 30_000, 40_000, 10_000],
+                    "scores must be in absolute-seat order, not relative",
+                );
             }
             other => panic!("expected StartKyoku, got {other:?}"),
         }

@@ -591,6 +591,7 @@ mod tests {
                 double_riichi: false,
                 riichi_declaration_index: None,
                 kita_tiles: Vec::new(),
+                drawn_tile: None,
             })
             .collect();
         GameStateSnapshot {

@@ -196,6 +196,7 @@ mod tests {
             double_riichi: false,
             riichi_declaration_index: None,
             kita_tiles: vec![],
+            drawn_tile: None,
         };
         GameStateSnapshot {
             bakaze: "E".into(),
