@@ -197,7 +197,11 @@ pub fn evaluate_hora_3p(state: &GameState3P, actor: u8, is_tsumo: bool) -> Optio
             result.tsumo_agari_oya.saturating_add(result.tsumo_agari_ko)
         }
     } else {
-        result.ron_agari
+        // Majsoul sanma uses 200 per honba for ron, not the standard 300.
+        // evaluator.calc() bakes in honba*300 into ron_agari regardless of
+        // num_players — subtract the excess 100 per honba to match Majsoul.
+        let honba_correction = state.honba as u32 * 100;
+        result.ron_agari.saturating_sub(honba_correction)
     };
     Some(HoraScoreInfo {
         points,
@@ -236,6 +240,34 @@ pub fn is_tenpai(hand_text: &str) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+fn evaluate_hora_3p_honba_ron_is_200_per_stick() {
+    use riichienv_core::rule::GameRule;
+    use riichienv_core::state_3p::GameState3P;
+    
+    let rule = GameRule::default_tenhou();
+    let mut s = GameState3P::new(0, true, None, 0, rule);
+    s.oya = 1; // non-dealer wins
+    s.honba = 1;
+    // Chiitoitsu hand for seat 0: 11m 22m 33p 44p 66s 77s + 8s wait
+    let hand = vec![36, 37, 40, 41, 44, 45, 48, 49, 56, 57, 60, 61, 64, 65];
+    s.players[0].hand = hand;
+    s.last_discard = Some((2, 65)); // seat 2 discards 8p
+
+    let no_honba = {
+        let mut s2 = GameState3P::new(0, true, None, 0, rule);
+        s2.oya = 1;
+        s2.honba = 0;
+        s2.players[0].hand = vec![36, 37, 40, 41, 44, 45, 48, 49, 56, 57, 60, 61, 64, 65];
+        s2.last_discard = Some((2, 65));
+        evaluate_hora_3p(&s2, 0, false).expect("winning shape")
+    };
+    let with_honba = evaluate_hora_3p(&s, 0, false).expect("winning shape");
+    
+    let diff = with_honba.points as i32 - no_honba.points as i32;
+    println!("no_honba={} with_honba={} diff={}", no_honba.points, with_honba.points, diff);
+    assert_eq!(diff, 200);
+}
 
     /// Build a closed-hand GameState where seat `actor` is in chiitoitsu
     /// tenpai for `8s` (tile id 100, 34-space index 25). Used by the
