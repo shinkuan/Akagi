@@ -207,17 +207,15 @@ impl TenhouBridge {
 
         // Tenhou `ten` is in *relative* seat order (rel 0 is us). mjai's
         // `start_kyoku.scores` is keyed by absolute seat, so remap before
-        // emitting. Sanma additionally has a 0-score slot for the missing
-        // 4th player which falls outside the 3-seat absolute range.
+        // emitting. The wire always carries 4 entries; sanma pads with a
+        // ghost slot at relative index 3 for the missing North player.
+        // Iterate over the real-player range only (`take(num_players)`) —
+        // a value-based skip (`s == 0`) would conflate the ghost slot
+        // with a legitimate 0-point score on a real player mid-game.
         let mut new_scores = vec![0i32; n];
-        for (i, &s) in scores.iter().enumerate().take(4) {
-            if self.state.is_3p && s == 0 {
-                continue;
-            }
+        for (i, &s) in scores.iter().enumerate().take(n) {
             let abs = self.state.rel_to_abs(i as u8) as usize;
-            if abs < n {
-                new_scores[abs] = s;
-            }
+            new_scores[abs] = s;
         }
         scores = new_scores;
 
@@ -818,6 +816,40 @@ mod tests {
                 assert_eq!(*num_players, 3);
                 assert_eq!(scores.len(), 3);
                 assert_eq!(tehais.len(), 3);
+            }
+            other => panic!("expected StartKyoku, got {other:?}"),
+        }
+    }
+
+    /// Sanma mid-game: a real player can legitimately have 0 points
+    /// (bust-but-continuing rule, or transient 0 between deltas). The
+    /// rel→abs remap must not conflate that with the ghost slot at
+    /// relative index 3 — otherwise the real player gets silently
+    /// dropped. We exercise the post-detection sanma INIT directly by
+    /// seeding `is_3p` via an initial E1H0 frame, then issuing an E2
+    /// INIT where rel 1 (a real player) holds 0 points alongside the
+    /// rel-3 ghost slot which also holds 0.
+    #[test]
+    fn init_sanma_preserves_real_zero_point_player() {
+        let mut b = TenhouBridge::new(None, None);
+        // Our seat = 0 (oya=0). E1H0 with a 0 slot triggers sanma detection.
+        parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"0"}"#);
+        parse_one(
+            &mut b,
+            r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"350,350,350,0","oya":"0","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#,
+        );
+        // E2 INIT mid-game: rel 1 player (abs 1) is at 0 points, ghost at rel 3.
+        // ten in 100-yen units: us=400, rel1=0 (real), rel2=300, rel3=0 (ghost).
+        let init = r#"{"tag":"INIT","seed":"1,0,0,1,2,4","ten":"400,0,300,0","oya":"0","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#;
+        let events = parse_one(&mut b, init);
+        match &events[0] {
+            MjaiEvent::StartKyoku { scores, num_players, .. } => {
+                assert_eq!(*num_players, 3);
+                assert_eq!(
+                    scores,
+                    &vec![40_000, 0, 30_000],
+                    "real-player-at-0 must survive the ghost-slot remap",
+                );
             }
             other => panic!("expected StartKyoku, got {other:?}"),
         }
