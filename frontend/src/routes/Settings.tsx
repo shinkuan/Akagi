@@ -33,6 +33,13 @@ import {
   useUiPrefsStore,
 } from '@/stores/uiPrefsStore'
 import {
+  THEME_ACCENTS,
+  THEME_MODES,
+  useThemeStore,
+  type ThemeAccent,
+  type ThemeMode,
+} from '@/stores/themeStore'
+import {
   PLATFORMS,
   isKnownDefaultStartUrl,
   platformInfo,
@@ -155,10 +162,10 @@ export function Settings() {
               </SelectContent>
             </Select>
           </Field>
-          <UiScaleField />
-          <SidebarHoverField />
         </CardContent>
       </Card>
+
+      <AppearanceCard />
 
       <PlatformCard draft={draft} setDraft={setDraft} />
 
@@ -259,6 +266,53 @@ export function Settings() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function AppearanceCard() {
+  const { t } = useTranslation()
+  const mode = useThemeStore((s) => s.mode)
+  const accent = useThemeStore((s) => s.accent)
+  const setMode = useThemeStore((s) => s.setMode)
+  const setAccent = useThemeStore((s) => s.setAccent)
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('settings.appearance')}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <Field label={t('settings.theme')}>
+          <Select value={mode} onValueChange={(v) => setMode(v as ThemeMode)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THEME_MODES.map((m) => (
+                <SelectItem key={m} value={m}>
+                  {t(`settings.theme_${m}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label={t('settings.accent')}>
+          <Select value={accent} onValueChange={(v) => setAccent(v as ThemeAccent)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THEME_ACCENTS.map((a) => (
+                <SelectItem key={a} value={a}>
+                  {t(`settings.accent_${a}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <UiScaleField />
+        <SidebarHoverField />
+      </CardContent>
+    </Card>
   )
 }
 

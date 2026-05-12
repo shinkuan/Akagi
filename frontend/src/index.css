@@ -118,6 +118,48 @@
     --sidebar-ring: oklch(0.78 0.16 162);
 }
 
+/* ---- Accent overrides ----
+ * `data-theme="<accent>"` on <html> swaps the primary color family. The base
+ * `:root` / `.dark` blocks above own the surface palette; accents only retint
+ * `--primary*`, `--ring`, and the matching sidebar tokens. Keep accent blocks
+ * narrow so a future accent only needs to redeclare these six variables.
+ */
+:root[data-theme="crimson"] {
+    --primary: oklch(0.55 0.22 25);
+    --primary-foreground: oklch(0.99 0.005 25);
+    --ring: oklch(0.65 0.18 25);
+    --sidebar-primary: oklch(0.55 0.22 25);
+    --sidebar-primary-foreground: oklch(0.99 0.005 25);
+    --sidebar-ring: oklch(0.65 0.18 25);
+}
+
+.dark[data-theme="crimson"] {
+    --primary: oklch(0.72 0.22 25);
+    --primary-foreground: oklch(0.18 0.015 25);
+    --ring: oklch(0.56 0.05 25);
+    --sidebar-primary: oklch(0.72 0.22 25);
+    --sidebar-primary-foreground: oklch(0.18 0.015 25);
+    --sidebar-ring: oklch(0.72 0.22 25);
+}
+
+:root[data-theme="slate"] {
+    --primary: oklch(0.45 0.04 250);
+    --primary-foreground: oklch(0.98 0.005 250);
+    --ring: oklch(0.55 0.04 250);
+    --sidebar-primary: oklch(0.45 0.04 250);
+    --sidebar-primary-foreground: oklch(0.98 0.005 250);
+    --sidebar-ring: oklch(0.55 0.04 250);
+}
+
+.dark[data-theme="slate"] {
+    --primary: oklch(0.72 0.06 250);
+    --primary-foreground: oklch(0.18 0.015 250);
+    --ring: oklch(0.56 0.03 250);
+    --sidebar-primary: oklch(0.72 0.06 250);
+    --sidebar-primary-foreground: oklch(0.18 0.015 250);
+    --sidebar-ring: oklch(0.72 0.06 250);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -130,10 +172,12 @@
     }
 }
 
-/* ---- react-grid-layout placeholder + handle skin ---- */
+/* ---- react-grid-layout placeholder + handle skin ----
+ * Uses var(--primary) so accent + light/dark swaps cascade automatically.
+ */
 .react-grid-item.react-grid-placeholder {
-  background: oklch(0.78 0.16 162 / 0.18) !important;
-  border: 1px dashed oklch(0.78 0.16 162 / 0.55);
+  background: color-mix(in oklch, var(--primary) 18%, transparent) !important;
+  border: 1px dashed color-mix(in oklch, var(--primary) 55%, transparent);
   border-radius: var(--radius-lg);
   opacity: 1 !important;
 }
@@ -143,5 +187,5 @@
 }
 
 .react-grid-item > .react-resizable-handle::after {
-  border-color: oklch(0.78 0.16 162);
+  border-color: var(--primary);
 }

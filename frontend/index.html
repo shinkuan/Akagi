@@ -1,9 +1,44 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Akagi V3</title>
+    <script>
+      // Pre-hydration theme apply — must run before React/CSS paint to prevent
+      // a flash of the opposite theme. Reads the same localStorage key as
+      // `src/stores/themeStore.ts` (Zustand persist envelope: { state: {...} }).
+      (function () {
+        try {
+          var raw = localStorage.getItem('akagi.theme');
+          var mode = 'system';
+          var accent = 'default';
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            var s = parsed && parsed.state ? parsed.state : parsed;
+            if (s && s.mode) mode = s.mode;
+            if (s && s.accent) accent = s.accent;
+          }
+          var dark =
+            mode === 'dark' ||
+            (mode === 'system' &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+          if (accent && accent !== 'default') {
+            document.documentElement.setAttribute('data-theme', accent);
+          }
+        } catch (_) {
+          // Storage blocked or malformed — fall back to system dark.
+          if (
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches
+          ) {
+            document.documentElement.classList.add('dark');
+          }
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
