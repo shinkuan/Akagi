@@ -49,6 +49,12 @@ struct ManagerState {
     self_riichi_accepted: bool,
     reach_state: ReachState,
     canvas_rect_at: Option<Instant>,
+    /// Cached seat index for our player. Captured directly from
+    /// `StartGame { id }` and kept across kyoku resets. Avoids try_lock
+    /// failures in the synchronous mjai event handler causing missed
+    /// tsumo/dahai updates, and is available from the very first event
+    /// rather than waiting for the first successful `handle_bot_response`.
+    cached_our_seat: Option<u8>,
 }
 
 impl Default for ReachState {
@@ -122,6 +128,8 @@ impl AutoplayManager {
                 Some(s) => s,
                 None => return, // game hasn't started or no perspective tagged
             };
+            // Keep cached_our_seat up to date for handle_mjai_event.
+            self.state.cached_our_seat = Some(our_seat);
             let snapshot = match tracker.snapshot() {
                 Some(s) => s,
                 None => return,
@@ -239,15 +247,27 @@ impl AutoplayManager {
 
     fn handle_mjai_event(&mut self, ev: &MjaiEvent) {
         match ev {
-            MjaiEvent::StartGame { .. } | MjaiEvent::EndGame => {
+            MjaiEvent::StartGame { id, .. } => {
+                // Capture our seat directly from the StartGame event rather
+                // than going through the tracker. This avoids the try_lock
+                // race entirely and makes cached_our_seat available from the
+                // very first event of the game.
+                let seat = *id;
+                self.state = ManagerState::default();
+                self.state.cached_our_seat = seat;
+            }
+            MjaiEvent::EndGame => {
                 self.state = ManagerState::default();
             }
             MjaiEvent::StartKyoku { .. } | MjaiEvent::EndKyoku => {
-                // Per-kyoku reset: keep last seen rect cache, drop
-                // everything else.
+                // Per-kyoku reset: keep last seen rect cache and cached seat,
+                // drop everything else. Keep last_kawa_tile as None so
+                // push_random_pre_delay uses the max delay (opening-hand guard).
                 let canvas_at = self.state.canvas_rect_at;
+                let cached_seat = self.state.cached_our_seat;
                 self.state = ManagerState::default();
                 self.state.canvas_rect_at = canvas_at;
+                self.state.cached_our_seat = cached_seat;
             }
             MjaiEvent::Tsumo { actor, pai } => {
                 if let Some(seat) = self.our_seat_cached() {
@@ -286,12 +306,11 @@ impl AutoplayManager {
         }
     }
 
-    /// Best-effort seat lookup that avoids blocking on the tracker mutex
-    /// inside the mjai event handler (which runs synchronously in the
-    /// select arm). Falls back to `None` if the lock is contended;
-    /// missing the seat once is harmless, the next event will catch up.
+    /// Best-effort seat lookup. Uses the cached seat from `StartGame` first,
+    /// falling back to try_lock on the tracker.
     fn our_seat_cached(&self) -> Option<u8> {
-        self.tracker.try_lock().ok().and_then(|t| t.our_seat())
+        self.state.cached_our_seat
+            .or_else(|| self.tracker.try_lock().ok().and_then(|t| t.our_seat()))
     }
 
     async fn canvas_rect_resolve(&mut self) -> Option<CanvasRect> {
@@ -332,5 +351,3 @@ pub async fn run_autoplay_manager(
 ) -> anyhow::Result<()> {
     AutoplayManager::new(cfg, ctx, tracker, mjai_bus).run(response_bus).await
 }
-
-
