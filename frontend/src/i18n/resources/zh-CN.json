@@ -315,7 +315,7 @@
     "custom_var_primary-foreground": "主色文字",
     "custom_var_border": "边框",
     "custom_import": "从链接或 JSON 导入",
-    "custom_import_hint": "粘贴 tweakcn / shadcn 主题链接或 JSON 内容；会覆盖来源中定义的所有颜色变量。",
+    "custom_import_hint": "粘贴 tweakcn 分享链接（https://tweakcn.com/themes/<id>）、shadcn registry 链接（…/r/themes/<name>.json）或 JSON 内容；会覆盖来源中定义的所有颜色变量。",
     "custom_import_button": "导入",
     "custom_importing": "导入中…",
     "custom_import_ok": "已导入。",

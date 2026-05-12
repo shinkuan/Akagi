@@ -384,7 +384,7 @@ function CustomEditor() {
             setImportError(null)
             setImportSuccess(false)
           }}
-          placeholder="https://tweakcn.com/r/themes/twitter.json"
+          placeholder="https://tweakcn.com/themes/<id>"
           rows={2}
           className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring resize-y"
           spellCheck={false}

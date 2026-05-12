@@ -315,7 +315,7 @@
     "custom_var_primary-foreground": "プライマリ上のテキスト",
     "custom_var_border": "境界線",
     "custom_import": "URL または JSON から取り込み",
-    "custom_import_hint": "tweakcn / shadcn テーマの URL または JSON を貼り付け。ソースで定義されているトークンをすべて上書きします。",
+    "custom_import_hint": "tweakcn の共有 URL（https://tweakcn.com/themes/<id>）、shadcn レジストリ URL（…/r/themes/<name>.json）、または JSON 本文を貼り付け。ソースで定義されているトークンをすべて上書きします。",
     "custom_import_button": "取り込み",
     "custom_importing": "取り込み中…",
     "custom_import_ok": "取り込みました。",

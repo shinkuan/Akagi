@@ -276,6 +276,18 @@ function parseTheme(raw: unknown): CustomTheme {
   }
 }
 
+// Tweakcn share pages live at `tweakcn.com/themes/<id>` (HTML) but the same
+// theme is served as JSON from `tweakcn.com/r/themes/<id>` via content
+// negotiation. Auto-rewrite so users can paste the share URL straight out
+// of the browser address bar.
+function normalizeThemeUrl(input: string): string {
+  const url = /^https?:\/\//i.test(input) ? input : `https://${input}`
+  return url.replace(
+    /^(https?:\/\/(?:www\.)?tweakcn\.com)\/themes\//i,
+    '$1/r/themes/',
+  )
+}
+
 async function loadTheme(input: string): Promise<CustomTheme> {
   const trimmed = input.trim()
   if (!trimmed) throw new Error('No input')
@@ -283,7 +295,7 @@ async function loadTheme(input: string): Promise<CustomTheme> {
   if (trimmed.startsWith('{')) {
     data = JSON.parse(trimmed)
   } else {
-    const url = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    const url = normalizeThemeUrl(trimmed)
     const resp = await fetch(url, { headers: { Accept: 'application/json' } })
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     data = await resp.json()
