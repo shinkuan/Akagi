@@ -132,30 +132,24 @@ impl TenhouBridge {
         Vec::new()
     }
 
-    /// `<TAIKYOKU oya="N" .../>` — start of game. Resolves our absolute seat.
+    /// `<TAIKYOKU oya="N" .../>` — start of game. Resolves our wire-absolute
+    /// seat but defers `start_game` emission until the first `<INIT/>`, where
+    /// the 0-score slot reveals whether the game is sanma. Without that wait
+    /// we'd stamp `start_game.num_players = 4` on every sanma game (Tenhou's
+    /// TAIKYOKU itself carries no player-count signal — only the dealer's
+    /// relative seat).
     fn on_taikyoku(&mut self, msg: &JsonValue) -> Vec<MjaiEvent> {
         let oya_rel = parse_u8(msg, "oya").unwrap_or(0);
-        // oya is dealer's *relative* seat. Inverting gives our absolute seat:
-        // if dealer is at relative seat r, our absolute seat is (-r) mod N.
-        // Defaults to yonma here; sanma is detected at INIT.
+        // oya is dealer's *relative* seat in the 4-cycle wire frame. Our
+        // wire-abs seat is the inverse: (-oya_rel) mod 4. For sanma our
+        // wire-abs is always in {0, 1, 2} because we are a real player —
+        // wire-abs 3 is the ghost slot.
         self.state.num_players = 4;
         self.state.seat = (4 - oya_rel) % 4;
         self.state.is_3p = false;
+        self.state.pending_start_game = true;
         self.rotate_mjai_log();
-        let events = vec![MjaiEvent::StartGame {
-            names: vec![
-                "0".to_string(),
-                "1".to_string(),
-                "2".to_string(),
-                "3".to_string(),
-            ],
-            kyoku_first: None,
-            aka_flag: None,
-            id: Some(self.state.seat as Actor),
-            num_players: 4,
-        }];
-        self.write_mjai(&events);
-        events
+        Vec::new()
     }
 
     /// `<INIT seed="..." ten="..." oya="..." hai0="..."/>` — start of kyoku.
@@ -177,15 +171,18 @@ impl TenhouBridge {
         let honba = seed[1].max(0) as u8;
         let kyotaku = seed[2].max(0) as u8;
         let dora_marker = tenhou_to_mjai_one(seed[5] as u32);
-        let mut scores: Vec<i32> = ten.iter().map(|s| s * 100).collect();
+        let raw_ten: Vec<i32> = ten.iter().map(|s| s * 100).collect();
 
-        // Sanma detection per Python reference: at the very first kyoku, a
-        // 0-score slot signals the missing 4th player.
-        if bakaze == "E" && kyoku == 1 && honba == 0 && scores.contains(&0) {
+        // Sanma detection per Python reference: at the very first kyoku of a
+        // game, a 0-score slot in `ten` signals the absent 4th player. No
+        // legitimate game starts with anyone at 0 points, so the value-based
+        // check is safe at E1H0 (it would not be safe mid-game). We do NOT
+        // wrap `seat` after detection — wire-abs is still 4-cycle, and our
+        // wire-abs (already in {0, 1, 2} for any real sanma player) doubles
+        // as mjai-abs.
+        if bakaze == "E" && kyoku == 1 && honba == 0 && raw_ten.contains(&0) {
             self.state.is_3p = true;
             self.state.num_players = 3;
-            // Reapply seat with sanma modulus.
-            self.state.seat %= 3;
         }
 
         // Our hand. Tenhou messages are already in *our* viewpoint (rel seat 0
@@ -198,28 +195,44 @@ impl TenhouBridge {
 
         let oya_abs = self.state.rel_to_abs(oya_rel);
 
-        // Build per-seat starting hands. Length = num_players.
+        // Build per-seat starting hands. Length = num_players. Our wire-abs
+        // is in [0, num_players) for both yonma and sanma (we are always
+        // real), so it indexes directly into the mjai tehais vector.
         let n = self.state.num_players as usize;
         let mut tehais: Vec<Vec<String>> = vec![vec!["?".to_string(); 13]; n];
-        if (self.state.seat as usize) < n {
-            tehais[self.state.seat as usize] = tenhou_to_mjai(&our_hand_indices);
+        tehais[self.state.seat as usize] = tenhou_to_mjai(&our_hand_indices);
+
+        // Tenhou `ten` is in *relative* seat order in the 4-cycle wire frame
+        // (rel 0 is us, rel 3 is kamicha in yonma or whoever lands on the
+        // 4th wire position in sanma — possibly the ghost, possibly a real
+        // player). For sanma the ghost is always at wire-abs 3, but its
+        // relative position depends on our seat — so the ghost's relative
+        // index is NOT a constant. Iterate all 4 entries, map each to its
+        // wire-abs via `rel_to_abs`, and skip whichever lands on the ghost.
+        let mut scores = vec![0i32; n];
+        for (i, &s) in raw_ten.iter().enumerate().take(4) {
+            let abs = self.state.rel_to_abs(i as u8);
+            if self.state.is_ghost_abs(abs) {
+                continue;
+            }
+            scores[abs as usize] = s;
         }
 
-        // Tenhou `ten` is in *relative* seat order (rel 0 is us). mjai's
-        // `start_kyoku.scores` is keyed by absolute seat, so remap before
-        // emitting. The wire always carries 4 entries; sanma pads with a
-        // ghost slot at relative index 3 for the missing North player.
-        // Iterate over the real-player range only (`take(num_players)`) —
-        // a value-based skip (`s == 0`) would conflate the ghost slot
-        // with a legitimate 0-point score on a real player mid-game.
-        let mut new_scores = vec![0i32; n];
-        for (i, &s) in scores.iter().enumerate().take(n) {
-            let abs = self.state.rel_to_abs(i as u8) as usize;
-            new_scores[abs] = s;
+        let mut events = Vec::with_capacity(2);
+        if self.state.pending_start_game {
+            self.state.pending_start_game = false;
+            let names: Vec<String> = (0..self.state.num_players)
+                .map(|i| i.to_string())
+                .collect();
+            events.push(MjaiEvent::StartGame {
+                names,
+                kyoku_first: None,
+                aka_flag: None,
+                id: Some(self.state.seat as Actor),
+                num_players: self.state.num_players,
+            });
         }
-        scores = new_scores;
-
-        let events = vec![MjaiEvent::StartKyoku {
+        events.push(MjaiEvent::StartKyoku {
             bakaze: bakaze.to_string(),
             dora_marker,
             kyoku,
@@ -229,18 +242,23 @@ impl TenhouBridge {
             scores,
             tehais,
             num_players: self.state.num_players,
-        }];
+        });
         self.write_mjai(&events);
         events
     }
 
     /// `<T0/>`, `<U7/>`, `<V12/>`, `<W3/>` — tsumo.
     fn on_tsumo(&mut self, actor_rel: u8, tag: &str) -> Vec<MjaiEvent> {
-        if actor_rel >= self.state.num_players {
+        if actor_rel >= 4 {
+            return Vec::new();
+        }
+        let actor = self.state.rel_to_abs(actor_rel);
+        if self.state.is_ghost_abs(actor) {
+            // Tenhou shouldn't emit tsumo from a ghost seat; drop defensively.
+            warn!(target: "akagi::bridge::tenhou", "tsumo from sanma ghost slot rel={actor_rel}, dropped");
             return Vec::new();
         }
         self.state.live_wall = self.state.live_wall.saturating_sub(1);
-        let actor = self.state.rel_to_abs(actor_rel);
         let mut pai = "?".to_string();
         if actor == self.state.seat {
             if let Some(idx) = parse_tail_u32(tag, 1) {
@@ -263,10 +281,14 @@ impl TenhouBridge {
         tag: &str,
         tsumogiri_uppercase: bool,
     ) -> Vec<MjaiEvent> {
-        if actor_rel >= self.state.num_players {
+        if actor_rel >= 4 {
             return Vec::new();
         }
         let actor = self.state.rel_to_abs(actor_rel);
+        if self.state.is_ghost_abs(actor) {
+            warn!(target: "akagi::bridge::tenhou", "dahai from sanma ghost slot rel={actor_rel}, dropped");
+            return Vec::new();
+        }
 
         // Determine the actual tile index. If the tag has no digits, it must
         // be our own tsumogiri — use the most recently drawn tile.
@@ -314,10 +336,14 @@ impl TenhouBridge {
     /// `<N who="..." m="..."/>` — call (chi/pon/kan/kakan/nukidora).
     fn on_meld(&mut self, msg: &JsonValue) -> Vec<MjaiEvent> {
         let actor_rel = parse_u8(msg, "who").unwrap_or(0);
-        if actor_rel >= self.state.num_players {
+        if actor_rel >= 4 {
             return Vec::new();
         }
         let actor = self.state.rel_to_abs(actor_rel);
+        if self.state.is_ghost_abs(actor) {
+            warn!(target: "akagi::bridge::tenhou", "meld from sanma ghost slot rel={actor_rel}, dropped");
+            return Vec::new();
+        }
         let m = parse_u32(msg, "m").unwrap_or(0);
 
         // Nukidora has its own bit pattern; handle before structured parse.
@@ -337,9 +363,12 @@ impl TenhouBridge {
         }
 
         let meld = Meld::parse(m);
+        // Target is in the 4-cycle wire frame; meld.target_rel from the
+        // bitfield is also 4-cycle. Sanma never calls chi (only pon/kan
+        // permitted), so the "kamicha" shortcut only fires for yonma.
         let target = match meld.kind {
-            MeldKind::Chi => (actor + self.state.num_players - 1) % self.state.num_players,
-            _ => (actor + meld.target_rel) % self.state.num_players,
+            MeldKind::Chi => (actor + 4 - 1) % 4,
+            _ => (actor + meld.target_rel) % 4,
         };
 
         let pai = meld.pai();
@@ -402,10 +431,14 @@ impl TenhouBridge {
     /// `<REACH who="..." step="..."/>` — riichi declaration / acceptance.
     fn on_reach(&mut self, msg: &JsonValue) -> Vec<MjaiEvent> {
         let actor_rel = parse_u8(msg, "who").unwrap_or(0);
-        if actor_rel >= self.state.num_players {
+        if actor_rel >= 4 {
             return Vec::new();
         }
         let actor = self.state.rel_to_abs(actor_rel);
+        if self.state.is_ghost_abs(actor) {
+            warn!(target: "akagi::bridge::tenhou", "reach from sanma ghost slot rel={actor_rel}, dropped");
+            return Vec::new();
+        }
         // step arrives as a string in the Python reference (`message['step'] == '1'`).
         let step = msg
             .get("step")
@@ -439,29 +472,28 @@ impl TenhouBridge {
     fn on_agari(&mut self, msg: &JsonValue) -> Vec<MjaiEvent> {
         let actor_rel = parse_u8(msg, "who").unwrap_or(0);
         let from_rel = parse_u8(msg, "fromWho").unwrap_or(actor_rel);
-        if actor_rel >= self.state.num_players || from_rel >= self.state.num_players {
+        if actor_rel >= 4 || from_rel >= 4 {
             return Vec::new();
         }
         let actor = self.state.rel_to_abs(actor_rel);
         let target = self.state.rel_to_abs(from_rel);
-
-        // sc field is "before0,delta0,before1,delta1,..." in 100-yen units.
-        let sc = parse_csv_i32(msg, "sc");
-        let mut deltas = Vec::with_capacity(self.state.num_players as usize);
-        for chunk in sc.chunks(2).take(self.state.num_players as usize) {
-            if chunk.len() == 2 {
-                deltas.push(chunk[1] * 100);
-            } else {
-                deltas.push(0);
-            }
+        if self.state.is_ghost_abs(actor) || self.state.is_ghost_abs(target) {
+            warn!(target: "akagi::bridge::tenhou", "agari involves sanma ghost slot, dropped");
+            return Vec::new();
         }
-        // sc arrives in *relative* seat order; re-key to absolute.
+
+        // sc field is "before0,delta0,before1,delta1,..." in wire-rel order
+        // (rel 0 = us). Always carries 4 pairs even in sanma; skip the pair
+        // whose wire-abs is the ghost slot before placing into mjai-abs.
+        let sc = parse_csv_i32(msg, "sc");
         let mut deltas_abs = vec![0i32; self.state.num_players as usize];
-        for (rel, &d) in deltas.iter().enumerate() {
-            let abs = self.state.rel_to_abs(rel as u8) as usize;
-            if abs < deltas_abs.len() {
-                deltas_abs[abs] = d;
+        for (rel, chunk) in sc.chunks(2).take(4).enumerate() {
+            let abs = self.state.rel_to_abs(rel as u8);
+            if self.state.is_ghost_abs(abs) {
+                continue;
             }
+            let d = if chunk.len() == 2 { chunk[1] * 100 } else { 0 };
+            deltas_abs[abs as usize] = d;
         }
 
         // Ura dora markers are space-separated tile indices in `dorahaiUra`.
@@ -484,20 +516,14 @@ impl TenhouBridge {
     /// `<RYUUKYOKU .../>` — exhaustive draw.
     fn on_ryukyoku(&mut self, msg: &JsonValue) -> Vec<MjaiEvent> {
         let sc = parse_csv_i32(msg, "sc");
-        let mut deltas = Vec::with_capacity(self.state.num_players as usize);
-        for chunk in sc.chunks(2).take(self.state.num_players as usize) {
-            if chunk.len() == 2 {
-                deltas.push(chunk[1] * 100);
-            } else {
-                deltas.push(0);
-            }
-        }
         let mut deltas_abs = vec![0i32; self.state.num_players as usize];
-        for (rel, &d) in deltas.iter().enumerate() {
-            let abs = self.state.rel_to_abs(rel as u8) as usize;
-            if abs < deltas_abs.len() {
-                deltas_abs[abs] = d;
+        for (rel, chunk) in sc.chunks(2).take(4).enumerate() {
+            let abs = self.state.rel_to_abs(rel as u8);
+            if self.state.is_ghost_abs(abs) {
+                continue;
             }
+            let d = if chunk.len() == 2 { chunk[1] * 100 } else { 0 };
+            deltas_abs[abs as usize] = d;
         }
 
         let mut events = vec![
@@ -715,31 +741,31 @@ mod tests {
     }
 
     #[test]
-    fn taikyoku_resolves_seat_and_emits_start_game() {
+    fn taikyoku_resolves_seat_but_defers_start_game() {
         let mut b = TenhouBridge::new(None, None);
-        // Dealer is at relative seat 1 → our absolute seat is (4-1)%4 = 3.
+        // TAIKYOKU now only resolves seat and primes the pending flag.
+        // start_game is emitted at the first INIT (when sanma is known).
         let events = parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"1"}"#);
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            MjaiEvent::StartGame {
-                id, num_players, ..
-            } => {
-                assert_eq!(*id, Some(3));
-                assert_eq!(*num_players, 4);
-            }
-            other => panic!("expected StartGame, got {other:?}"),
-        }
+        assert!(events.is_empty(), "start_game must be deferred to INIT");
     }
 
     #[test]
-    fn init_emits_start_kyoku_yonma() {
+    fn init_emits_start_game_then_start_kyoku_yonma() {
         let mut b = TenhouBridge::new(None, None);
-        parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"0"}"#);
-        // East-1, dora indicator at index 4 (5m), all 13 tiles for our seat.
-        let init = r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#;
+        // Dealer at rel 1 → our wire-abs = (4-1)%4 = 3.
+        parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"1"}"#);
+        let init = r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"1","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#;
         let events = parse_one(&mut b, init);
-        assert_eq!(events.len(), 1);
+        assert_eq!(events.len(), 2, "yonma first INIT emits start_game + start_kyoku");
         match &events[0] {
+            MjaiEvent::StartGame { id, num_players, names, .. } => {
+                assert_eq!(*id, Some(3));
+                assert_eq!(*num_players, 4);
+                assert_eq!(names.len(), 4);
+            }
+            other => panic!("expected StartGame first, got {other:?}"),
+        }
+        match &events[1] {
             MjaiEvent::StartKyoku {
                 bakaze,
                 kyoku,
@@ -755,19 +781,37 @@ mod tests {
                 assert_eq!(*kyoku, 1);
                 assert_eq!(*honba, 0);
                 assert_eq!(*kyotaku, 0);
-                assert_eq!(*oya, 0);
-                assert_eq!(dora_marker, "2m"); // index 4 → 2m
+                assert_eq!(*oya, 0, "dealer at rel 1 from our seat 3 → wire-abs 0");
+                assert_eq!(dora_marker, "2m");
                 assert_eq!(scores, &vec![25000; 4]);
                 assert_eq!(tehais.len(), 4);
-                assert_eq!(tehais[0].len(), 13);
+                assert_eq!(tehais[3].len(), 13);
                 assert_eq!(*num_players, 4);
-                // Other seats are placeholders.
-                for hand in tehais.iter().skip(1) {
+                // Our hand lands at our wire-abs seat (3).
+                assert_ne!(tehais[3], vec!["?".to_string(); 13]);
+                for (i, hand) in tehais.iter().enumerate() {
+                    if i == 3 {
+                        continue;
+                    }
                     assert_eq!(hand, &vec!["?".to_string(); 13]);
                 }
             }
-            other => panic!("expected StartKyoku, got {other:?}"),
+            other => panic!("expected StartKyoku second, got {other:?}"),
         }
+    }
+
+    /// Second INIT in the same game must NOT re-emit start_game.
+    #[test]
+    fn second_init_does_not_repeat_start_game() {
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"0"}"#);
+        let init_e1 = r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#;
+        let e1 = parse_one(&mut b, init_e1);
+        assert_eq!(e1.len(), 2); // start_game + start_kyoku
+        let init_e2 = r#"{"tag":"INIT","seed":"1,0,0,1,2,4","ten":"250,250,250,250","oya":"1","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#;
+        let e2 = parse_one(&mut b, init_e2);
+        assert_eq!(e2.len(), 1, "second INIT emits only start_kyoku");
+        assert!(matches!(e2[0], MjaiEvent::StartKyoku { .. }));
     }
 
     /// Regression for issue #107: Tenhou's `ten` field is in relative-seat
@@ -786,17 +830,20 @@ mod tests {
         // rel 3 (abs 2). Expected scores[abs] in 100-yen units × 100.
         let init = r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"100,200,300,400","oya":"1","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#;
         let events = parse_one(&mut b, init);
-        match &events[0] {
-            MjaiEvent::StartKyoku { scores, oya, .. } => {
-                assert_eq!(*oya, 0, "dealer at rel 1 from our seat 3 → abs 0");
-                assert_eq!(
-                    scores,
-                    &vec![20_000, 30_000, 40_000, 10_000],
-                    "scores must be in absolute-seat order, not relative",
-                );
-            }
-            other => panic!("expected StartKyoku, got {other:?}"),
-        }
+        // First INIT emits start_game + start_kyoku; the kyoku payload is at [1].
+        let start_kyoku = events
+            .iter()
+            .find_map(|e| match e {
+                MjaiEvent::StartKyoku { scores, oya, .. } => Some((scores.clone(), *oya)),
+                _ => None,
+            })
+            .expect("start_kyoku emitted");
+        assert_eq!(start_kyoku.1, 0, "dealer at rel 1 from our seat 3 → abs 0");
+        assert_eq!(
+            start_kyoku.0,
+            vec![20_000, 30_000, 40_000, 10_000],
+            "scores must be in absolute-seat order, not relative",
+        );
     }
 
     #[test]
@@ -806,19 +853,28 @@ mod tests {
         // 4-element ten with one slot 0 indicates sanma.
         let init = r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"350,350,350,0","oya":"0","hai":"0,4,8,36,40,44,72,76,80,108,112,116,120"}"#;
         let events = parse_one(&mut b, init);
-        match &events[0] {
-            MjaiEvent::StartKyoku {
-                num_players,
-                scores,
-                tehais,
-                ..
-            } => {
-                assert_eq!(*num_players, 3);
-                assert_eq!(scores.len(), 3);
-                assert_eq!(tehais.len(), 3);
-            }
-            other => panic!("expected StartKyoku, got {other:?}"),
-        }
+        // start_game must also be downgraded to 3 players.
+        let sg_num_players = events
+            .iter()
+            .find_map(|e| match e {
+                MjaiEvent::StartGame { num_players, .. } => Some(*num_players),
+                _ => None,
+            })
+            .expect("start_game emitted alongside first INIT");
+        assert_eq!(sg_num_players, 3, "start_game.num_players must reflect sanma");
+        let sk = events
+            .iter()
+            .find_map(|e| match e {
+                MjaiEvent::StartKyoku {
+                    num_players,
+                    scores,
+                    tehais,
+                    ..
+                } => Some((*num_players, scores.len(), tehais.len())),
+                _ => None,
+            })
+            .expect("start_kyoku emitted");
+        assert_eq!(sk, (3, 3, 3));
     }
 
     /// Sanma mid-game: a real player can legitimately have 0 points
@@ -1055,26 +1111,26 @@ mod tests {
         parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"3"}"#);
         let init = r#"{"tag":"INIT","seed":"0,0,0,0,3,101","ten":"250,250,250,250","oya":"3","hai":"65,108,40,123,61,67,32,134,120,132,78,52,91"}"#;
         let events = parse_one(&mut b, init);
-        match &events[0] {
-            MjaiEvent::StartKyoku { tehais, oya, .. } => {
-                // E1 dealer at rel seat 3 → abs seat 0.
-                assert_eq!(*oya, 0);
-                // Our hand should be at index 1 (our absolute seat) and
-                // contain 13 real tiles, not be empty.
-                assert_eq!(tehais.len(), 4);
-                assert_eq!(tehais[1].len(), 13);
-                assert_ne!(tehais[1], vec!["?".to_string(); 13]);
-                // First tile is index 65 → 65/4 = 16 → 8p.
-                assert_eq!(tehais[1][0], "8p");
-                // Other seats stay as 13 placeholder tiles.
-                for (i, hand) in tehais.iter().enumerate() {
-                    if i == 1 {
-                        continue;
-                    }
-                    assert_eq!(hand, &vec!["?".to_string(); 13]);
-                }
+        let sk = events
+            .iter()
+            .find_map(|e| match e {
+                MjaiEvent::StartKyoku { tehais, oya, .. } => Some((tehais.clone(), *oya)),
+                _ => None,
+            })
+            .expect("start_kyoku emitted");
+        // E1 dealer at rel seat 3 → abs seat 0.
+        assert_eq!(sk.1, 0);
+        let tehais = sk.0;
+        assert_eq!(tehais.len(), 4);
+        assert_eq!(tehais[1].len(), 13);
+        assert_ne!(tehais[1], vec!["?".to_string(); 13]);
+        // First tile is index 65 → 65/4 = 16 → 8p.
+        assert_eq!(tehais[1][0], "8p");
+        for (i, hand) in tehais.iter().enumerate() {
+            if i == 1 {
+                continue;
             }
-            other => panic!("expected StartKyoku, got {other:?}"),
+            assert_eq!(hand, &vec!["?".to_string(); 13]);
         }
     }
 
@@ -1086,5 +1142,153 @@ mod tests {
             MjaiEvent::Dora { dora_marker } => assert_eq!(dora_marker, "E"),
             other => panic!("expected Dora, got {other:?}"),
         }
+    }
+
+    /// Regression for issue #113: captured 2026-05-12 sanma game where the
+    /// player sits at wire-abs 1 (South). Before the fix, `rel_to_abs` used
+    /// `% 3` and collapsed wire-rel 0 (us) with wire-rel 3 (dealer/kamicha)
+    /// onto the same mjai actor; the ghost slot was conflated with a real
+    /// player; and `start_game.num_players` stayed at 4 because sanma
+    /// detection happened only at INIT (after emission).
+    ///
+    /// Raw frames preserved verbatim:
+    /// ```
+    /// {"tag":"TAIKYOKU","oya":"3"}
+    /// {"tag":"INIT","seed":"0,0,0,0,0,85","ten":"350,350,0,350","oya":"3","hai":"67,86,75,116,104,73,48,51,58,127,54,44,125"}
+    /// {"tag":"W"}     <- wire-rel 3 (East dealer) tsumo, tile hidden from us
+    /// {"tag":"g56"}   <- wire-rel 3 dahai of tile 56 (6p)
+    /// {"tag":"T41"}   <- wire-rel 0 (us) tsumo of tile 41 (2p)
+    /// {"tag":"D116"}  <- wire-rel 0 dahai of tile 116 (W)
+    /// {"tag":"U"}     <- wire-rel 1 (West) tsumo, hidden
+    /// ```
+    #[test]
+    fn captured_sanma_game_seat_one_assigns_correct_actors() {
+        let mut b = TenhouBridge::new(None, None);
+        let taikyoku = parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"3"}"#);
+        assert!(taikyoku.is_empty(), "start_game deferred until INIT");
+
+        let init = parse_one(
+            &mut b,
+            r#"{"tag":"INIT","seed":"0,0,0,0,0,85","ten":"350,350,0,350","oya":"3","hai":"67,86,75,116,104,73,48,51,58,127,54,44,125"}"#,
+        );
+        // start_game (deferred from TAIKYOKU) + start_kyoku.
+        assert_eq!(init.len(), 2);
+        let sg = match &init[0] {
+            MjaiEvent::StartGame { id, num_players, names, .. } => {
+                (*id, *num_players, names.len())
+            }
+            other => panic!("expected StartGame first, got {other:?}"),
+        };
+        assert_eq!(sg, (Some(1), 3, 3), "sanma start_game with id=1 (wire-abs of South seat) and num_players=3");
+
+        let sk = match &init[1] {
+            MjaiEvent::StartKyoku {
+                bakaze,
+                kyoku,
+                oya,
+                scores,
+                tehais,
+                num_players,
+                ..
+            } => (
+                bakaze.clone(),
+                *kyoku,
+                *oya,
+                scores.clone(),
+                tehais.len(),
+                tehais.iter().map(|h| h.len()).collect::<Vec<_>>(),
+                *num_players,
+            ),
+            other => panic!("expected StartKyoku second, got {other:?}"),
+        };
+        assert_eq!(sk.0, "E");
+        assert_eq!(sk.1, 1);
+        assert_eq!(sk.2, 0, "E1 dealer at wire-abs 0 (East), not collapsed onto our seat");
+        assert_eq!(
+            sk.3,
+            vec![35_000, 35_000, 35_000],
+            "all three real players start at 35000; ghost slot dropped",
+        );
+        assert_eq!(sk.4, 3);
+        // Our hand sits at mjai-abs 1, others are placeholders.
+        for hand_len in &sk.5 {
+            assert_eq!(*hand_len, 13);
+        }
+        assert_eq!(sk.6, 3);
+
+        // Dealer (wire-rel 3 from us) tsumo — must map to mjai actor 0.
+        let w = parse_one(&mut b, r#"{"tag":"W"}"#);
+        match &w[0] {
+            MjaiEvent::Tsumo { actor, pai } => {
+                assert_eq!(*actor, 0, "wire-rel 3 with seat 1 → wire-abs 0 = dealer");
+                assert_eq!(pai, "?", "we don't see other players' draws");
+            }
+            other => panic!("expected Tsumo, got {other:?}"),
+        }
+
+        // Dealer's dahai of tile 56 (6p), tsumogiri.
+        let g56 = parse_one(&mut b, r#"{"tag":"g56"}"#);
+        match &g56[0] {
+            MjaiEvent::Dahai { actor, pai, tsumogiri } => {
+                assert_eq!(*actor, 0);
+                assert_eq!(pai, "6p");
+                assert!(!*tsumogiri, "lowercase g → tedashi");
+            }
+            other => panic!("expected Dahai, got {other:?}"),
+        }
+
+        // Our own tsumo (T41 → 2p).
+        let t41 = parse_one(&mut b, r#"{"tag":"T41"}"#);
+        match &t41[0] {
+            MjaiEvent::Tsumo { actor, pai } => {
+                assert_eq!(*actor, 1, "wire-rel 0 = us = wire-abs 1");
+                assert_eq!(pai, "2p");
+            }
+            other => panic!("expected Tsumo, got {other:?}"),
+        }
+
+        // Our dahai D116 (W). Uppercase D, but we drew 2p — different tile,
+        // so tsumogiri must resolve to false.
+        let d116 = parse_one(&mut b, r#"{"tag":"D116"}"#);
+        match &d116[0] {
+            MjaiEvent::Dahai { actor, pai, tsumogiri } => {
+                assert_eq!(*actor, 1);
+                assert_eq!(pai, "W");
+                assert!(!*tsumogiri, "drew 2p but discarded W → not tsumogiri");
+            }
+            other => panic!("expected Dahai, got {other:?}"),
+        }
+
+        // West player (wire-rel 1 = wire-abs 2) tsumo, hidden.
+        let u = parse_one(&mut b, r#"{"tag":"U"}"#);
+        match &u[0] {
+            MjaiEvent::Tsumo { actor, pai } => {
+                assert_eq!(*actor, 2, "wire-rel 1 with seat 1 → wire-abs 2");
+                assert_eq!(pai, "?");
+            }
+            other => panic!("expected Tsumo, got {other:?}"),
+        }
+    }
+
+    /// Yonma INIT.oya from a non-East perspective: dealer at relative seat 3
+    /// from us must resolve to wire-abs 0 (the East-1 dealer), exercising
+    /// `rel_to_abs(3) = (3 + seat) % 4` where seat=1.
+    #[test]
+    fn yonma_init_oya_three_with_seat_one_resolves_to_zero() {
+        let mut b = TenhouBridge::new(None, None);
+        // TAIKYOKU oya=3 → seat=(4-3)%4=1.
+        parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"3"}"#);
+        let init = parse_one(
+            &mut b,
+            r#"{"tag":"INIT","seed":"0,0,0,0,3,101","ten":"250,250,250,250","oya":"3","hai":"65,108,40,123,61,67,32,134,120,132,78,52,91"}"#,
+        );
+        let oya = init
+            .iter()
+            .find_map(|e| match e {
+                MjaiEvent::StartKyoku { oya, .. } => Some(*oya),
+                _ => None,
+            })
+            .expect("start_kyoku emitted");
+        assert_eq!(oya, 0, "yonma E1 dealer should be at wire-abs 0");
     }
 }
