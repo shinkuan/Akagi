@@ -12,12 +12,12 @@
         try {
           var raw = localStorage.getItem('akagi.theme');
           var mode = 'system';
-          var accent = 'default';
+          var palette = 'default';
           if (raw) {
             var parsed = JSON.parse(raw);
             var s = parsed && parsed.state ? parsed.state : parsed;
             if (s && s.mode) mode = s.mode;
-            if (s && s.accent) accent = s.accent;
+            if (s && s.palette) palette = s.palette;
           }
           var dark =
             mode === 'dark' ||
@@ -25,8 +25,8 @@
               window.matchMedia &&
               window.matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.classList.toggle('dark', dark);
-          if (accent && accent !== 'default') {
-            document.documentElement.setAttribute('data-theme', accent);
+          if (palette && palette !== 'default') {
+            document.documentElement.setAttribute('data-theme', palette);
           }
         } catch (_) {
           // Storage blocked or malformed — fall back to system dark.

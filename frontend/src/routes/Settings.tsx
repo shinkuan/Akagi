@@ -33,11 +33,11 @@ import {
   useUiPrefsStore,
 } from '@/stores/uiPrefsStore'
 import {
-  THEME_ACCENTS,
   THEME_MODES,
+  THEME_PALETTES,
   useThemeStore,
-  type ThemeAccent,
   type ThemeMode,
+  type ThemePalette,
 } from '@/stores/themeStore'
 import {
   PLATFORMS,
@@ -272,16 +272,16 @@ export function Settings() {
 function AppearanceCard() {
   const { t } = useTranslation()
   const mode = useThemeStore((s) => s.mode)
-  const accent = useThemeStore((s) => s.accent)
+  const palette = useThemeStore((s) => s.palette)
   const setMode = useThemeStore((s) => s.setMode)
-  const setAccent = useThemeStore((s) => s.setAccent)
+  const setPalette = useThemeStore((s) => s.setPalette)
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t('settings.appearance')}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <Field label={t('settings.theme')}>
+        <Field label={t('settings.mode')}>
           <Select value={mode} onValueChange={(v) => setMode(v as ThemeMode)}>
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -289,21 +289,21 @@ function AppearanceCard() {
             <SelectContent>
               {THEME_MODES.map((m) => (
                 <SelectItem key={m} value={m}>
-                  {t(`settings.theme_${m}`)}
+                  {t(`settings.mode_${m}`)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
-        <Field label={t('settings.accent')}>
-          <Select value={accent} onValueChange={(v) => setAccent(v as ThemeAccent)}>
+        <Field label={t('settings.theme')}>
+          <Select value={palette} onValueChange={(v) => setPalette(v as ThemePalette)}>
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {THEME_ACCENTS.map((a) => (
-                <SelectItem key={a} value={a}>
-                  {t(`settings.accent_${a}`)}
+              {THEME_PALETTES.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {t(`settings.theme_${p}`)}
                 </SelectItem>
               ))}
             </SelectContent>

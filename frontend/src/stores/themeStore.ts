@@ -1,27 +1,33 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
-// Frontend-only theme preference (mode + accent). Lives in localStorage
-// alongside the other UI prefs — `AppConfig` (Rust) is intentionally not
-// touched. Mode toggles `.dark` on <html>; accent sets `data-theme`.
+// Frontend-only theme preference. Two axes:
+//   * `mode`    — light / dark / system (toggles the `.dark` class on <html>)
+//   * `palette` — full color palette (sets `data-theme` on <html>)
+//
+// Each palette declares ALL CSS variables for both `:root` and `.dark` in
+// `src/index.css`, following shadcn / tweakcn convention. This is why
+// switching the palette repaints the entire UI (backgrounds, cards,
+// sidebars, charts) instead of just the primary color — see ui.shadcn.com
+// /docs/theming.
 //
 // FOUC is prevented by an inline pre-hydration script in `index.html` that
 // reads the same localStorage key before this module loads.
 
 export type ThemeMode = 'light' | 'dark' | 'system'
-export type ThemeAccent = 'default' | 'crimson' | 'slate'
+export type ThemePalette = 'default' | 'crimson' | 'slate'
 
 export const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system']
-export const THEME_ACCENTS: readonly ThemeAccent[] = ['default', 'crimson', 'slate']
+export const THEME_PALETTES: readonly ThemePalette[] = ['default', 'crimson', 'slate']
 
 export const THEME_MODE_DEFAULT: ThemeMode = 'system'
-export const THEME_ACCENT_DEFAULT: ThemeAccent = 'default'
+export const THEME_PALETTE_DEFAULT: ThemePalette = 'default'
 
 type ThemeStore = {
   mode: ThemeMode
-  accent: ThemeAccent
+  palette: ThemePalette
   setMode: (mode: ThemeMode) => void
-  setAccent: (accent: ThemeAccent) => void
+  setPalette: (palette: ThemePalette) => void
 }
 
 function prefersDark(): boolean {
@@ -35,14 +41,14 @@ function resolveDark(mode: ThemeMode): boolean {
   return prefersDark()
 }
 
-function applyTheme(mode: ThemeMode, accent: ThemeAccent): void {
+function applyTheme(mode: ThemeMode, palette: ThemePalette): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
   root.classList.toggle('dark', resolveDark(mode))
-  if (accent === 'default') {
+  if (palette === 'default') {
     root.removeAttribute('data-theme')
   } else {
-    root.setAttribute('data-theme', accent)
+    root.setAttribute('data-theme', palette)
   }
 }
 
@@ -50,21 +56,21 @@ export const useThemeStore = create(
   persist<ThemeStore>(
     (set) => ({
       mode: THEME_MODE_DEFAULT,
-      accent: THEME_ACCENT_DEFAULT,
+      palette: THEME_PALETTE_DEFAULT,
       setMode: (mode) => {
         set({ mode })
-        applyTheme(mode, useThemeStore.getState().accent)
+        applyTheme(mode, useThemeStore.getState().palette)
       },
-      setAccent: (accent) => {
-        set({ accent })
-        applyTheme(useThemeStore.getState().mode, accent)
+      setPalette: (palette) => {
+        set({ palette })
+        applyTheme(useThemeStore.getState().mode, palette)
       },
     }),
     {
       name: 'akagi.theme',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
-        if (state) applyTheme(state.mode, state.accent)
+        if (state) applyTheme(state.mode, state.palette)
       },
     },
   ),
@@ -74,11 +80,9 @@ export const useThemeStore = create(
 if (typeof window !== 'undefined' && window.matchMedia) {
   const mql = window.matchMedia('(prefers-color-scheme: dark)')
   const onChange = () => {
-    const { mode, accent } = useThemeStore.getState()
-    if (mode === 'system') applyTheme(mode, accent)
+    const { mode, palette } = useThemeStore.getState()
+    if (mode === 'system') applyTheme(mode, palette)
   }
-  // addEventListener is the modern API; the deprecated addListener fallback is
-  // not needed for any browser the Tauri webview ships with.
   mql.addEventListener('change', onChange)
 }
 
@@ -87,4 +91,4 @@ if (typeof window !== 'undefined' && window.matchMedia) {
 // the user's stored preference. The inline script in index.html has already
 // applied the same values before paint to prevent FOUC; this call is a no-op
 // in the common case and a corrective sync if the script and store disagree.
-applyTheme(useThemeStore.getState().mode, useThemeStore.getState().accent)
+applyTheme(useThemeStore.getState().mode, useThemeStore.getState().palette)
