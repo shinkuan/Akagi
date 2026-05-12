@@ -440,7 +440,7 @@ impl TenhouBridge {
     /// `<AGARI .../>` — win.
     fn on_agari(&mut self, msg: &JsonValue) -> Vec<MjaiEvent> {
         let actor_rel = parse_u8(msg, "who").unwrap_or(0);
-        let from_rel = parse_u8(msg, "fromwho").unwrap_or(actor_rel);
+        let from_rel = parse_u8(msg, "fromWho").unwrap_or(actor_rel);
         if actor_rel >= self.state.num_players || from_rel >= self.state.num_players {
             return Vec::new();
         }
@@ -467,7 +467,7 @@ impl TenhouBridge {
         }
 
         // Ura dora markers are space-separated tile indices in `dorahaiUra`.
-        let ura_markers = msg.get("dorahaiUra").and_then(parse_tile_csv);
+        let ura_markers = msg.get("doraHaiUra").and_then(parse_tile_csv);
 
         let mut events = vec![MjaiEvent::Hora {
             actor,
@@ -862,10 +862,10 @@ mod tests {
             &mut b,
             r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"0,1,2,3,4,5,6,7,8,9,10,11,12"}"#,
         );
-        // Tsumo win: who=0, fromwho=0; sc deltas distribute points.
+        // Tsumo win: who=0, fromWho=0; sc deltas distribute points.
         let events = parse_one(
             &mut b,
-            r#"{"tag":"AGARI","who":"0","fromwho":"0","sc":"250,40,250,-10,250,-10,250,-20"}"#,
+            r#"{"tag":"AGARI","who":"0","fromWho":"0","sc":"250,40,250,-10,250,-10,250,-20"}"#,
         );
         assert_eq!(events.len(), 2);
         match &events[0] {
@@ -920,10 +920,53 @@ mod tests {
         );
         let events = parse_one(
             &mut b,
-            r#"{"tag":"AGARI","who":"0","fromwho":"0","sc":"250,40,250,-10,250,-10,250,-20","owari":"290,30,240,-10,240,-10,230,-20"}"#,
+            r#"{"tag":"AGARI","who":"0","fromWho":"0","sc":"250,40,250,-10,250,-10,250,-20","owari":"290,30,240,-10,240,-10,230,-20"}"#,
         );
         assert_eq!(events.len(), 3);
         assert!(matches!(events[2], MjaiEvent::EndGame));
+    }
+
+    /// Regression: Tenhou's WebSocket JSON spells the discarder seat `fromWho`
+    /// (camelCase). The bridge previously read `"fromwho"` (all-lowercase),
+    /// so every ron silently fell back to `from_rel = actor_rel`, mis-emitting
+    /// `hora.target = winner` (i.e. presenting a ron as a tsumo). Frame
+    /// captured from log `20260512-135922/inspector.jsonl:1106`.
+    #[test]
+    fn agari_ron_from_capital_w_fromwho_resolves_to_discarder() {
+        let mut b = TenhouBridge::new(None, None);
+        // TAIKYOKU oya=0 → our absolute seat = (4-0)%4 = 0. Winner=0 (us),
+        // discarder=2 (kamicha across). Both arrive as *relative* seats in
+        // the AGARI frame; rel_to_abs is identity here because our seat is 0.
+        parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"0"}"#);
+        parse_one(
+            &mut b,
+            r#"{"tag":"INIT","seed":"0,2,0,3,4,71","ten":"360,280,280,280","oya":"0","hai":"133,56,14,44,103,10,42,0,122,124,70,117,61"}"#,
+        );
+        let frame = r#"{"tag":"AGARI","ba":"2,1","doraHai":"71","doraHaiUra":"45","fromWho":"2","hai":"10,14,16,39,42,44,53,56,61,100,101,103,132,133","machi":"16","sc":"350,136,280,0,280,-126,280,0","ten":"40,12000,1","who":"0","yaku":"1,1,2,1,52,1,54,1,53,0"}"#;
+        let events = parse_one(&mut b, frame);
+        let hora = events
+            .iter()
+            .find_map(|e| match e {
+                MjaiEvent::Hora { actor, target, deltas, ura_markers } => {
+                    Some((*actor, *target, deltas.clone(), ura_markers.clone()))
+                }
+                _ => None,
+            })
+            .expect("hora event emitted");
+        assert_eq!(hora.0, 0, "winner is seat 0");
+        assert_eq!(hora.1, 2, "ron target is seat 2 — fromWho must parse case-sensitively");
+        // Ura dora indicator field is also camelCase; verify it survives the
+        // same casing fix. Tile id 45 / 4 = 11 → 3p in 34-space; mjai's
+        // string for `id % 4` variants of 3p is "3p".
+        assert_eq!(
+            hora.3.as_deref().map(|v| v.iter().map(String::as_str).collect::<Vec<_>>()),
+            Some(vec!["3p"]),
+            "doraHaiUra must parse a single-marker CSV",
+        );
+        // Deltas are sc[1], sc[3], sc[5], sc[7] × 100, re-keyed to absolute
+        // seats. Seat 0 wins 13600, seat 2 pays 12600 (the actual user log).
+        let d = hora.2.expect("deltas present");
+        assert_eq!(d, vec![13_600, 0, -12_600, 0]);
     }
 
     #[test]

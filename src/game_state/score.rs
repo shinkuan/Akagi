@@ -472,6 +472,111 @@ mod tests {
         assert!(!waits_for(hand).unwrap().is_empty());
     }
 
+    /// Regression for the Tenhou hora-points mismatch (issue: dealer
+    /// riichi+ippatsu+dora+aka was scored as 8300 instead of 12600). Drives
+    /// the live `GameTracker` (replay path through `apply_mjai_event`) to
+    /// reproduce the exact state at bot-decision time, then evaluates the
+    /// hora score. Pre-fix the test fails with `han=3, points=8300` because
+    /// riichienv-core 0.4.8's `apply_mjai_event(ReachAccepted)` doesn't set
+    /// `ippatsu_cycle = true`; the tracker now patches that lifecycle.
+    #[test]
+    fn evaluate_hora_after_replay_counts_ippatsu_for_dealer_ron() {
+        use crate::game_state::tracker::GameTracker;
+        use crate::schema::MjaiEvent as E;
+
+        let mut t = GameTracker::new();
+        t.handle(&E::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(0),
+            num_players: 4,
+        })
+        .unwrap();
+        t.handle(&E::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "9p".into(),
+            kyoku: 1,
+            honba: 2,
+            kyotaku: 0,
+            oya: 0,
+            scores: vec![36_000, 28_000, 28_000, 28_000],
+            tehais: vec![
+                ["C", "6p", "4m", "3p", "8s", "3m", "2p", "1m", "N", "P", "9p", "W", "7p"]
+                    .iter()
+                    .map(|s| (*s).into())
+                    .collect(),
+                vec!["?".into(); 13],
+                vec!["?".into(); 13],
+                vec!["?".into(); 13],
+            ],
+            num_players: 4,
+        })
+        .unwrap();
+
+        // Each row: (actor, drawn_tile, dahai_tile). Tsumogiri inferred from
+        // equality; non-actor draws use "?" since the bridge feeds the
+        // observer perspective.
+        let turns: &[(u8, &str, &str)] = &[
+            (0, "C", "W"),     (1, "?", "6s"),  (2, "?", "2s"),  (3, "?", "7m"),
+            (0, "E", "N"),     (1, "?", "8p"),  (2, "?", "P"),   (3, "?", "6s"),
+            (0, "3p", "1m"),   (1, "?", "3s"),  (2, "?", "3m"),  (3, "?", "6s"),
+            (0, "8s", "9p"),   (1, "?", "3m"),  (2, "?", "S"),   (3, "?", "2p"),
+            (0, "5sr", "P"),   (1, "?", "E"),   (2, "?", "4s"),  (3, "?", "W"),
+            (0, "1s", "1s"),   (1, "?", "4p"),  (2, "?", "2s"),  (3, "?", "7m"),
+            (0, "7m", "7m"),   (1, "?", "8s"),  (2, "?", "2m"),  (3, "?", "3p"),
+            (0, "1p", "3p"),   (1, "?", "9m"),  (2, "?", "4s"),  (3, "?", "3s"),
+            (0, "5p", "E"),    (1, "?", "1m"),  (2, "?", "S"),   (3, "?", "F"),
+            (0, "7s", "5sr"),  (1, "?", "9p"),  (2, "?", "8m"),  (3, "?", "5m"),
+        ];
+        for &(actor, draw, dahai) in turns {
+            t.handle(&E::Tsumo { actor, pai: draw.into() }).unwrap();
+            t.handle(&E::Dahai {
+                actor,
+                pai: dahai.into(),
+                tsumogiri: draw == dahai,
+            })
+            .unwrap();
+        }
+
+        // Reach + reach-discard 7s + reach_accepted for actor 0.
+        t.handle(&E::Tsumo { actor: 0, pai: "8s".into() }).unwrap();
+        t.handle(&E::Reach { actor: 0, pai: None }).unwrap();
+        t.handle(&E::Dahai {
+            actor: 0,
+            pai: "7s".into(),
+            tsumogiri: false,
+        })
+        .unwrap();
+        t.handle(&E::ReachAccepted { actor: 0 }).unwrap();
+
+        // One full go-around inside the ippatsu window: actor 1 then actor 2
+        // discards 5mr (the ron tile).
+        t.handle(&E::Tsumo { actor: 1, pai: "?".into() }).unwrap();
+        t.handle(&E::Dahai {
+            actor: 1,
+            pai: "S".into(),
+            tsumogiri: false,
+        })
+        .unwrap();
+        t.handle(&E::Tsumo { actor: 2, pai: "?".into() }).unwrap();
+        t.handle(&E::Dahai {
+            actor: 2,
+            pai: "5mr".into(),
+            tsumogiri: false,
+        })
+        .unwrap();
+
+        let info = t.evaluate_hora(0, false).expect("winning shape");
+        // Pre-fix: (han=3, fu=40, points=8300) — ippatsu missing on replay.
+        // Post-fix: dealer mangan 12000 + 2*300 honba = 12600.
+        assert_eq!(
+            (info.han, info.fu, info.points, info.win_tile.as_str()),
+            (4, 40, 12_600, "5mr"),
+            "riichi+ippatsu+dora+aka dealer ron must score 12600 with honba=2",
+        );
+    }
+
     #[test]
     fn tid34_covers_all_suits_and_honors() {
         assert_eq!(tid34_to_mjai(0), "1m");

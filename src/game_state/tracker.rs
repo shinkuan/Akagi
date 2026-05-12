@@ -151,6 +151,7 @@ impl GameTracker {
                             p.riichi_declaration_index = Some(n - 1);
                         }
                     }
+                    apply_ippatsu_patch_4p(s, ev);
                 }
                 TrackedGame::Three(s) => {
                     s.apply_mjai_event(ri);
@@ -167,6 +168,7 @@ impl GameTracker {
                             p.riichi_declaration_index = Some(n - 1);
                         }
                     }
+                    apply_ippatsu_patch_3p(s, ev);
                 }
             }
         }
@@ -225,6 +227,76 @@ impl GameTracker {
 impl Default for GameTracker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Maintain `players[].ippatsu_cycle` on the replay path.
+///
+/// `apply_mjai_event(ReachAccepted)` in riichienv-core 0.4.8 leaves
+/// `ippatsu_cycle` untouched (only the live-engine `_accept_riichi` sets it
+/// to `true`). Without this patch, ippatsu is never detected when scoring
+/// against the tracker state — e.g. `evaluate_hora_4p` would miss the +1 han
+/// and the frontend's "+N points" display under-reports a riichi-ippatsu
+/// hand by exactly one fan band.
+///
+/// We mirror the live-engine ippatsu lifecycle:
+/// - `ReachAccepted`: open the window for the actor.
+/// - Any call (`Chi`/`Pon`/`Daiminkan`/`Ankan`/`Kakan`): close every player's
+///   window (calls break ippatsu globally).
+/// - `Dahai`: close the discarder's window. The actor's reach-tile dahai
+///   fires *before* `ReachAccepted`, so this clear is a no-op on that one
+///   event; on every subsequent own dahai (the player didn't tsumo on their
+///   next own draw) it correctly retires the window.
+fn apply_ippatsu_patch_4p(s: &mut GameState, ev: &AkagiEvent) {
+    match ev {
+        AkagiEvent::ReachAccepted { actor } => {
+            if let Some(p) = s.players.get_mut(*actor as usize) {
+                p.ippatsu_cycle = true;
+            }
+        }
+        AkagiEvent::Dahai { actor, .. } => {
+            if let Some(p) = s.players.get_mut(*actor as usize) {
+                p.ippatsu_cycle = false;
+            }
+        }
+        AkagiEvent::Chi { .. }
+        | AkagiEvent::Pon { .. }
+        | AkagiEvent::Daiminkan { .. }
+        | AkagiEvent::Ankan { .. }
+        | AkagiEvent::Kakan { .. } => {
+            for p in &mut s.players {
+                p.ippatsu_cycle = false;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// 3-player variant. Same lifecycle as 4p; `Kita` (北抜き) is treated like a
+/// call because it interrupts the natural turn order with an off-cycle draw.
+fn apply_ippatsu_patch_3p(s: &mut GameState3P, ev: &AkagiEvent) {
+    match ev {
+        AkagiEvent::ReachAccepted { actor } => {
+            if let Some(p) = s.players.get_mut(*actor as usize) {
+                p.ippatsu_cycle = true;
+            }
+        }
+        AkagiEvent::Dahai { actor, .. } => {
+            if let Some(p) = s.players.get_mut(*actor as usize) {
+                p.ippatsu_cycle = false;
+            }
+        }
+        AkagiEvent::Chi { .. }
+        | AkagiEvent::Pon { .. }
+        | AkagiEvent::Daiminkan { .. }
+        | AkagiEvent::Ankan { .. }
+        | AkagiEvent::Kakan { .. }
+        | AkagiEvent::Kita { .. } => {
+            for p in &mut s.players {
+                p.ippatsu_cycle = false;
+            }
+        }
+        _ => {}
     }
 }
 

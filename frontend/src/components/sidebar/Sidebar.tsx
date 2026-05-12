@@ -108,7 +108,7 @@ export function Sidebar() {
         </div>
         {open && (
           <div className="mt-2 shrink-0 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span>v3.0.1</span>
+            <span>v3.0.6</span>
             <select
               className="bg-transparent border border-border rounded px-1.5 py-0.5"
               value={i18n.language}
