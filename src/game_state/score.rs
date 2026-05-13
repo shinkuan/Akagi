@@ -7,6 +7,7 @@
 
 use anyhow::{Context, Result};
 use riichienv_core::hand_evaluator::HandEvaluator;
+use riichienv_core::hand_evaluator_3p::HandEvaluator3P;
 use riichienv_core::parser::tid_to_mjai;
 pub use riichienv_core::score::Score;
 use riichienv_core::state::GameState;
@@ -140,6 +141,12 @@ pub fn evaluate_hora_4p(state: &GameState, actor: u8, is_tsumo: bool) -> Option<
 /// 3-player variant. Tsumo splits across 2 ko (or 2 ko for dealer in 3p).
 /// Same `last_discard` / `is_first_turn` workarounds as the 4p variant —
 /// see its doc comment for rationale.
+///
+/// Uses `HandEvaluator3P` (not the 4p `HandEvaluator`) so that
+/// `conditions.kita_count` feeds into nukidora han, 3p-specific yaku rules
+/// in `yaku_3p` apply, and the underlying `calculate_score` call runs with
+/// `num_players = 3` — which makes ron honba pay the correct 200 per stick
+/// (2 ko × 100) instead of the 4p figure of 300.
 pub fn evaluate_hora_3p(state: &GameState3P, actor: u8, is_tsumo: bool) -> Option<HoraScoreInfo> {
     let actor_idx = actor as usize;
     if actor_idx >= state.players.len() {
@@ -154,7 +161,7 @@ pub fn evaluate_hora_3p(state: &GameState3P, actor: u8, is_tsumo: bool) -> Optio
         state.last_discard.map(|(_, t)| t)?
     };
 
-    let evaluator = HandEvaluator::new(player.hand.clone(), player.melds.clone());
+    let evaluator = HandEvaluator3P::new(player.hand.clone(), player.melds.clone());
 
     let first_turn =
         is_tsumo && player.discards.is_empty() && state.players.iter().all(|p| p.melds.is_empty());
@@ -587,5 +594,106 @@ mod tests {
         assert_eq!(tid34_to_mjai(26), "9s");
         assert_eq!(tid34_to_mjai(27), "E");
         assert_eq!(tid34_to_mjai(33), "C");
+    }
+
+    /// 3p analogue of `chiitoitsu_state`. Seeded wall + cleared
+    /// dora_indicators keep `dora_count` at 0 across calls, so han depends
+    /// only on the explicit hand / win-tile shape we configure — no
+    /// flake from random dora landing on a hand tile.
+    ///
+    /// Hand is mixed suits + honor to avoid incidental chinitsu/honitsu
+    /// han adding to the chiitoitsu base. All tiles are valid in the 3p
+    /// wall (3p ships only 1m/9m of manzu, so this hand keeps to pinzu /
+    /// souzu / honors).
+    fn chiitoitsu_state_3p(actor: u8, oya: u8) -> GameState3P {
+        let rule = riichienv_core::rule::GameRule::default_tenhou();
+        let mut s = GameState3P::new(0, true, Some(42), 0, rule);
+        s.oya = oya;
+        s.round_wind = 0; // East
+        s.honba = 0;
+        s.riichi_sticks = 0;
+        s.is_first_turn = false;
+        s.wall.dora_indicators.clear();
+
+        // 1p 1p 2p 2p 3p 3p 4p 4p 1s 1s S S + 8p (lone — chiitoitsu wait).
+        // South pair (not round wind, not the actor's seat wind for any
+        // oya choice in 3p with E round) avoids yakuhai. 1s and 1p
+        // terminals block tanyao; mixed suits block honitsu/chinitsu.
+        // 8p second copy (id 65) is the win tile.
+        let hand = vec![
+            36, 37, // 1p 1p
+            40, 41, // 2p 2p
+            44, 45, // 3p 3p
+            48, 49, // 4p 4p
+            72, 73, // 1s 1s
+            112, 113, // S S (28*4=112)
+            64, // 8p (lone — chiitoitsu wait)
+        ];
+        s.players[actor as usize].hand = hand;
+
+        // Non-actor sentinel discard so first-turn workaround sees a
+        // non-empty river and skips tenhou/chiihou (matches the 4p
+        // helper's reasoning).
+        let other = (actor + 1) % 3;
+        s.players[other as usize].discards.push(0);
+
+        s
+    }
+
+    /// Regression: 3p ron honba pays 200 per stick (2 ko × 100), not 4p's
+    /// 300. `evaluate_hora_3p` previously routed through the 4p
+    /// `HandEvaluator`, whose `calc()` calls `calculate_score(..., 4)` —
+    /// so `honba_ron = honba * 100 * (4 - 1) = 300`. Switching to
+    /// `HandEvaluator3P` fixes this at the source by passing `3`.
+    #[test]
+    fn evaluate_hora_3p_ron_honba_is_200_per_stick() {
+        let mut s0 = chiitoitsu_state_3p(0, 1); // non-dealer
+        s0.last_discard = Some((2, 65)); // seat 2 discards 2nd 8p
+        let mut s1 = chiitoitsu_state_3p(0, 1);
+        s1.honba = 1;
+        s1.last_discard = Some((2, 65));
+
+        let no_honba = evaluate_hora_3p(&s0, 0, false).expect("winning shape");
+        let with_honba = evaluate_hora_3p(&s1, 0, false).expect("winning shape");
+
+        // Chiitoitsu (2 han) 25 fu non-dealer ron base:
+        //   base = 25 * 2^(2+2) = 400; ron = ceil_100(400 * 4) = 1600.
+        assert_eq!(no_honba.points, 1600, "chiitoitsu non-dealer ron base");
+        // 3p honba on ron = 100 * (3 - 1) = 200, not 4p's 300.
+        assert_eq!(with_honba.points, 1800, "should be 1600 + 200");
+        assert_eq!(with_honba.points - no_honba.points, 200);
+    }
+
+    /// Regression: kita han now flows into the score. The 4p
+    /// `HandEvaluator` never reads `conditions.kita_count` — its
+    /// `YakuContext` has no `nukidora_count` field — so every nukidora
+    /// silently dropped to 0 han at scoring time, and a winning hand with
+    /// 2 kita scored as if it had 0. `HandEvaluator3P` adds nukidora via
+    /// `yaku_3p::calculate_yaku_3p`.
+    #[test]
+    fn evaluate_hora_3p_kita_han_counts_in_score() {
+        let mut s = chiitoitsu_state_3p(0, 1); // non-dealer
+
+        // 2 kita already declared by this seat. Values aren't read by the
+        // evaluator (only `kita_tiles.len()` feeds `kita_count`), but pick
+        // valid North tile ids for realism.
+        s.players[0].kita_tiles = vec![120, 121];
+
+        // Tsumo on 8p (second copy). Mirror the 4p test pattern by also
+        // pushing the drawn tile into hand — the evaluator handles a
+        // 14-tile hand by skipping the internal `hand_14.add(win_tile)`.
+        s.drawn_tile = Some(65);
+        s.players[0].hand.push(65);
+
+        // Own discard so the first-turn workaround doesn't fire chiihou.
+        s.players[0].discards.push(0);
+
+        let info = evaluate_hora_3p(&s, 0, true).expect("winning shape");
+
+        // chiitoitsu (2) + menzen tsumo (1) + 2 nukidora = 5 han = mangan.
+        assert_eq!(info.han, 5, "chiitoitsu+tsumo+2 nukidora = 5 han");
+
+        // 3p non-dealer mangan tsumo: pay_oya 4000 + pay_ko 2000 = 6000.
+        assert_eq!(info.points, 6_000);
     }
 }
