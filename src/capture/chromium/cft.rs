@@ -350,7 +350,7 @@ pub async fn install(channel: &Channel, notify: &NotifyBus) -> Result<String> {
     );
     std::fs::create_dir_all(&install_dir)
         .with_context(|| format!("create {}", install_dir.display()))?;
-    crate::bot::install::extract_zip_safe(&zip_path, &install_dir).context("extract CfT zip")?;
+    crate::github::extract_zip_safe(&zip_path, &install_dir).context("extract CfT zip")?;
     let _ = std::fs::remove_file(&zip_path);
 
     if let Some(platform) = cft_platform() {

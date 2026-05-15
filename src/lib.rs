@@ -7,6 +7,7 @@ pub mod cli;
 pub mod config;
 pub mod event_bus;
 pub mod game_state;
+pub mod github;
 pub mod history;
 pub mod inspector;
 pub mod ipc;

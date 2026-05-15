@@ -21,15 +21,13 @@ use crate::bot::manifest::Manifest;
 use crate::bot::registry::BotEntry;
 use crate::bot::runtime::PythonRuntime;
 use crate::event_bus::NotifyBus;
+use crate::github::{build_client, extract_zip_safe, fetch_latest_release, Asset};
 use crate::schema::Notification;
 use anyhow::{bail, Context, Result};
 use globset::Glob;
-use serde::Deserialize;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 
-const GITHUB_API: &str = "https://api.github.com";
-const USER_AGENT: &str = concat!("akagi/", env!("CARGO_PKG_VERSION"));
 const DOWNLOADS_DIR: &str = ".downloads";
 
 /// Pointer to a GitHub release-zip install.
@@ -53,20 +51,6 @@ impl GithubInstallSpec {
         // is the default install name.
         self.repo.split('/').nth(1).unwrap_or(&self.repo).to_owned()
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct ReleaseJson {
-    #[serde(default)]
-    tag_name: Option<String>,
-    #[serde(default)]
-    assets: Vec<Asset>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct Asset {
-    pub name: String,
-    pub browser_download_url: String,
 }
 
 /// End-to-end install. Returns the registry entry for the freshly
@@ -104,22 +88,8 @@ pub async fn install_from_github_release(
             .id(notify_id.clone()),
     );
 
-    let client = reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .build()
-        .context("build http client")?;
-
-    let release: ReleaseJson = client
-        .get(format!("{GITHUB_API}/repos/{}/releases/latest", spec.repo))
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .context("fetch release metadata")?
-        .error_for_status()
-        .context("github release endpoint returned an error")?
-        .json()
-        .await
-        .context("parse release JSON")?;
+    let client = build_client()?;
+    let release = fetch_latest_release(&client, &spec.repo).await?;
 
     let asset = pick_asset(&release.assets, spec.asset_glob.as_deref())?;
 
@@ -362,62 +332,6 @@ async fn download_asset(
     Ok(path)
 }
 
-/// Extract `zip_path` into `dest_dir`. Rejects entries whose normalised
-/// path escapes the destination root (`..`, absolute paths) — standard
-/// "zip slip" defence.
-pub fn extract_zip_safe(zip_path: &Path, dest_dir: &Path) -> Result<()> {
-    let file =
-        std::fs::File::open(zip_path).with_context(|| format!("open {}", zip_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .with_context(|| format!("not a valid zip: {}", zip_path.display()))?;
-
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .with_context(|| format!("read zip entry {i}"))?;
-        let raw_name = entry.name().to_owned();
-
-        // zip 8 exposes `enclosed_name()` which already validates that the
-        // path is relative and contains no `..` segments. We additionally
-        // double-check by walking components, because the `enclosed_name`
-        // check is only as strong as the underlying `Path` parser.
-        let Some(rel) = entry.enclosed_name() else {
-            bail!("zip entry {raw_name:?} has an unsafe path");
-        };
-        if rel.components().any(|c| matches!(c, Component::ParentDir)) {
-            bail!("zip entry {raw_name:?} contains `..`");
-        }
-        if rel.is_absolute() {
-            bail!("zip entry {raw_name:?} is absolute");
-        }
-
-        let out_path = dest_dir.join(&rel);
-        if entry.is_dir() {
-            std::fs::create_dir_all(&out_path)
-                .with_context(|| format!("mkdir {}", out_path.display()))?;
-            continue;
-        }
-        if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("mkdir {}", parent.display()))?;
-        }
-        let mut out = std::fs::File::create(&out_path)
-            .with_context(|| format!("create {}", out_path.display()))?;
-        std::io::copy(&mut entry, &mut out)
-            .with_context(|| format!("write {}", out_path.display()))?;
-
-        // Preserve unix mode bits (executable scripts).
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Some(mode) = entry.unix_mode() {
-                let _ = std::fs::set_permissions(&out_path, std::fs::Permissions::from_mode(mode));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// If `dir` contains exactly one entry and that entry is a directory,
 /// return that nested directory. Otherwise return `dir` unchanged.
 ///
@@ -454,16 +368,14 @@ pub fn validate_layout(bot_root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::Write;
     use tempfile::TempDir;
-    use zip::write::SimpleFileOptions;
-    use zip::ZipWriter;
 
     fn asset(name: &str) -> Asset {
         Asset {
             name: name.to_owned(),
             browser_download_url: format!("https://example.com/{name}"),
+            size: None,
+            digest: None,
         }
     }
 
@@ -570,67 +482,6 @@ mod tests {
     fn pick_asset_empty_release_errors() {
         let err = pick_asset(&[], None).unwrap_err();
         assert!(err.to_string().contains("no assets"));
-    }
-
-    /// Build a tiny zip in memory at `path`, with `entries` like
-    /// `("dir/file.txt", "body")`. Directories are inferred.
-    fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
-        let f = File::create(path).unwrap();
-        let mut z = ZipWriter::new(f);
-        let opts = SimpleFileOptions::default();
-        for (name, body) in entries {
-            z.start_file(name.to_string(), opts).unwrap();
-            z.write_all(body).unwrap();
-        }
-        z.finish().unwrap();
-    }
-
-    #[test]
-    fn extract_zip_safe_writes_files() {
-        let tmp = TempDir::new().unwrap();
-        let zip = tmp.path().join("a.zip");
-        make_zip(
-            &zip,
-            &[("bot.py", b"print('hi')\n"), ("README.md", b"# hi\n")],
-        );
-
-        let out = TempDir::new().unwrap();
-        extract_zip_safe(&zip, out.path()).unwrap();
-        assert!(out.path().join("bot.py").is_file());
-        assert!(out.path().join("README.md").is_file());
-    }
-
-    #[test]
-    fn extract_zip_safe_preserves_directory_layout() {
-        let tmp = TempDir::new().unwrap();
-        let zip = tmp.path().join("a.zip");
-        make_zip(
-            &zip,
-            &[
-                ("mortal-v1/bot.py", b"print('hi')\n"),
-                ("mortal-v1/sub/x.txt", b"x"),
-            ],
-        );
-
-        let out = TempDir::new().unwrap();
-        extract_zip_safe(&zip, out.path()).unwrap();
-        assert!(out.path().join("mortal-v1/bot.py").is_file());
-        assert!(out.path().join("mortal-v1/sub/x.txt").is_file());
-    }
-
-    #[test]
-    fn extract_zip_safe_rejects_path_traversal() {
-        let tmp = TempDir::new().unwrap();
-        let zip = tmp.path().join("a.zip");
-        make_zip(&zip, &[("../escape.txt", b"nope")]);
-
-        let out = TempDir::new().unwrap();
-        let err = extract_zip_safe(&zip, out.path()).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("unsafe path") || msg.contains("contains `..`"),
-            "got: {msg}"
-        );
     }
 
     #[test]
