@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useBlocker } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { getVersion } from '@tauri-apps/api/app'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,10 +23,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { invoke } from '@/lib/tauri'
+import { HAS_TAURI, invoke } from '@/lib/tauri'
+import { openExternal } from '@/lib/external'
 import { useSidebar } from '@/hooks/useSidebar'
 import { useCaptureStore } from '@/stores/captureStore'
 import { useConfigStore } from '@/stores/configStore'
+import { selectHasNotifiableUpdate, useUpdaterStore } from '@/stores/updaterStore'
 import {
   SCALE_DEFAULT,
   SCALE_MAX,
@@ -240,6 +244,8 @@ export function Settings() {
       </Card>
 
       <AutoplayCard draft={draft} setDraft={setDraft} />
+
+      <UpdatesCard />
 
       <Dialog
         open={blocker.state === 'blocked'}
@@ -1029,5 +1035,127 @@ function CftPanel({
         </ul>
       )}
     </div>
+  )
+}
+
+function UpdatesCard() {
+  const { t, i18n } = useTranslation()
+  const autoCheckEnabled = useUpdaterStore((s) => s.autoCheckEnabled)
+  const setAutoCheckEnabled = useUpdaterStore((s) => s.setAutoCheckEnabled)
+  const lastChecked = useUpdaterStore((s) => s.lastChecked)
+  const skippedVersion = useUpdaterStore((s) => s.skippedVersion)
+  const clearSkipped = useUpdaterStore((s) => s.clearSkipped)
+  const checkNow = useUpdaterStore((s) => s.checkNow)
+  const checking = useUpdaterStore((s) => s.checking)
+  const pending = useUpdaterStore((s) => s.pendingUpdate)
+  const hasNotifiable = useUpdaterStore(selectHasNotifiableUpdate)
+  const openDialog = useUpdaterStore((s) => s.openDialog)
+
+  const [currentVersion, setCurrentVersion] = useState('—')
+  useEffect(() => {
+    if (!HAS_TAURI) return
+    getVersion().then(setCurrentVersion).catch(() => {})
+  }, [])
+
+  const handleCheck = async () => {
+    const before = useUpdaterStore.getState().pendingUpdate?.latest_tag ?? null
+    await checkNow(true)
+    const after = useUpdaterStore.getState().pendingUpdate
+    if (!after) {
+      toast.success(t('updates.settings.up_to_date'))
+    } else if (after.latest_tag !== before) {
+      // New release surfaced for the first time this session — let the
+      // existing UpdateNotifier toast logic handle it instead of toasting
+      // twice. If it's the same release we already knew about, the
+      // explicit click deserves a one-shot acknowledgement.
+    } else {
+      toast.info(
+        t('updates.settings.available', { version: after.latest_version }),
+        {
+          action: { label: t('updates.toast.action'), onClick: openDialog },
+        },
+      )
+    }
+  }
+
+  const lastCheckedLabel = lastChecked
+    ? t('updates.settings.last_checked', {
+        when: new Date(lastChecked).toLocaleString(i18n.language),
+      })
+    : t('updates.settings.never_checked')
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t('updates.settings.title')}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <Field label={t('updates.settings.current')}>
+          <div className="flex items-center gap-2">
+            <span className="font-mono">v{currentVersion}</span>
+            {hasNotifiable && pending && (
+              <Button
+                size="sm"
+                variant="default"
+                onClick={openDialog}
+                className="h-7"
+              >
+                {t('updates.settings.available', {
+                  version: pending.latest_version,
+                })}
+              </Button>
+            )}
+          </div>
+        </Field>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">{lastCheckedLabel}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCheck}
+            disabled={checking || !HAS_TAURI}
+          >
+            {checking ? t('updates.settings.checking') : t('updates.settings.check_now')}
+          </Button>
+        </div>
+        <Toggle
+          label={t('updates.settings.auto_check')}
+          value={autoCheckEnabled}
+          onChange={setAutoCheckEnabled}
+        />
+        <Field label={t('updates.settings.skipped_label')}>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">
+              {skippedVersion ?? t('updates.settings.none_skipped')}
+            </span>
+            {skippedVersion && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  clearSkipped()
+                  toast.success(
+                    t('updates.settings.clear_skipped') + ': ' + skippedVersion,
+                  )
+                }}
+              >
+                {t('updates.settings.clear_skipped')}
+              </Button>
+            )}
+          </div>
+        </Field>
+        {pending && (
+          <div className="flex items-center justify-end">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => openExternal(pending.html_url)}
+            >
+              {t('updates.dialog.open_release')}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

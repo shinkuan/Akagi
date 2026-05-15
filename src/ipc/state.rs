@@ -116,6 +116,10 @@ pub struct AppState {
     /// process. Used by `update_config` to start the manager on a
     /// runtime false→true flip of `autoplay.enabled` without re-spawning.
     pub autoplay_manager_started: Arc<AtomicBool>,
+    /// Serialises in-app update operations. `check_for_update` and
+    /// `apply_update` both `try_lock()` it so the user mashing buttons
+    /// can't race two HTTP fetches or — worse — two binary swaps.
+    pub updater_lock: Arc<Mutex<()>>,
 }
 
 impl AppState {
@@ -159,6 +163,7 @@ impl AppState {
             bot_manager_started: Arc::new(AtomicBool::new(false)),
             autoplay_context: Arc::new(AutoplayContext::new()),
             autoplay_manager_started: Arc::new(AtomicBool::new(false)),
+            updater_lock: Arc::new(Mutex::new(())),
         }
     }
 }

@@ -510,5 +510,41 @@
     "tenhou_desc": "tenhou.net — yonma + sanma",
     "riichi_city": "Riichi City",
     "mjai": "mjai"
+  },
+  "updates": {
+    "toast": {
+      "title": "Akagi {{version}} is available",
+      "action": "View details"
+    },
+    "dialog": {
+      "title": "Update available: Akagi {{version}}",
+      "notes_heading": "Release notes",
+      "no_notes": "No release notes were provided.",
+      "update_now": "Update now",
+      "skip": "Skip this version",
+      "later": "Later",
+      "open_release": "Open release page",
+      "applying": "Downloading and applying…",
+      "runtime_caveat": "Auto-update swaps the binary in place. If the bundled Python runtime changed in this release the app may misbehave — reinstall from the release page in that case.",
+      "error_read_only": "Akagi can't write to its install directory. Open the release page to update manually.",
+      "error_unsupported_platform": "Auto-update is not available for your platform. Open the release page to download manually.",
+      "error_no_matching_asset": "This release has no build for your platform yet.",
+      "error_digest_mismatch": "Downloaded file doesn't match the release checksum. Try again or download manually.",
+      "error_generic": "Update failed: {{message}}"
+    },
+    "settings": {
+      "title": "Updates",
+      "current": "Current version",
+      "check_now": "Check for updates",
+      "checking": "Checking…",
+      "up_to_date": "You're on the latest version.",
+      "last_checked": "Last checked: {{when}}",
+      "never_checked": "Never checked",
+      "auto_check": "Check for updates on launch",
+      "available": "Update available: {{version}}",
+      "skipped_label": "Skipped version",
+      "clear_skipped": "Clear skipped version",
+      "none_skipped": "None"
+    }
   }
 }

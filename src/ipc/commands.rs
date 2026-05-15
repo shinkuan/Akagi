@@ -1191,6 +1191,48 @@ pub async fn delete_game_history_entry(
     Ok(removed)
 }
 
+/// `shinkuan/Akagi` is the canonical upstream — kept here as a const
+/// instead of plumbing through config so the user can't accidentally
+/// point the auto-updater at a fork.
+const UPSTREAM_REPO: &str = "shinkuan/Akagi";
+
+/// One-shot "is there a newer release?" — frontend calls this on app
+/// launch (with a 6h cache) and from the Settings "Check for updates"
+/// button. Returns `Ok(None)` for "already up to date" or unsupported
+/// platforms; `Err(String)` for network / parse failures (the toast in
+/// the frontend surfaces the message verbatim).
+#[tauri::command]
+pub async fn check_for_update(
+    state: State<'_, AppState>,
+) -> CmdResult<Option<crate::updater::UpdateInfo>> {
+    let Ok(_guard) = state.updater_lock.try_lock() else {
+        return Err("another update operation is in progress".into());
+    };
+    crate::updater::check_for_update(UPSTREAM_REPO)
+        .await
+        .map_err(|e| format!("check for update: {e:#}"))
+}
+
+/// Download the matching release zip, verify SHA-256, swap the binary
+/// via `self_replace::self_replace`, then relaunch. On success the
+/// process exits inside `app.restart()` and this never returns. The
+/// typed error variant lets the frontend distinguish "fall back to
+/// release page" (`read_only_install`, `unsupported_platform`,
+/// `no_matching_asset`) from a real network / integrity error.
+#[tauri::command]
+pub async fn apply_update(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    info: crate::updater::UpdateInfo,
+) -> Result<(), crate::updater::UpdateError> {
+    let Ok(_guard) = state.updater_lock.try_lock() else {
+        return Err(crate::updater::UpdateError::Other {
+            message: "another update operation is in progress".into(),
+        });
+    };
+    crate::updater::apply::download_and_apply(&app, &info).await
+}
+
 fn persist_config(config: &AppConfig, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -1242,6 +1284,8 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::get_game_history_record,
             $crate::ipc::commands::get_game_history_events,
             $crate::ipc::commands::delete_game_history_entry,
+            $crate::ipc::commands::check_for_update,
+            $crate::ipc::commands::apply_update,
         ]
     };
 }

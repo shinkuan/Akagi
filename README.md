@@ -139,6 +139,14 @@ https://github.com/user-attachments/assets/d5bc6ff6-6560-4365-ae55-660c9a522790
   Live switch from Setup or the Sidebar. Full coverage across the UI.
 - **Sanma (3-player)** — full pipeline: bridge, tracker, snapshot,
   analysis, per-mode bot routing, history stats, 3p uma tables.
+- **In-app updates** — checks the GitHub releases endpoint on launch
+  (cached for 6 hours) and on demand from *Settings → Updates*. A
+  bounded toast plus a red dot next to the sidebar version surface a
+  new release; the dialog offers *Update now* (downloads the matching
+  zip, SHA-256-verifies it, swaps the binary in place via
+  `self_replace`, then restarts), *Skip this version*, *Later*, or
+  *Open release page*. Read-only installs (e.g. AppImage) fall back to
+  the release page automatically.
 
 ## Supported Platforms
 

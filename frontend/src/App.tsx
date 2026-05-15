@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/sidebar/Sidebar'
 import { Statusbar } from '@/components/Statusbar'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Toaster } from '@/components/ui/sonner'
+import { UpdateNotifier } from '@/components/UpdateNotifier'
 import { useTauriBridge } from '@/hooks/useTauriBridge'
 import { useSidebar } from '@/hooks/useSidebar'
 import { useUiPrefsStore } from '@/stores/uiPrefsStore'
@@ -52,6 +53,7 @@ export default function App() {
         <Statusbar />
       </main>
       <Toaster />
+      <UpdateNotifier />
     </>
   )
 }

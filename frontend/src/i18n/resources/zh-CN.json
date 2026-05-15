@@ -510,5 +510,41 @@
     "tenhou_desc": "tenhou.net — 四麻 + 三麻",
     "riichi_city": "麻雀一番街",
     "mjai": "mjai"
+  },
+  "updates": {
+    "toast": {
+      "title": "Akagi {{version}} 已发布",
+      "action": "查看详情"
+    },
+    "dialog": {
+      "title": "有新版本可用：Akagi {{version}}",
+      "notes_heading": "版本说明",
+      "no_notes": "此版本未提供说明。",
+      "update_now": "立即更新",
+      "skip": "跳过此版本",
+      "later": "稍后",
+      "open_release": "打开发布页",
+      "applying": "下载并应用中…",
+      "runtime_caveat": "自动更新只替换可执行文件。如果此版本同时更新了内置 Python 环境，更新后 app 可能无法正常工作 — 此情况请到发布页手动重新安装。",
+      "error_read_only": "Akagi 没有权限写入安装目录。请到发布页手动下载更新。",
+      "error_unsupported_platform": "您的平台目前不支持自动更新。请到发布页手动下载。",
+      "error_no_matching_asset": "此版本尚未提供您平台的可执行文件。",
+      "error_digest_mismatch": "下载文件的校验码与发布信息不符，请重试或手动下载。",
+      "error_generic": "更新失败：{{message}}"
+    },
+    "settings": {
+      "title": "更新",
+      "current": "当前版本",
+      "check_now": "检查更新",
+      "checking": "检查中…",
+      "up_to_date": "已是最新版本。",
+      "last_checked": "最后检查：{{when}}",
+      "never_checked": "尚未检查过",
+      "auto_check": "启动时自动检查更新",
+      "available": "有可用更新：{{version}}",
+      "skipped_label": "已跳过的版本",
+      "clear_skipped": "清除跳过记录",
+      "none_skipped": "无"
+    }
   }
 }

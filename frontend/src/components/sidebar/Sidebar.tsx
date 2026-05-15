@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft } from 'lucide-react'
+import { getVersion } from '@tauri-apps/api/app'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -13,8 +15,15 @@ import {
 import { useSidebar } from '@/hooks/useSidebar'
 import { GithubMark, DiscordMark } from '@/components/BrandMarks'
 import { AKAGI_GITHUB_URL, AKAGI_DISCORD_URL, openExternal } from '@/lib/external'
+import { HAS_TAURI } from '@/lib/tauri'
 import { LANG_LABELS, SUPPORTED_LANGS, type SupportedLang } from '@/i18n'
+import { selectHasNotifiableUpdate, useUpdaterStore } from '@/stores/updaterStore'
 import { Menu } from './Menu'
+
+// Fallback used in the browser dev preview (no Tauri runtime → no
+// app.getVersion). Lines up with Cargo.toml so devs see a sensible
+// string until the real version resolves.
+const VERSION_FALLBACK = '3.0.11'
 
 export function Sidebar() {
   const { t, i18n } = useTranslation()
@@ -23,6 +32,13 @@ export function Sidebar() {
   const setIsHover = useSidebar((s) => s.setIsHover)
   const isHover = useSidebar((s) => s.isHover)
   const settings = useSidebar((s) => s.settings)
+  const hasUpdate = useUpdaterStore(selectHasNotifiableUpdate)
+  const openUpdateDialog = useUpdaterStore((s) => s.openDialog)
+  const [version, setVersion] = useState(VERSION_FALLBACK)
+  useEffect(() => {
+    if (!HAS_TAURI) return
+    getVersion().then(setVersion).catch(() => {})
+  }, [])
   // `open` includes the transient hover-open state. Only `isOpen` (pinned)
   // affects main content margin in App.tsx — hover-open expands the sidebar
   // visually as an overlay above main, so width-sensitive widgets like
@@ -108,7 +124,28 @@ export function Sidebar() {
         </div>
         {open && (
           <div className="mt-2 shrink-0 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span>v3.0.11</span>
+            <button
+              type="button"
+              onClick={hasUpdate ? openUpdateDialog : undefined}
+              className={cn(
+                'flex items-center gap-1.5 rounded px-1 py-0.5',
+                hasUpdate
+                  ? 'cursor-pointer hover:text-foreground'
+                  : 'cursor-default',
+              )}
+              aria-label={
+                hasUpdate ? t('updates.toast.action') : undefined
+              }
+              disabled={!hasUpdate}
+            >
+              <span>v{version}</span>
+              {hasUpdate && (
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full bg-red-500"
+                  aria-hidden="true"
+                />
+              )}
+            </button>
             <select
               className="bg-transparent border border-border rounded px-1.5 py-0.5"
               value={i18n.language}

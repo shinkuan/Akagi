@@ -510,5 +510,41 @@
     "tenhou_desc": "tenhou.net — 四麻 + 三麻",
     "riichi_city": "麻雀一番街",
     "mjai": "mjai"
+  },
+  "updates": {
+    "toast": {
+      "title": "Akagi {{version}} が利用可能です",
+      "action": "詳細を見る"
+    },
+    "dialog": {
+      "title": "更新あり: Akagi {{version}}",
+      "notes_heading": "リリースノート",
+      "no_notes": "リリースノートはありません。",
+      "update_now": "今すぐ更新",
+      "skip": "このバージョンをスキップ",
+      "later": "後で",
+      "open_release": "リリースページを開く",
+      "applying": "ダウンロードして適用中…",
+      "runtime_caveat": "自動更新は実行ファイルのみを置き換えます。このリリースで同梱の Python ランタイムも更新されている場合、更新後にアプリが正常に動作しないことがあります。その場合はリリースページから手動で再インストールしてください。",
+      "error_read_only": "Akagi のインストールディレクトリに書き込めません。リリースページから手動で更新してください。",
+      "error_unsupported_platform": "お使いのプラットフォームは自動更新に対応していません。リリースページからダウンロードしてください。",
+      "error_no_matching_asset": "このリリースにはお使いのプラットフォーム用のビルドがまだありません。",
+      "error_digest_mismatch": "ダウンロードしたファイルのチェックサムがリリース情報と一致しません。再試行するか手動でダウンロードしてください。",
+      "error_generic": "更新に失敗しました: {{message}}"
+    },
+    "settings": {
+      "title": "更新",
+      "current": "現在のバージョン",
+      "check_now": "更新を確認",
+      "checking": "確認中…",
+      "up_to_date": "最新バージョンです。",
+      "last_checked": "最終確認: {{when}}",
+      "never_checked": "未確認",
+      "auto_check": "起動時に自動で更新を確認",
+      "available": "更新あり: {{version}}",
+      "skipped_label": "スキップ済みバージョン",
+      "clear_skipped": "スキップを解除",
+      "none_skipped": "なし"
+    }
   }
 }
