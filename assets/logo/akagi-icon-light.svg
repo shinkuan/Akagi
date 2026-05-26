@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+author: Sky
+https://github.com/SKYisSKYisSKY
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="223 368 286 341" width="286" height="341" version="1.1" shape-rendering="geometricPrecision">
+  <title>Akagi icon light</title>
+  <defs>
+    <style>
+      .main { fill: #1A1A1A; }
+      .inverse { fill: #FFFFFF; }
+      .accent { fill: #E63946; }
+    </style>
+  </defs>
+
+  <g id="akagi-mark">
+    <path class="inverse" d="M261 388H447C457 388 465 397 465 407V654C465 665 457 673 447 673H262C251 673 242 664 242 653V408C242 397 250 388 261 388Z"/>
+    <path class="inverse" d="M484 418C488 421 490 425 490 428V667C488 665 486 660 484 653V418Z"/>
+    <path class="main" fill-rule="evenodd" d="M266 372H447C456 372 464 375 471 382L480 391L491 400C498 407 502 416 502 426V675C502 692 489 705 471 705H279C267 705 256 701 247 692L238 684C230 676 227 667 227 657V406C227 387 247 372 266 372ZM261 388H447C457 388 465 397 465 407V654C465 665 457 673 447 673H262C251 673 242 664 242 653V408C242 397 250 388 261 388ZM484 418C488 421 490 425 490 428V667C488 665 486 660 484 653V418Z"/>
+    <path class="main" d="M352.5 426L442 633H410L352.5 504L295 633H263L352.5 426Z"/>
+    <rect class="accent" x="328" y="587" width="47" height="22" rx="5"/>
+  </g>
+</svg>

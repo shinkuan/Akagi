@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+author: Sky
+https://github.com/SKYisSKYisSKY
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="203 348 1092 381" width="1092" height="381" version="1.1" shape-rendering="geometricPrecision">
+  <title>Akagi logo light</title>
+  <defs>
+    <style>
+      .main { fill: #1A1A1A; }
+      .inverse { fill: #FFFFFF; }
+      .accent { fill: #E63946; }
+    </style>
+  </defs>
+
+  <g id="akagi-mark">
+    <path class="inverse" d="M261 388H447C457 388 465 397 465 407V654C465 665 457 673 447 673H262C251 673 242 664 242 653V408C242 397 250 388 261 388Z"/>
+    <path class="inverse" d="M484 418C488 421 490 425 490 428V667C488 665 486 660 484 653V418Z"/>
+    <path class="main" fill-rule="evenodd" d="M266 372H447C456 372 464 375 471 382L480 391L491 400C498 407 502 416 502 426V675C502 692 489 705 471 705H279C267 705 256 701 247 692L238 684C230 676 227 667 227 657V406C227 387 247 372 266 372ZM261 388H447C457 388 465 397 465 407V654C465 665 457 673 447 673H262C251 673 242 664 242 653V408C242 397 250 388 261 388ZM484 418C488 421 490 425 490 428V667C488 665 486 660 484 653V418Z"/>
+    <path class="main" d="M352.5 426L442 633H410L352.5 504L295 633H263L352.5 426Z"/>
+    <rect class="accent" x="328" y="587" width="47" height="22" rx="5"/>
+  </g>
+
+  <g id="akagi-wordmark">
+    <path class="main" fill-rule="evenodd" d="M1110 498H1214V657L1191 679H1099V654H1181L1187 649V625H1112L1087 602V520L1110 498ZM1120 522H1187V601H1120L1113 594V529L1120 522Z"/>
+    <path class="main" fill-rule="evenodd" d="M656 452H687L764 625H735L713 585H630L608 625H579L656 452ZM671.5 485L705 560H638L671.5 485Z"/>
+    <path class="main" fill-rule="evenodd" d="M938 498H1034L1057 520V625H954L930 603V571L953 548H1030V527L1025 522H938V498ZM963 572H1030V601H963L957 595V578L963 572Z"/>
+    <rect class="main" x="789" y="452" width="26" height="173"/>
+    <path class="main" d="M876 498H911L851 559L914 625H879.3L823 566V552L876 498Z"/>
+    <rect class="main" x="1244" y="498" width="27" height="127"/>
+    <path class="accent" d="M1252.5 453H1262.5A7.5 7.5 0 0 1 1270 460.5V478H1245V460.5A7.5 7.5 0 0 1 1252.5 453Z"/>
+  </g>
+</svg>
