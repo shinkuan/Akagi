@@ -26,6 +26,7 @@ const TILE_TITLE_KEYS: Record<TileId, string> = {
   'player-3':        'tile.player_3',
   'self-hand':       'tile.self_hand',
   'recommendations': 'tile.recommendations',
+  'expected-draws':  'tile.expected_draws',
   'risk-chart':      'tile.risk_chart',
   'opponents':       'tile.opponents',
   'events':          'tile.events',

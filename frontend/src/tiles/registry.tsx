@@ -2,6 +2,7 @@ import { HeaderTile } from './HeaderTile'
 import { PlayerTile } from './PlayerTile'
 import { SelfHandTile } from './SelfHandTile'
 import { RecommendationsTile } from './RecommendationsTile'
+import { ExpectedDrawsTile } from './ExpectedDrawsTile'
 import { RiskChartTile } from './RiskChartTile'
 import { OpponentsTile } from './OpponentsTile'
 import { EventsTile } from './EventsTile'
@@ -21,6 +22,7 @@ export function renderTile(id: TileId, bp: Breakpoint) {
     case 'player-3':        return <PlayerTile seat={3} bp={bp} />
     case 'self-hand':       return <SelfHandTile bp={bp} />
     case 'recommendations': return <RecommendationsTile bp={bp} />
+    case 'expected-draws':  return <ExpectedDrawsTile bp={bp} />
     case 'risk-chart':      return <RiskChartTile bp={bp} />
     case 'opponents':       return <OpponentsTile bp={bp} />
     case 'events':          return <EventsTile bp={bp} />
