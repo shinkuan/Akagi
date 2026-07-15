@@ -4,8 +4,11 @@
 //! - `page`: the [`chromiumoxide::page::Page`] handle for the tab where
 //!   Majsoul (or another supported platform) is loaded. Written by
 //!   `src/capture/chromium/cdp.rs` when it observes a WebSocket whose URL
-//!   host matches a known platform; cleared when that WS closes. Read by
-//!   `AutoplayManager` whenever it needs to dispatch input.
+//!   host matches a known platform. The handle tracks the **tab**, not the
+//!   WebSocket: it survives the many short-lived Route-probe / lobby-
+//!   reconnect sockets Majsoul opens and closes during a game, and is
+//!   cleared only when its owning tab is removed from the page snapshot.
+//!   Read by `AutoplayManager` whenever it needs to dispatch input.
 //! - `canvas_rect`: cached `getBoundingClientRect()` of the game canvas,
 //!   used to translate 16:9-normalised coordinates into CSS pixels.
 //!   Filled lazily by the autoplay manager (one `Runtime.evaluate` per
