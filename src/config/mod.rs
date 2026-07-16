@@ -10,8 +10,8 @@ mod proxy;
 
 pub use autoplay::{AutoplayConfig, MajsoulAutoplayConfig};
 pub use autostart::{
-    AutoStartConfig, MatchCategory, PlayerCount, RankMajor, RankRule, RoomSelection, RoomTier,
-    RoundLength,
+    AutoStartConfig, MajsoulAutoStartConfig, MatchCategory, PlayerCount, RankMajor, RankRule,
+    RoomSelection, RoomTier, RoundLength,
 };
 pub use bot::{BotConfig, NativeApiConfig};
 pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig};

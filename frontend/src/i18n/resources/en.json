@@ -760,6 +760,7 @@
       "lobby_not_found": "Still can't recognise the lobby after repeated confirms; stopped. Press Start at the lobby again.",
       "matchmaking_failed": "Matchmaking kept failing; stopped.",
       "autoplay_off": "Autoplay was turned off; stopped.",
+      "platform_changed": "Platform was switched; stopped.",
       "page_unavailable": "Game page stayed unavailable; stopped.",
       "no_reference": "No lobby reference fingerprint yet; stopped. Press Start at the lobby to calibrate automatically.",
       "timeout_waiting": "Matchmaking timed out; watching for the lobby (or a late match) to continue.",
@@ -769,7 +770,8 @@
       "in_game": "A game is in progress — go back to the lobby, then press Start.",
       "autoplay_off": "Auto-start needs autoplay to play the games it queues. Enable autoplay in Settings first.",
       "no_page": "Game page not found: start the Chromium capture backend and open the game first.",
-      "already_active": "An auto-start session is already running — stop it first."
+      "already_active": "An auto-start session is already running — stop it first.",
+      "platform": "Auto-start is not supported on the current platform yet."
     }
   }
 }

@@ -100,15 +100,59 @@ pub struct RoomSelection {
     pub tier: RoomTier,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Majsoul-specific room selection, split out of [`AutoStartConfig`] the same
+/// way `[autoplay.majsoul]` is split from `[autoplay]`: the session machinery
+/// (target count, timings, vision thresholds) is platform-agnostic and stays
+/// in `[autostart]`; everything named after Majsoul's lobby lives here as
+/// `[autostart.majsoul]`. A future platform (e.g. Tenhou) adds its own
+/// sibling section instead of overloading these fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
-pub struct AutoStartConfig {
+pub struct MajsoulAutoStartConfig {
     /// Lobby category. v1: Ranked only.
     pub category: MatchCategory,
     /// Base game type / room, used when no rank rule matches.
     pub player_count: PlayerCount,
     pub round_length: RoundLength,
     pub tier: RoomTier,
+    /// Rank-based room overrides, first match wins. Empty = always use the base
+    /// tier/length above. KEEP LAST: serialized as a TOML array-of-tables, which
+    /// must follow all scalar keys in this section.
+    pub rank_rules: Vec<RankRule>,
+}
+
+impl MajsoulAutoStartConfig {
+    /// Resolve which room to queue for. Applies the first rank rule whose
+    /// `when_rank` matches the live rank for its `rank_kind`; otherwise falls
+    /// back to the base `player_count`/`round_length`/`tier`. `rank_4p` /
+    /// `rank_3p` are live `AccountLevel.id` values (`None` if not yet known).
+    pub fn resolve_room(&self, rank_4p: Option<u32>, rank_3p: Option<u32>) -> RoomSelection {
+        for rule in &self.rank_rules {
+            let id = match rule.rank_kind {
+                PlayerCount::Four => rank_4p,
+                PlayerCount::Three => rank_3p,
+            };
+            if let Some(id) = id {
+                if RankMajor::from_level_id(id) == Some(rule.when_rank) {
+                    return RoomSelection {
+                        player_count: rule.rank_kind,
+                        round_length: rule.length,
+                        tier: rule.tier,
+                    };
+                }
+            }
+        }
+        RoomSelection {
+            player_count: self.player_count,
+            round_length: self.round_length,
+            tier: self.tier,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AutoStartConfig {
     /// Stop after this many finished games. `0` = unlimited.
     pub target_game_count: u32,
     /// Count only games our bot actually sat in (has a seat), not spectated or
@@ -147,19 +191,14 @@ pub struct AutoStartConfig {
     /// was pressed
     /// while at the lobby (the first queue of a session trusts this).
     pub auto_calibrate_home: bool,
-    /// Rank-based room overrides, first match wins. Empty = always use the base
-    /// tier/length above. KEEP LAST: serialized as a TOML array-of-tables, which
-    /// must follow all scalar keys in this section.
-    pub rank_rules: Vec<RankRule>,
+    /// Majsoul room selection. KEEP LAST: serialized as a TOML sub-table
+    /// (`[autostart.majsoul]`), which must follow all scalar keys above.
+    pub majsoul: MajsoulAutoStartConfig,
 }
 
 impl Default for AutoStartConfig {
     fn default() -> Self {
         Self {
-            category: MatchCategory::Ranked,
-            player_count: PlayerCount::Four,
-            round_length: RoundLength::South,
-            tier: RoomTier::Gold,
             target_game_count: 0,
             count_only_our_seat: true,
             use_vision: true,
@@ -171,36 +210,7 @@ impl Default for AutoStartConfig {
             matchmaking_timeout_ms: 180_000,
             max_attempts: 12,
             auto_calibrate_home: true,
-            rank_rules: Vec::new(),
-        }
-    }
-}
-
-impl AutoStartConfig {
-    /// Resolve which room to queue for. Applies the first rank rule whose
-    /// `when_rank` matches the live rank for its `rank_kind`; otherwise falls
-    /// back to the base `player_count`/`round_length`/`tier`. `rank_4p` /
-    /// `rank_3p` are live `AccountLevel.id` values (`None` if not yet known).
-    pub fn resolve_room(&self, rank_4p: Option<u32>, rank_3p: Option<u32>) -> RoomSelection {
-        for rule in &self.rank_rules {
-            let id = match rule.rank_kind {
-                PlayerCount::Four => rank_4p,
-                PlayerCount::Three => rank_3p,
-            };
-            if let Some(id) = id {
-                if RankMajor::from_level_id(id) == Some(rule.when_rank) {
-                    return RoomSelection {
-                        player_count: rule.rank_kind,
-                        round_length: rule.length,
-                        tier: rule.tier,
-                    };
-                }
-            }
-        }
-        RoomSelection {
-            player_count: self.player_count,
-            round_length: self.round_length,
-            tier: self.tier,
+            majsoul: MajsoulAutoStartConfig::default(),
         }
     }
 }
@@ -212,9 +222,9 @@ mod tests {
     #[test]
     fn default_is_gold_south_four() {
         let c = AutoStartConfig::default();
-        assert_eq!(c.player_count, PlayerCount::Four);
-        assert_eq!(c.round_length, RoundLength::South);
-        assert_eq!(c.tier, RoomTier::Gold);
+        assert_eq!(c.majsoul.player_count, PlayerCount::Four);
+        assert_eq!(c.majsoul.round_length, RoundLength::South);
+        assert_eq!(c.majsoul.tier, RoomTier::Gold);
         assert_eq!(c.target_game_count, 0);
         assert!(c.count_only_our_seat);
         assert!(c.use_vision);
@@ -233,7 +243,7 @@ mod tests {
 
     #[test]
     fn resolve_room_falls_back_to_base_with_no_rules() {
-        let c = AutoStartConfig::default();
+        let c = MajsoulAutoStartConfig::default();
         let r = c.resolve_room(Some(4001), Some(2001));
         assert_eq!(r.player_count, PlayerCount::Four);
         assert_eq!(r.round_length, RoundLength::South);
@@ -242,7 +252,7 @@ mod tests {
 
     #[test]
     fn resolve_room_applies_first_matching_rule() {
-        let c = AutoStartConfig {
+        let c = MajsoulAutoStartConfig {
             rank_rules: vec![
                 RankRule {
                     rank_kind: PlayerCount::Four,
@@ -272,7 +282,7 @@ mod tests {
 
     #[test]
     fn resolve_room_ignores_nonmatching_and_unknown_rank() {
-        let c = AutoStartConfig {
+        let c = MajsoulAutoStartConfig {
             rank_rules: vec![RankRule {
                 rank_kind: PlayerCount::Four,
                 when_rank: RankMajor::Celestial,
@@ -293,24 +303,31 @@ mod tests {
     fn toml_round_trip_with_rank_rule() {
         let c = AutoStartConfig {
             target_game_count: 10,
-            rank_rules: vec![RankRule {
-                rank_kind: PlayerCount::Three,
-                when_rank: RankMajor::Expert,
-                tier: RoomTier::Silver,
-                length: RoundLength::East,
-            }],
+            majsoul: MajsoulAutoStartConfig {
+                rank_rules: vec![RankRule {
+                    rank_kind: PlayerCount::Three,
+                    when_rank: RankMajor::Expert,
+                    tier: RoomTier::Silver,
+                    length: RoundLength::East,
+                }],
+                ..Default::default()
+            },
             ..Default::default()
         };
         let body = toml::to_string_pretty(&c).unwrap();
         assert!(
-            body.contains("[[rank_rules]]"),
+            body.contains("[majsoul]"),
+            "expected the majsoul sub-table in:\n{body}"
+        );
+        assert!(
+            body.contains("[[majsoul.rank_rules]]"),
             "expected an array-of-tables in:\n{body}"
         );
         let back: AutoStartConfig = toml::from_str(&body).unwrap();
         assert_eq!(back.target_game_count, 10);
-        assert_eq!(back.rank_rules.len(), 1);
-        assert_eq!(back.rank_rules[0].rank_kind, PlayerCount::Three);
-        assert_eq!(back.rank_rules[0].when_rank, RankMajor::Expert);
-        assert_eq!(back.rank_rules[0].tier, RoomTier::Silver);
+        assert_eq!(back.majsoul.rank_rules.len(), 1);
+        assert_eq!(back.majsoul.rank_rules[0].rank_kind, PlayerCount::Three);
+        assert_eq!(back.majsoul.rank_rules[0].when_rank, RankMajor::Expert);
+        assert_eq!(back.majsoul.rank_rules[0].tier, RoomTier::Silver);
     }
 }

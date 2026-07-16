@@ -26,6 +26,15 @@ export type PlatformInfo = {
    * Chromium option and forces MITM for these.
    */
   supportsChromium: boolean
+  /**
+   * Whether auto-start sessions can drive this platform's lobby. Requires
+   * platform-side support (calibrated lobby coordinates, a visual home
+   * anchor, an `autostart.<platform>.*` vocabulary and an option group in
+   * the control bar) — only Majsoul is wired today. The GameDashboard hides
+   * the auto-start control bar for platforms without it, and the backend
+   * refuses `autostart_start` independently.
+   */
+  supportsAutostart: boolean
 }
 
 export const PLATFORMS: PlatformInfo[] = [
@@ -35,6 +44,7 @@ export const PLATFORMS: PlatformInfo[] = [
     descriptionKey: 'platform.majsoul_desc',
     defaultStartUrl: 'https://game.maj-soul.com/1/',
     supportsChromium: true,
+    supportsAutostart: true,
   },
   {
     kind: 'Tenhou',
@@ -42,6 +52,8 @@ export const PLATFORMS: PlatformInfo[] = [
     descriptionKey: 'platform.tenhou_desc',
     defaultStartUrl: 'https://tenhou.net/4/',
     supportsChromium: true,
+    // Web client exists, but no lobby coordinates / option group yet.
+    supportsAutostart: false,
   },
   {
     kind: 'RiichiCity',
@@ -50,6 +62,7 @@ export const PLATFORMS: PlatformInfo[] = [
     // Native client, no web build → MITM only.
     defaultStartUrl: '',
     supportsChromium: false,
+    supportsAutostart: false,
   },
 ]
 

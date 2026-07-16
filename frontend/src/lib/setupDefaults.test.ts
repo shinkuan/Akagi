@@ -56,10 +56,6 @@ function makeConfig(over: {
     },
     overlay: { enabled: true, top_n: 3, opacity: 1, always_on_top: true },
     autostart: {
-      category: 'Ranked',
-      player_count: 'Four',
-      round_length: 'South',
-      tier: 'Gold',
       target_game_count: 0,
       count_only_our_seat: true,
       use_vision: true,
@@ -71,7 +67,13 @@ function makeConfig(over: {
       matchmaking_timeout_ms: 180000,
       max_attempts: 12,
       auto_calibrate_home: true,
-      rank_rules: [],
+      majsoul: {
+        category: 'Ranked',
+        player_count: 'Four',
+        round_length: 'South',
+        tier: 'Gold',
+        rank_rules: [],
+      },
     },
   }
 }

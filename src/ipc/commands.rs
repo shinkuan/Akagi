@@ -203,9 +203,10 @@ pub async fn update_config(
 
 /// Manual "Start" from the GameDashboard: persist the chosen tier/mode/target,
 /// activate the autostart manager, and bump the session epoch. Refused
-/// mid-game (sessions may only start at the lobby), with autoplay off
-/// (nothing would play the queued games), without a Majsoul page handle
-/// (nothing to click), and while a session is already running.
+/// mid-game (sessions may only start at the lobby), on a non-Majsoul platform
+/// (the session drives Majsoul's lobby UI), with autoplay off (nothing would
+/// play the queued games), without a Majsoul page handle (nothing to click),
+/// and while a session is already running.
 ///
 /// Errors are returned as `autostart.error.*` i18n keys — the control bar
 /// translates them for the toast.
@@ -230,6 +231,13 @@ pub async fn autostart_start(
     if state.autostart_control.in_game.load(Ordering::SeqCst) {
         return Err("autostart.error.in_game".to_string());
     }
+    // Everything the session does is calibrated against Majsoul's lobby UI
+    // (coordinates, visual home anchor) — on any other platform the clicks
+    // would land on meaningless spots. The control bar hides itself on
+    // unsupported platforms; this is the backstop.
+    if state.config.read().await.platform.kind != crate::config::Platform::Majsoul {
+        return Err("autostart.error.platform".to_string());
+    }
     // Everything the session does is a click on the Majsoul page; without a
     // page handle (MITM backend, browser closed) it would spin uselessly.
     if state.autoplay_context.page.read().await.is_none() {
@@ -242,9 +250,9 @@ pub async fn autostart_start(
         if !cfg.autoplay.enabled {
             return Err("autostart.error.autoplay_off".to_string());
         }
-        cfg.autostart.tier = tier;
-        cfg.autostart.player_count = player_count;
-        cfg.autostart.round_length = round_length;
+        cfg.autostart.majsoul.tier = tier;
+        cfg.autostart.majsoul.player_count = player_count;
+        cfg.autostart.majsoul.round_length = round_length;
         cfg.autostart.target_game_count = target;
         cfg.clone()
     };

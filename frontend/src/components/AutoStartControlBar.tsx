@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
+import { platformInfo } from '@/lib/platforms'
 import { invoke } from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
 import type {
@@ -28,9 +29,11 @@ import type {
 // Platform seam: the bar shell (label, target count, Start/Stop, status
 // readout) is platform-agnostic and reads autostart.ui.*; the room-selection
 // controls are the Majsoul option group below, reading the
-// autostart.majsoul.* vocabulary. Supporting another platform (e.g. Tenhou)
-// means adding its own option group + autostart.<platform>.* keys and
-// rendering it here based on the configured platform.
+// autostart.majsoul.* vocabulary. The whole bar is hidden on platforms
+// without autostart support (`supportsAutostart` in lib/platforms.ts).
+// Supporting another platform (e.g. Tenhou) means flipping that flag,
+// adding its own option group + autostart.<platform>.* keys and dispatching
+// on the configured platform where MajsoulRankedOptions is rendered below.
 
 // Room tiers, rendered from the autostart.majsoul.tier.* keys (lowercased value).
 const TIERS: RoomTier[] = ['Bronze', 'Silver', 'Gold', 'Jade', 'Throne']
@@ -97,9 +100,9 @@ export function AutoStartControlBar() {
   const [status, setStatus] = useState<AutoStartStatus | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const tier = tierO ?? cfg?.autostart?.tier ?? 'Gold'
-  const pc = pcO ?? cfg?.autostart?.player_count ?? 'Four'
-  const rl = rlO ?? cfg?.autostart?.round_length ?? 'South'
+  const tier = tierO ?? cfg?.autostart?.majsoul?.tier ?? 'Gold'
+  const pc = pcO ?? cfg?.autostart?.majsoul?.player_count ?? 'Four'
+  const rl = rlO ?? cfg?.autostart?.majsoul?.round_length ?? 'South'
   const target = targetO ?? String(cfg?.autostart?.target_game_count ?? 0)
 
   // Poll the session status for the running/count readout.
@@ -187,10 +190,13 @@ export function AutoStartControlBar() {
   const inGame = status?.in_game ?? false
 
   // Autostart rides on autoplay; without it the queued games would sit
-  // unplayed, so don't offer the controls at all. Exception: while a session
-  // is still active (autoplay switched off mid-run — the backend guard stops
-  // it within a tick), keep the bar so Stop stays reachable.
-  if (!cfg?.autoplay?.enabled && !active) return null
+  // unplayed, so don't offer the controls at all. Likewise hide the bar on
+  // platforms without autostart support — the options below are Majsoul
+  // vocabulary. Exception: while a session is still active (autoplay
+  // switched off / platform switched mid-run — the backend stops it), keep
+  // the bar so Stop stays reachable.
+  const supportsAutostart = cfg ? platformInfo(cfg.platform.kind).supportsAutostart : false
+  if ((!cfg?.autoplay?.enabled || !supportsAutostart) && !active) return null
 
   return (
     <div className="flex items-center gap-2 flex-wrap px-4 py-2 border-b border-border bg-muted/10 text-sm">

@@ -414,9 +414,9 @@ impl AutoStartManager {
     }
 
     async fn on_tick(&mut self) {
-        let (cfg, autoplay_on) = {
+        let (cfg, autoplay_on, platform) = {
             let c = self.cfg.read().await;
-            (c.autostart.clone(), c.autoplay.enabled)
+            (c.autostart.clone(), c.autoplay.enabled, c.platform.kind)
         };
         // A dead event stream while "in a game" USUALLY means the client
         // disconnected or reloaded — EndGame will never arrive, so reset
@@ -481,6 +481,20 @@ impl AutoStartManager {
                 "autoplay_off",
                 None,
                 "Autoplay was turned off; stopped.".to_string(),
+            );
+            return;
+        }
+        // Everything this session does is calibrated against Majsoul's lobby
+        // UI; with the platform switched away mid-session its clicks would
+        // land on meaningless spots — or, worse, on a Majsoul tab left open
+        // in the new platform's capture browser, queueing games nothing
+        // plays. Stop instead. (autostart_start refuses to begin on other
+        // platforms; this catches a switch while running.)
+        if platform != crate::config::Platform::Majsoul {
+            self.phase = self.stop_session(
+                "platform_changed",
+                None,
+                "Platform was switched; stopped.".to_string(),
             );
             return;
         }
@@ -637,7 +651,7 @@ impl AutoStartManager {
         };
 
         if is_lobby {
-            let room = cfg.resolve_room(None, None); // rank hook: filled once rank-read lands
+            let room = cfg.majsoul.resolve_room(None, None); // rank hook: filled once rank-read lands
 
             // Capture a reference fingerprint only when this screen is
             // vouched for: the user's Start press (first attempt, and no
@@ -760,6 +774,10 @@ impl AutoStartManager {
                 Ok(()) => {
                     s.confirm_presses += 1;
                     s.nav_errors = 0;
+                    debug!(
+                        "autostart: confirm press #{} while clearing",
+                        s.confirm_presses
+                    );
                 }
                 Err(e) => {
                     s.nav_errors += 1;

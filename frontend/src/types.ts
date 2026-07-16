@@ -140,11 +140,17 @@ export type AutoStartStatus = {
   in_game: boolean
 }
 
-export type AutoStartConfig = {
+/** Majsoul room selection (`[autostart.majsoul]`) — split from the
+ *  platform-agnostic session settings the same way `autoplay.majsoul` is. */
+export type MajsoulAutoStartConfig = {
   category: MatchCategory
   player_count: PlayerCount
   round_length: RoundLength
   tier: RoomTier
+  rank_rules: RankRule[]
+}
+
+export type AutoStartConfig = {
   target_game_count: number
   count_only_our_seat: boolean
   use_vision: boolean
@@ -156,7 +162,7 @@ export type AutoStartConfig = {
   matchmaking_timeout_ms: number
   max_attempts: number
   auto_calibrate_home: boolean
-  rank_rules: RankRule[]
+  majsoul: MajsoulAutoStartConfig
 }
 
 /** Optional cloud-inference settings for the built-in native bot.
