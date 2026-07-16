@@ -183,6 +183,17 @@ impl CaptureBackend for ChromiumBackend {
             }
         };
 
+        // The capture session is over — clear the autoplay page handle (and
+        // its cached canvas rect). The page-poll reap can't cover teardown:
+        // it needs a live `browser.pages()` call, which is exactly what is
+        // gone here, and a dead-but-Some handle would defeat the downstream
+        // "no page" guards (autoplay silently skipping, `autostart_start`
+        // refusing) until the next capture session binds a fresh one.
+        if let Some(ap) = &ctx.autoplay {
+            *ap.page.write().await = None;
+            *ap.canvas_rect.write().await = None;
+        }
+
         // Best-effort shutdown of the process we spawned. After a launcher
         // handoff this only reaps the (already dead) launcher and the real
         // browser is deliberately left running: the user may be mid-match,
