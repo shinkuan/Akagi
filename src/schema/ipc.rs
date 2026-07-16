@@ -45,6 +45,17 @@ pub struct Notification {
     /// `id`, so progress updates don't pile up.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// Optional i18n keys: when set and the frontend has a translation, it
+    /// renders `t(key, args)` in the user's language instead of the raw
+    /// `title`/`body`, which remain as (English) fallbacks — and as the text
+    /// that goes into logs on the backend side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_key: Option<String>,
+    /// Interpolation values for `body_key` (i18next-style `{{name}}` slots).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<serde_json::Value>,
 }
 
 impl Notification {
@@ -68,11 +79,29 @@ impl Notification {
             body: None,
             sticky: false,
             id: None,
+            title_key: None,
+            body_key: None,
+            args: None,
         }
     }
 
     pub fn body(mut self, body: impl Into<String>) -> Self {
         self.body = Some(body.into());
+        self
+    }
+
+    pub fn title_key(mut self, key: impl Into<String>) -> Self {
+        self.title_key = Some(key.into());
+        self
+    }
+
+    pub fn body_key(mut self, key: impl Into<String>) -> Self {
+        self.body_key = Some(key.into());
+        self
+    }
+
+    pub fn args(mut self, args: serde_json::Value) -> Self {
+        self.args = Some(args);
         self
     }
 

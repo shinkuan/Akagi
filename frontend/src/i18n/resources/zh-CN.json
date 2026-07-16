@@ -711,5 +711,65 @@
   "overlay": {
     "close": "关闭悬浮窗",
     "empty": "等待 AI 建议…"
+  },
+  "autostart": {
+    "ui": {
+      "label": "自动开始",
+      "start": "开始",
+      "stop": "停止",
+      "running": "运行中 · {{done}}/{{target}} 局",
+      "running_unlimited": "运行中 · {{done}} 局",
+      "stopped": "已停止",
+      "in_game_hint": "对局中,回大厅后可开始",
+      "games_placeholder": "局数(0=不限)",
+      "start_failed": "自动开始启动失败",
+      "stop_failed": "自动开始停止失败",
+      "aria_tier": "场次",
+      "aria_players": "人数",
+      "aria_length": "场长",
+      "aria_games": "局数"
+    },
+    "majsoul": {
+      "label": "雀魂段位场",
+      "tier": {
+        "bronze": "铜",
+        "silver": "银",
+        "gold": "金",
+        "jade": "玉",
+        "throne": "王座"
+      },
+      "players": {
+        "four": "四人",
+        "three": "三人"
+      },
+      "length": {
+        "east": "东",
+        "south": "南"
+      }
+    },
+    "notify": {
+      "title": "自动开始",
+      "queueing": "开始排队。",
+      "refused_in_game": "对局进行中,无法开启;本局结束后请在大厅重新点击开始。",
+      "foreign_game": "检测到并非本会话排入的对局,已停止;本局结束后请在大厅重新点击开始。",
+      "target_reached": "已完成 {{count}} 局,停止。",
+      "target_reached_idle": "已完成 {{count}} 局,停止排队。",
+      "stream_lost_waiting": "对局事件流中断,等待识别到大厅后重新排队。",
+      "stream_lost_stopped": "对局事件流中断,无法安全确认当前界面,已停止。",
+      "vision_unusable": "无法安全确认当前界面(视觉不可用),已停止。",
+      "lobby_not_found": "多次确认后仍未识别到大厅,已停止;请在大厅重新点击开始。",
+      "matchmaking_failed": "多次尝试仍未进入对局,已停止。",
+      "autoplay_off": "自动打牌已关闭,已停止。",
+      "page_unavailable": "游戏页面长时间不可用,已停止。",
+      "no_reference": "还没有大厅参考指纹,已停止;请在大厅点击开始以自动标定。",
+      "timeout_waiting": "排队超时;识别到大厅(或迟到的开局)后将继续。",
+      "no_reference_manual": "没有大厅参考指纹,已停止;自动标定已关闭——请开启 auto_calibrate_home 或手动标定大厅参考。"
+    },
+    "error": {
+      "in_game": "对局进行中,无法开启自动开始;请回到大厅后再点击开始。",
+      "autoplay_off": "自动开始需要自动打牌代打:请先在设置中开启自动打牌。",
+      "no_page": "未找到游戏页面句柄:请先用 Chromium 采集后端启动并进入游戏。",
+      "already_active": "自动开始已在运行,请先停止。"
+    }
   }
 }

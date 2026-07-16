@@ -38,6 +38,7 @@ serde_with = "3.18.0"
 prost = "0.14"
 prost-reflect = { version = "0.16", features = ["serde"] }
 base64 = "0.22"
+png = "0.17"
 riichienv-core = "0.4.8"
 native_bot = { path = "native_bot" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "http2", "charset", "socks"] }

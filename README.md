@@ -131,6 +131,19 @@ https://github.com/user-attachments/assets/d5bc6ff6-6560-4365-ae55-660c9a522790
 
   Per-mode routing throughout: `bot.active_4p` and `bot.active_3p` swap
   automatically based on the table's player count.
+- **Auto-start (Mahjong Soul)** — in the GameDashboard control bar, pick a
+  ranked room — `場次` (銅 / 銀 / 金 / 玉 / 王座), players (4-player /
+  3-player), `場長` (東 / 南) and a target game count — then hit **Start**
+  and Akagi queues for you. Each finished match auto-confirms back to the
+  lobby and re-queues; it stops automatically once the target is reached.
+  Needs the Chromium capture backend with AutoPlay enabled, and can only
+  start from the lobby (the button is disabled mid-game). Return-to-lobby is
+  confirmed by a visual fingerprint — an NCC match on the 段位場 label — so
+  it never navigates blind and safely stops with a notification when it
+  can't confirm. Stop any time: the current match plays out first. On
+  non-16:9 windows the click targets map onto the centred 16:9 game area, so
+  letterbox bars no longer skew AutoPlay / auto-start clicks. Timings and
+  thresholds are tunable under the `[autostart]` config section.
 - **Game history** — every completed match is auto-recorded. The
   History tab shows a rank pie chart, a cumulative PT line chart with
   selectable scoring rules (Mahjong Soul tiers / Tenhou ranks /
@@ -391,6 +404,8 @@ Done in alpha.8:
 - [x] **Custom themes** (frontend theming hooks)
 - [x] **AutoPlay** (Mahjong Soul first; the bot drives the table
       autonomously)
+- [x] **Auto-start** (Mahjong Soul ranked auto-queue: queue → play →
+      confirm back to lobby → re-queue, up to a target game count)
 
 Planned:
 
@@ -464,13 +479,15 @@ through the Chromium capture backend (CDP).
 ├── src/
 │   ├── analysis/      Shanten / waits / agari-rate / risk / discard search
 │   ├── autoplay/      Bot decisions → table clicks via CDP (AutoPlay)
+│   │   └── majsoul/   lobby_coords.rs, vision.rs — auto-start return-to-lobby
+│   ├── autostart.rs   Ranked auto-queue loop (Majsoul; drives AutoPlay)
 │   ├── bot/           Bot manager: built-in bot, cloud API client, mjai subprocess runner
 │   ├── bridge/        Per-platform protocol → MjaiEvent
 │   │   ├── majsoul/   Mahjong Soul (liqi protobuf)
 │   │   ├── riichi_city/  Riichi City (MITM only)
 │   │   └── tenhou/    Tenhou (JSON tag stream, observe-only)
 │   ├── capture/       Capture backends abstraction (mitm | chromium)
-│   ├── config/        AppConfig (TOML) sections + resolution
+│   ├── config/        AppConfig (TOML) sections + resolution (incl. autostart.rs)
 │   ├── event_bus.rs   Broadcast channels between subsystems
 │   ├── game_state/    riichienv-driven mirror, snapshot, mahgen view
 │   ├── github/        GitHub Releases client (bot install, self-update)

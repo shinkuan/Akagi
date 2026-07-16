@@ -711,5 +711,65 @@
   "overlay": {
     "close": "Close overlay",
     "empty": "Waiting for the bot…"
+  },
+  "autostart": {
+    "ui": {
+      "label": "Auto-start",
+      "start": "Start",
+      "stop": "Stop",
+      "running": "Running · {{done}}/{{target}} games",
+      "running_unlimited": "Running · {{done}} games",
+      "stopped": "Stopped",
+      "in_game_hint": "In a game — Start is available back at the lobby",
+      "games_placeholder": "Games (0 = no limit)",
+      "start_failed": "Failed to start auto-start",
+      "stop_failed": "Failed to stop auto-start",
+      "aria_tier": "Tier",
+      "aria_players": "Players",
+      "aria_length": "Length",
+      "aria_games": "Target games"
+    },
+    "majsoul": {
+      "label": "Majsoul Ranked",
+      "tier": {
+        "bronze": "Bronze",
+        "silver": "Silver",
+        "gold": "Gold",
+        "jade": "Jade",
+        "throne": "Throne"
+      },
+      "players": {
+        "four": "4P",
+        "three": "3P"
+      },
+      "length": {
+        "east": "East",
+        "south": "South"
+      }
+    },
+    "notify": {
+      "title": "Auto-start",
+      "queueing": "Queueing for a match.",
+      "refused_in_game": "A game is in progress — can't start a session now. Press Start at the lobby after this game ends.",
+      "foreign_game": "Detected a game this session didn't queue; stopped. Press Start at the lobby after this game ends.",
+      "target_reached": "Finished {{count}} game(s); stopping.",
+      "target_reached_idle": "Finished {{count}} game(s); no further queueing.",
+      "stream_lost_waiting": "Game event stream lost; waiting to visually confirm the lobby before re-queueing.",
+      "stream_lost_stopped": "Game event stream lost and the current screen can't be safely confirmed; stopped.",
+      "vision_unusable": "Can't safely confirm the current screen (vision unavailable); stopped.",
+      "lobby_not_found": "Still can't recognise the lobby after repeated confirms; stopped. Press Start at the lobby again.",
+      "matchmaking_failed": "Matchmaking kept failing; stopped.",
+      "autoplay_off": "Autoplay was turned off; stopped.",
+      "page_unavailable": "Game page stayed unavailable; stopped.",
+      "no_reference": "No lobby reference fingerprint yet; stopped. Press Start at the lobby to calibrate automatically.",
+      "timeout_waiting": "Matchmaking timed out; watching for the lobby (or a late match) to continue.",
+      "no_reference_manual": "No lobby reference fingerprint; stopped. Auto-calibration is disabled — enable auto_calibrate_home or calibrate manually."
+    },
+    "error": {
+      "in_game": "A game is in progress — go back to the lobby, then press Start.",
+      "autoplay_off": "Auto-start needs autoplay to play the games it queues. Enable autoplay in Settings first.",
+      "no_page": "Game page not found: start the Chromium capture backend and open the game first.",
+      "already_active": "An auto-start session is already running — stop it first."
+    }
   }
 }

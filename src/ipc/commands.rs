@@ -194,7 +194,476 @@ pub async fn update_config(
             }
         });
     }
+
+    // Autostart sessions are controlled exclusively by the GameDashboard
+    // Start/Stop buttons (autostart_start / autostart_stop) — saving config
+    // never activates one.
     Ok(())
+}
+
+/// Manual "Start" from the GameDashboard: persist the chosen tier/mode/target,
+/// activate the autostart manager, and bump the session epoch. Refused
+/// mid-game (sessions may only start at the lobby), with autoplay off
+/// (nothing would play the queued games), without a Majsoul page handle
+/// (nothing to click), and while a session is already running.
+///
+/// Errors are returned as `autostart.error.*` i18n keys — the control bar
+/// translates them for the toast.
+#[tauri::command]
+pub async fn autostart_start(
+    tier: crate::config::RoomTier,
+    player_count: crate::config::PlayerCount,
+    round_length: crate::config::RoundLength,
+    target: u32,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    use std::sync::atomic::Ordering;
+    // One session at a time. The UI swaps Start for Stop while active, but the
+    // command must not rely on that: a second start would bump the epoch and
+    // cross into the previous session's still-pending server-side queue.
+    if state.autostart_control.active.load(Ordering::SeqCst) {
+        return Err("autostart.error.already_active".to_string());
+    }
+    // Not allowed to start mid-game. `in_game` is published by the manager from the mjai
+    // stream; the manager re-checks on its epoch sync, this is the friendly
+    // early error for the button.
+    if state.autostart_control.in_game.load(Ordering::SeqCst) {
+        return Err("autostart.error.in_game".to_string());
+    }
+    // Everything the session does is a click on the Majsoul page; without a
+    // page handle (MITM backend, browser closed) it would spin uselessly.
+    if state.autoplay_context.page.read().await.is_none() {
+        return Err("autostart.error.no_page".to_string());
+    }
+    let snapshot = {
+        let mut cfg = state.config.write().await;
+        // Autostart only queues games — autoplay plays them. Refuse to start
+        // a session that would leave every queued game sitting unplayed.
+        if !cfg.autoplay.enabled {
+            return Err("autostart.error.autoplay_off".to_string());
+        }
+        cfg.autostart.tier = tier;
+        cfg.autostart.player_count = player_count;
+        cfg.autostart.round_length = round_length;
+        cfg.autostart.target_game_count = target;
+        cfg.clone()
+    };
+    persist_config(&snapshot, &state.config_path).map_err(|e| e.to_string())?;
+    // Epoch before active: the manager gates all acting on `active`, so by the
+    // time it can observe `active == true` the new epoch is already visible —
+    // an event landing right here can't run new-session logic on stale state.
+    state
+        .autostart_control
+        .games_done
+        .store(0, Ordering::SeqCst);
+    state.autostart_control.epoch.fetch_add(1, Ordering::SeqCst);
+    state.autostart_control.active.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+/// Manual "Stop": deactivate the autostart manager (finishes the current game
+/// but does not queue another). Pure runtime flag — nothing to persist.
+#[tauri::command]
+pub async fn autostart_stop(state: State<'_, AppState>) -> CmdResult<()> {
+    state
+        .autostart_control
+        .active
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
+/// Snapshot of the autostart session for the GameDashboard control tile.
+/// `in_game` lets the UI grey out Start while a game is running (Stop stays
+/// available at any time).
+#[derive(serde::Serialize)]
+pub struct AutoStartStatus {
+    pub active: bool,
+    pub games_done: u32,
+    pub target: u32,
+    pub in_game: bool,
+}
+
+#[tauri::command]
+pub async fn autostart_status(state: State<'_, AppState>) -> CmdResult<AutoStartStatus> {
+    use std::sync::atomic::Ordering;
+    let target = state.config.read().await.autostart.target_game_count;
+    Ok(AutoStartStatus {
+        active: state.autostart_control.active.load(Ordering::SeqCst),
+        games_done: state.autostart_control.games_done.load(Ordering::SeqCst),
+        target,
+        in_game: state.autostart_control.in_game.load(Ordering::SeqCst),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Lobby coordinate calibration (dev tool for the auto-start feature).
+//
+// Majsoul renders into a single Laya `<canvas>` with no queryable DOM, so
+// every clickable target (in-game *and* lobby) is addressed by a hand-
+// calibrated 16:9-normalised coordinate (see `autoplay/majsoul/coords.rs`
+// and, for the lobby, `autoplay/majsoul/lobby_coords.rs` — measured with
+// these tools). This command group lets a human (re-)measure and verify
+// lobby coordinates on a live client:
+//   - `lobby_calibration_overlay` injects an on-page HUD that shows the
+//     normalised coord under the cursor and records Alt+clicks.
+//   - `lobby_test_click` / `lobby_test_scroll` / `lobby_test_drag` replay
+//     the exact autoplay input paths to verify a coordinate/gesture.
+//   - `lobby_probe_state` / `lobby_screenshot` help discover screen signals.
+//   - `lobby_calibrate_home` / `lobby_check_home` manage the visual lobby
+//     reference the auto-start return-to-lobby check compares against.
+// All require the Chromium capture backend (the MITM backend never
+// populates `autoplay_context.page`). The Settings-page card that drives
+// them is commented out (dev tool); the commands stay registered so it can
+// be re-enabled without a rebuild matrix.
+// ---------------------------------------------------------------------------
+
+/// Injected once per page. Uses the SAME first-`<canvas>` + 16:9 convention
+/// as `autoplay::cdp_input::evaluate_canvas_rect` / `CanvasRect::pixel`, so
+/// captured coordinates drop straight into the coordinate tables. Passive
+/// (never `preventDefault`s) and `pointer-events:none`, so it can't disturb
+/// normal play. Only single quotes inside — keeps the Rust raw string safe.
+const LOBBY_CALIB_INSTALL_JS: &str = r#"(()=>{
+  const C = window.__akagiCalib = window.__akagiCalib || {};
+  if (C.installed) return 'already-on';
+  const canvas = document.getElementsByTagName('canvas')[0];
+  if (!canvas) return 'no-canvas';
+  C.points = C.points || [];
+  C.wheelN = C.wheelN || 0;
+  C.ptrN = C.ptrN || 0;
+  const hud = document.createElement('div');
+  hud.id = 'akagi_calib_hud';
+  hud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483647;background:rgba(0,0,0,.82);color:#37ff8b;font:12px/1.5 ui-monospace,monospace;padding:8px 10px;border-radius:8px;white-space:pre;pointer-events:none;max-width:380px;box-shadow:0 2px 10px rgba(0,0,0,.45)';
+  document.body.appendChild(hud);
+  C.hud = hud;
+  const fmt = (n)=> n.toFixed(3);
+  const toNorm = (ev)=>{ const r = canvas.getBoundingClientRect(); return [ (ev.clientX-r.x)/r.width*16, (ev.clientY-r.y)/r.height*9 ]; };
+  const render = (head)=>{
+    const tail = C.points.slice(-8).map((p)=> '  (' + fmt(p[0]) + ', ' + fmt(p[1]) + '),').join('\n');
+    hud.textContent = 'AKAGI calib\n' + head + '\nAlt+RClick=record  Alt+Shift+RClick=clear  ' + C.points.length + ' pts\nevents: wheel×' + C.wheelN + '  pointer×' + C.ptrN + '\n' + tail;
+  };
+  C.onMove = (ev)=>{ const p = toNorm(ev); render('x=' + fmt(p[0]) + '  y=' + fmt(p[1])); };
+  C.record = (ev)=>{
+    if (!ev.altKey) return;
+    if (ev.shiftKey){ C.points = []; render('cleared'); return; }
+    const p = toNorm(ev);
+    C.points.push([ +p[0].toFixed(3), +p[1].toFixed(3) ]);
+    const text = C.points.map((q)=> '(' + fmt(q[0]) + ', ' + fmt(q[1]) + '),').join('\n');
+    try { navigator.clipboard.writeText(text); } catch(e){}
+    if (window.console) console.log('[AKAGI-CALIB]\n' + text);
+    render('recorded (' + fmt(p[0]) + ', ' + fmt(p[1]) + ') and copied to clipboard');
+  };
+  // Record on Alt+RIGHT-click so it never triggers the game's left-click
+  // (Alt+Left on a button would just enter it). Suppress the browser menu.
+  C.onCtx = (ev)=>{ if (ev.altKey){ ev.preventDefault(); ev.stopPropagation(); C.record(ev); } };
+  // Keep Alt+Left as a fallback for empty areas (may still click the game).
+  C.onClick = (ev)=>{ C.record(ev); };
+  C.onWheel = (ev)=>{ C.wheelN++; render('got wheel deltaY=' + (ev.deltaY|0)); };
+  C.onPtr = ()=>{ C.ptrN++; render('got pointerdown'); };
+  window.addEventListener('mousemove', C.onMove, true);
+  window.addEventListener('click', C.onClick, true);
+  window.addEventListener('contextmenu', C.onCtx, true);
+  window.addEventListener('wheel', C.onWheel, true);
+  window.addEventListener('pointerdown', C.onPtr, true);
+  C.installed = true;
+  render('move the cursor over a button to read its coordinate');
+  return 'on';
+})()"#;
+
+/// Tears down the overlay but keeps `C.points` so a re-open resumes the
+/// same capture list.
+const LOBBY_CALIB_TEARDOWN_JS: &str = r#"(()=>{
+  const C = window.__akagiCalib;
+  if (!C || !C.installed) return 'already-off';
+  window.removeEventListener('mousemove', C.onMove, true);
+  window.removeEventListener('click', C.onClick, true);
+  if (C.onCtx) window.removeEventListener('contextmenu', C.onCtx, true);
+  if (C.onWheel) window.removeEventListener('wheel', C.onWheel, true);
+  if (C.onPtr) window.removeEventListener('pointerdown', C.onPtr, true);
+  if (C.hud && C.hud.remove) C.hud.remove();
+  C.installed = false;
+  return 'off';
+})()"#;
+
+/// Discovery probe: dumps Majsoul's live in-page JS state so we can find a
+/// field that identifies the current screen (lobby sub-panel vs in-game),
+/// which the WS protocol does NOT expose. Read-only; enumerates candidate
+/// Laya/Majsoul globals + heuristics + game-ish `window` keys. Single quotes
+/// only (safe inside the Rust raw string). Wrapped in try/catch so it never
+/// throws.
+const LOBBY_PROBE_JS: &str = r#"(()=>{
+  try {
+    const w = window;
+    const cand = ['GameMgr','view','uiscript','app','cfg','mgr','Laya','game','NetAgent','desktop','uires','moduleManager'];
+    const present = {};
+    for (const k of cand) { try { present[k] = typeof w[k]; } catch(e){ present[k] = 'err'; } }
+    let inGame = false;
+    try { inGame = !!(w.view && w.view.DesktopMgr && w.view.DesktopMgr.Inst); } catch(e){}
+    let netOpen = null;
+    try { if (w.app && w.app.NetAgent) netOpen = !!w.app.NetAgent._connected; } catch(e){}
+    let laya = null;
+    try { if (w.Laya && w.Laya.stage) laya = { numChildren: w.Laya.stage.numChildren, w: w.Laya.stage.width, h: w.Laya.stage.height }; } catch(e){}
+    let keys = [];
+    try { keys = Object.keys(w).filter((k)=> /^(UI_|GameMgr|view|uiscript|app|cfg|mgr|Laya|NetAgent|desktop|game|module)/.test(k)).slice(0,80); } catch(e){}
+    const canvas = document.getElementsByTagName('canvas')[0];
+    const rect = canvas ? canvas.getBoundingClientRect() : null;
+    return JSON.stringify({
+      href: location.href,
+      title: document.title,
+      present: present,
+      inGame: inGame,
+      netOpen: netOpen,
+      laya: laya,
+      canvas: rect ? { x: rect.x, y: rect.y, w: rect.width, h: rect.height } : null,
+      keys: keys
+    }, null, 1);
+  } catch(e) { return 'probe-error: ' + (e && e.message ? e.message : e); }
+})()"#;
+
+/// Clone the live Majsoul page handle, or a friendly error if the Chromium
+/// backend isn't running / hasn't attached to the game tab yet.
+async fn autoplay_page(state: &AppState) -> CmdResult<chromiumoxide::page::Page> {
+    state
+        .autoplay_context
+        .page
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| {
+            "Majsoul page handle not found: start with the Chromium capture backend and enter Majsoul first".to_string()
+        })
+}
+
+/// Toggle the lobby calibration overlay on the live Majsoul canvas.
+#[tauri::command]
+pub async fn lobby_calibration_overlay(on: bool, state: State<'_, AppState>) -> CmdResult<String> {
+    let page = autoplay_page(&state).await?;
+    let expr = if on {
+        LOBBY_CALIB_INSTALL_JS
+    } else {
+        LOBBY_CALIB_TEARDOWN_JS
+    };
+    let result = page
+        .evaluate(expr)
+        .await
+        .map_err(|e| format!("failed to inject overlay: {e}"))?;
+    let status = result
+        .value()
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(status)
+}
+
+/// Click a single 16:9-normalised coordinate on the Majsoul canvas — used
+/// to verify a coordinate lands on the intended lobby button. Reuses the
+/// exact autoplay click path (`CanvasRect::pixel` + `dispatch_click`).
+#[tauri::command]
+pub async fn lobby_test_click(
+    x_norm: f64,
+    y_norm: f64,
+    state: State<'_, AppState>,
+) -> CmdResult<String> {
+    if !x_norm.is_finite() || !y_norm.is_finite() {
+        return Err("coordinates must be finite numbers".to_string());
+    }
+    let page = autoplay_page(&state).await?;
+    let rect = crate::autoplay::cdp_input::evaluate_canvas_rect(&page)
+        .await
+        .map_err(|e| format!("failed to read canvas size: {e}"))?;
+    let (px, py) = rect.pixel(x_norm, y_norm);
+    if !rect.contains(px, py) {
+        return Err(format!(
+            "coordinate ({x_norm:.3}, {y_norm:.3}) is outside the canvas bounds {rect:?}"
+        ));
+    }
+    crate::autoplay::cdp_input::dispatch_click(&page, px, py, 150, 50)
+        .await
+        .map_err(|e| format!("click failed: {e}"))?;
+    Ok(format!(
+        "clicked norm=({x_norm:.3}, {y_norm:.3}) → px=({px:.1}, {py:.1})"
+    ))
+}
+
+/// Probe the live Majsoul page's in-JS state (see `LOBBY_PROBE_JS`). Returns
+/// a JSON string for the frontend to display — a discovery tool for finding a
+/// reliable "current screen" signal.
+#[tauri::command]
+pub async fn lobby_probe_state(state: State<'_, AppState>) -> CmdResult<String> {
+    let page = autoplay_page(&state).await?;
+    let result = page
+        .evaluate(LOBBY_PROBE_JS)
+        .await
+        .map_err(|e| format!("probe failed: {e}"))?;
+    Ok(result
+        .value()
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string())
+}
+
+// The lobby-home reference sidecar path is owned by `crate::autostart`
+// (`autostart::lobby_home_ref_path`): the manager reads/writes it and these
+// calibration commands must never drift to a different file name.
+use crate::autostart::lobby_home_ref_path;
+
+/// Capture the Ranked-region fingerprint NOW (call this while sitting on the
+/// lobby home) and save it as the reference the auto-continue loop compares
+/// against to know when it's back at the lobby.
+#[tauri::command]
+pub async fn lobby_calibrate_home(state: State<'_, AppState>) -> CmdResult<String> {
+    use crate::autoplay::majsoul::{lobby_coords, vision};
+    let page = autoplay_page(&state).await?;
+    let rect = crate::autoplay::cdp_input::evaluate_canvas_rect(&page)
+        .await
+        .map_err(|e| format!("failed to read canvas size: {e}"))?;
+    let (x, y, w, h) = lobby_coords::HOME_ANCHOR;
+    let fp = vision::region_fingerprint(&page, &rect, x, y, w, h)
+        .await
+        .map_err(|e| format!("failed to capture fingerprint: {e}"))?;
+    let path = lobby_home_ref_path(&state.config_path);
+    std::fs::write(&path, &fp).map_err(|e| format!("failed to save reference: {e}"))?;
+    Ok(format!(
+        "saved lobby reference fingerprint ({} bytes): {}",
+        fp.len(),
+        path.display()
+    ))
+}
+
+/// Capture the region fingerprint now and report its distance to the saved
+/// lobby-home reference — lets the user verify the check works and tune the
+/// threshold. Compare on a few different screens (lobby vs result) to pick a
+/// threshold cleanly between them.
+#[tauri::command]
+pub async fn lobby_check_home(state: State<'_, AppState>) -> CmdResult<String> {
+    use crate::autoplay::majsoul::{lobby_coords, vision};
+    let page = autoplay_page(&state).await?;
+    let rect = crate::autoplay::cdp_input::evaluate_canvas_rect(&page)
+        .await
+        .map_err(|e| format!("failed to read canvas size: {e}"))?;
+    let (x, y, w, h) = lobby_coords::HOME_ANCHOR;
+    let fp = vision::region_fingerprint(&page, &rect, x, y, w, h)
+        .await
+        .map_err(|e| format!("failed to capture fingerprint: {e}"))?;
+    let path = lobby_home_ref_path(&state.config_path);
+    let reference = std::fs::read(&path)
+        .map_err(|_| {
+            "lobby reference not calibrated yet: click \"Calibrate lobby reference\" on the lobby home".to_string()
+        })?;
+    let sim = vision::ncc_similarity(&fp, &reference);
+    // Judge with the SAME threshold the manager uses (configurable), so this
+    // tool's verdict always matches runtime behaviour.
+    let threshold = state.config.read().await.autostart.home_ncc_threshold;
+    Ok(format!(
+        "similarity NCC={sim:.3} threshold={threshold:.2} → {}",
+        if sim >= threshold {
+            "verdict: at lobby (match)"
+        } else {
+            "verdict: not at lobby"
+        }
+    ))
+}
+
+/// Capture the current Majsoul page as a PNG (written to the OS temp dir,
+/// path returned). Foundation for the visual "which screen am I on?" check
+/// the auto-continue path needs — the WS/JS probes can't distinguish the
+/// post-game result screens from the lobby home, but a screenshot can.
+#[tauri::command]
+pub async fn lobby_screenshot(state: State<'_, AppState>) -> CmdResult<String> {
+    use chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat;
+    use chromiumoxide::page::ScreenshotParams;
+    let page = autoplay_page(&state).await?;
+    let params = ScreenshotParams::builder()
+        .format(CaptureScreenshotFormat::Png)
+        .build();
+    let bytes = page
+        .screenshot(params)
+        .await
+        .map_err(|e| format!("screenshot failed: {e}"))?;
+    let path = std::env::temp_dir().join("akagi_lobby_shot.png");
+    std::fs::write(&path, &bytes).map_err(|e| format!("failed to write screenshot: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Scroll the wheel at a 16:9-normalised coordinate `repeat` times — used to
+/// test/scroll a lobby list (e.g. friend-room / contest lists) toward the
+/// bottom. `delta_y > 0` scrolls down. `repeat` is clamped to 1..=200 so a
+/// "scroll to bottom" is just a large repeat.
+#[tauri::command]
+pub async fn lobby_test_scroll(
+    x_norm: f64,
+    y_norm: f64,
+    delta_y: f64,
+    repeat: u32,
+    state: State<'_, AppState>,
+) -> CmdResult<String> {
+    if !x_norm.is_finite() || !y_norm.is_finite() || !delta_y.is_finite() {
+        return Err("parameters must be finite numbers".to_string());
+    }
+    let page = autoplay_page(&state).await?;
+    let rect = crate::autoplay::cdp_input::evaluate_canvas_rect(&page)
+        .await
+        .map_err(|e| format!("failed to read canvas size: {e}"))?;
+    let (px, py) = rect.pixel(x_norm, y_norm);
+    if !rect.contains(px, py) {
+        return Err(format!(
+            "coordinate ({x_norm:.3}, {y_norm:.3}) is outside the canvas bounds {rect:?}"
+        ));
+    }
+    let ticks = repeat.clamp(1, 200);
+    for _ in 0..ticks {
+        crate::autoplay::cdp_input::dispatch_scroll(&page, px, py, delta_y)
+            .await
+            .map_err(|e| format!("scroll failed: {e}"))?;
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+    }
+    Ok(format!(
+        "scrolled at norm=({x_norm:.3}, {y_norm:.3}) {ticks} times (delta_y={delta_y})"
+    ))
+}
+
+/// Drag from one 16:9-normalised point to another with the left button held,
+/// `repeat` times — the robust fallback for Laya lists that ignore the wheel.
+/// To scroll a list toward the bottom, drag from a lower point up to a higher
+/// point (y1 > y2) and repeat.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn lobby_test_drag(
+    x1_norm: f64,
+    y1_norm: f64,
+    x2_norm: f64,
+    y2_norm: f64,
+    steps: u32,
+    hold_ms: u32,
+    repeat: u32,
+    state: State<'_, AppState>,
+) -> CmdResult<String> {
+    for v in [x1_norm, y1_norm, x2_norm, y2_norm] {
+        if !v.is_finite() {
+            return Err("coordinates must be finite numbers".to_string());
+        }
+    }
+    let page = autoplay_page(&state).await?;
+    let rect = crate::autoplay::cdp_input::evaluate_canvas_rect(&page)
+        .await
+        .map_err(|e| format!("failed to read canvas size: {e}"))?;
+    let (x1, y1) = rect.pixel(x1_norm, y1_norm);
+    let (x2, y2) = rect.pixel(x2_norm, y2_norm);
+    if !rect.contains(x1, y1) || !rect.contains(x2, y2) {
+        return Err(format!(
+            "drag endpoint is outside the canvas bounds {rect:?}"
+        ));
+    }
+    let times = repeat.clamp(1, 100);
+    let steps = steps.clamp(1, 200);
+    for _ in 0..times {
+        crate::autoplay::cdp_input::dispatch_drag(&page, x1, y1, x2, y2, steps, hold_ms)
+            .await
+            .map_err(|e| format!("drag failed: {e}"))?;
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+    }
+    Ok(format!(
+        "dragged ({x1_norm:.3},{y1_norm:.3})→({x2_norm:.3},{y2_norm:.3}) ×{times}"
+    ))
 }
 
 /// Flip `overlay.enabled` and apply it, without going through the Settings
@@ -1549,6 +2018,17 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::native_api_order_result,
             $crate::ipc::commands::native_api_create_subscription,
             $crate::ipc::commands::native_api_subscription_result,
+            $crate::ipc::commands::lobby_calibration_overlay,
+            $crate::ipc::commands::lobby_test_click,
+            $crate::ipc::commands::lobby_test_scroll,
+            $crate::ipc::commands::lobby_test_drag,
+            $crate::ipc::commands::lobby_probe_state,
+            $crate::ipc::commands::lobby_screenshot,
+            $crate::ipc::commands::lobby_calibrate_home,
+            $crate::ipc::commands::lobby_check_home,
+            $crate::ipc::commands::autostart_start,
+            $crate::ipc::commands::autostart_stop,
+            $crate::ipc::commands::autostart_status,
         ]
     };
 }

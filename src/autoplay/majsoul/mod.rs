@@ -11,6 +11,8 @@
 //!   (`autoplay_majsoul.py`, the main action handler).
 
 pub mod coords;
+pub mod lobby_coords;
+pub mod vision;
 
 use crate::autoplay::platform::{ActionContext, PlanResult, PlatformAutoplay, ReachState, Step};
 use crate::bridge::majsoul::tile::compare_pai;

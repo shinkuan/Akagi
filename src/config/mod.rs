@@ -1,4 +1,5 @@
 mod autoplay;
+mod autostart;
 mod bot;
 mod capture;
 mod general;
@@ -8,6 +9,10 @@ mod platform;
 mod proxy;
 
 pub use autoplay::{AutoplayConfig, MajsoulAutoplayConfig};
+pub use autostart::{
+    AutoStartConfig, MatchCategory, PlayerCount, RankMajor, RankRule, RoomSelection, RoomTier,
+    RoundLength,
+};
 pub use bot::{BotConfig, NativeApiConfig};
 pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig};
 pub use general::GeneralConfig;
@@ -29,6 +34,7 @@ pub struct AppConfig {
     pub bot: BotConfig,
     pub capture: CaptureConfig,
     pub autoplay: AutoplayConfig,
+    pub autostart: AutoStartConfig,
     pub overlay: OverlayConfig,
 }
 

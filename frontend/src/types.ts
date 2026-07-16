@@ -68,6 +68,13 @@ export type Notification = {
   body?: string
   sticky: boolean
   id?: string
+  /** i18n key for the title. When present and known to the frontend i18n,
+   *  render `t(title_key, args)`; otherwise fall back to `title`. */
+  title_key?: string
+  /** i18n key for the body. Same fallback semantics as `title_key` → `body`. */
+  body_key?: string
+  /** Interpolation values for `title_key` / `body_key` (e.g. `{ count }`). */
+  args?: Record<string, unknown>
 }
 
 export type CaptureMode = 'mitm' | 'chromium'
@@ -109,6 +116,47 @@ export type MajsoulAutoplayConfig = {
 export type AutoplayConfig = {
   enabled: boolean
   majsoul: MajsoulAutoplayConfig
+}
+
+// ---------- Auto-start / auto-continue (mirrors crate::config::autostart) ----------
+export type MatchCategory = 'Ranked'
+export type PlayerCount = 'Four' | 'Three'
+export type RoundLength = 'East' | 'South'
+export type RoomTier = 'Bronze' | 'Silver' | 'Gold' | 'Jade' | 'Throne'
+export type RankMajor = 'Novice' | 'Adept' | 'Expert' | 'Master' | 'Saint' | 'Celestial'
+
+export type RankRule = {
+  rank_kind: PlayerCount
+  when_rank: RankMajor
+  tier: RoomTier
+  length: RoundLength
+}
+
+/** Live status of the auto-start session. Mirrors ipc `AutoStartStatus`. */
+export type AutoStartStatus = {
+  active: boolean
+  games_done: number
+  target: number
+  in_game: boolean
+}
+
+export type AutoStartConfig = {
+  category: MatchCategory
+  player_count: PlayerCount
+  round_length: RoundLength
+  tier: RoomTier
+  target_game_count: number
+  count_only_our_seat: boolean
+  use_vision: boolean
+  home_ncc_threshold: number
+  settle_delay_ms: number
+  inter_click_delay_ms: number
+  confirm_interval_ms: number
+  inter_game_delay_ms: number
+  matchmaking_timeout_ms: number
+  max_attempts: number
+  auto_calibrate_home: boolean
+  rank_rules: RankRule[]
 }
 
 /** Optional cloud-inference settings for the built-in native bot.
@@ -156,6 +204,7 @@ export type AppConfig = {
   }
   capture: CaptureConfig
   autoplay: AutoplayConfig
+  autostart: AutoStartConfig
   overlay: OverlayConfig
 }
 

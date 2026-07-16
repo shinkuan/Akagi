@@ -711,5 +711,65 @@
   "overlay": {
     "close": "關閉懸浮視窗",
     "empty": "等待 AI 建議…"
+  },
+  "autostart": {
+    "ui": {
+      "label": "自動開始",
+      "start": "開始",
+      "stop": "停止",
+      "running": "執行中 · {{done}}/{{target}} 局",
+      "running_unlimited": "執行中 · {{done}} 局",
+      "stopped": "已停止",
+      "in_game_hint": "對局中,回大廳後可開始",
+      "games_placeholder": "局數(0=不限)",
+      "start_failed": "自動開始啟動失敗",
+      "stop_failed": "自動開始停止失敗",
+      "aria_tier": "場次",
+      "aria_players": "人數",
+      "aria_length": "場長",
+      "aria_games": "局數"
+    },
+    "majsoul": {
+      "label": "雀魂段位場",
+      "tier": {
+        "bronze": "銅",
+        "silver": "銀",
+        "gold": "金",
+        "jade": "玉",
+        "throne": "王座"
+      },
+      "players": {
+        "four": "四人",
+        "three": "三人"
+      },
+      "length": {
+        "east": "東",
+        "south": "南"
+      }
+    },
+    "notify": {
+      "title": "自動開始",
+      "queueing": "開始排隊。",
+      "refused_in_game": "對局進行中,無法開啟;本局結束後請在大廳重新點擊開始。",
+      "foreign_game": "偵測到並非本工作階段排入的對局,已停止;本局結束後請在大廳重新點擊開始。",
+      "target_reached": "已完成 {{count}} 局,停止。",
+      "target_reached_idle": "已完成 {{count}} 局,停止排隊。",
+      "stream_lost_waiting": "對局事件流中斷,等待辨識到大廳後重新排隊。",
+      "stream_lost_stopped": "對局事件流中斷,無法安全確認目前畫面,已停止。",
+      "vision_unusable": "無法安全確認目前畫面(視覺不可用),已停止。",
+      "lobby_not_found": "多次確認後仍未辨識到大廳,已停止;請在大廳重新點擊開始。",
+      "matchmaking_failed": "多次嘗試仍未進入對局,已停止。",
+      "autoplay_off": "自動打牌已關閉,已停止。",
+      "page_unavailable": "遊戲頁面長時間無法使用,已停止。",
+      "no_reference": "尚未有大廳參考指紋,已停止;請在大廳點擊開始以自動校準。",
+      "timeout_waiting": "排隊逾時;辨識到大廳(或遲到的開局)後將繼續。",
+      "no_reference_manual": "沒有大廳參考指紋,已停止;自動校準已關閉——請開啟 auto_calibrate_home 或手動校準大廳參考。"
+    },
+    "error": {
+      "in_game": "對局進行中,無法開啟自動開始;請回到大廳後再點擊開始。",
+      "autoplay_off": "自動開始需要自動打牌代打:請先在設定中開啟自動打牌。",
+      "no_page": "找不到遊戲頁面控制代碼:請先以 Chromium 擷取後端啟動並進入遊戲。",
+      "already_active": "自動開始已在執行,請先停止。"
+    }
   }
 }

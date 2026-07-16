@@ -123,6 +123,15 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
   两者皆可按模式切换：`bot.active_4p` 与 `bot.active_3p`
   会按牌桌人数自动启用。
+- **自动开始（雀魂）** — 在对战页（GameDashboard）控制条选择段位场的
+  场次（铜 / 银 / 金 / 玉 / 王座）、人数（四人 / 三人）、场长（東 / 南）
+  与目标局数，再点 **开始**，Akagi 就会替你自动排队。每局结束后自动确认
+  回大厅并再次排队，打满目标局数即自动停止。需要 Chromium 抓包 backend
+  且开启自动打牌（AutoPlay），且只能在大厅启动（对局中按钮会置灰）。
+  回大厅用视觉指纹确认 —— 对段位場标签做 NCC 匹配 —— 因此永不盲导航，
+  无法确认时会安全停止并通知。随时可停：当前对局会先打完。非 16:9 窗口下
+  点击坐标会映射到居中的 16:9 游戏区，黑边不再造成自动打牌 / 自动开始的
+  点击偏移。时序与阈值可在 `[autostart]` 配置节调整。
 - **对局历史** — 每场结束的对局会自动记录。历史标签页显示
   名次饼图、可选计分规则的累计 PT 折线图（雀魂段位 /
   天凤段位 / 自定义 uma），以及详细统计（和牌率、放铳率、
@@ -364,6 +373,8 @@ alpha.8 已完成：
 - [x] Chromium 抓包模式（无需信任 CA）
 - [x] **自定义主题**（前端 theming hook）
 - [x] **AutoPlay**（先支持雀魂；由 bot 自主控制牌桌）
+- [x] **自动开始**（雀魂段位场自动排队：排队 → 打牌 → 确认回大厅 →
+      再次排队，直到目标局数）
 
 计划中：
 
@@ -438,13 +449,15 @@ Chromium 抓包 backend（CDP）点击牌桌。
 ├── src/
 │   ├── analysis/      向听 / 听牌 / 和牌率 / 风险 / 切牌搜索
 │   ├── autoplay/      bot 决策 → 通过 CDP 点击牌桌（AutoPlay）
+│   │   └── majsoul/   lobby_coords.rs、vision.rs —— 自动开始回大厅检测
+│   ├── autostart.rs   段位场自动排队循环（雀魂；驱动 AutoPlay）
 │   ├── bot/           Bot manager：内置 bot、云端 API client、mjai 子进程执行器
 │   ├── bridge/        各平台协议 → MjaiEvent
 │   │   ├── majsoul/   雀魂（liqi protobuf）
 │   │   ├── riichi_city/  Riichi City（仅 MITM）
 │   │   └── tenhou/    天凤（JSON tag stream，仅观战）
 │   ├── capture/       抓包 backend 抽象（mitm | chromium）
-│   ├── config/        AppConfig（TOML）分节与解析
+│   ├── config/        AppConfig（TOML）分节与解析（含 autostart.rs）
 │   ├── event_bus.rs   子系统间的 broadcast channel
 │   ├── game_state/    riichienv 驱动的镜像、snapshot、mahgen view
 │   ├── github/        GitHub Releases client（bot 安装、自我更新）

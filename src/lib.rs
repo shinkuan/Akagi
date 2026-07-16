@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod autoplay;
+pub mod autostart;
 pub mod bot;
 pub mod bridge;
 pub mod capture;
@@ -291,6 +292,31 @@ pub fn run() {
                         .await
                         {
                             error!("Autoplay manager failed: {e:#}");
+                        }
+                    });
+                }
+
+                // Autostart manager runs unconditionally but starts idle; only
+                // Start on the GameDashboard activates a session (shared control).
+                {
+                    let cfg_for_as = state.config.clone();
+                    let ctx_for_as = state.autoplay_context.clone();
+                    let mjai_for_as = mjai_bus.clone();
+                    let notify_for_as = notify_bus.clone();
+                    let cfg_path_for_as = state.config_path.clone();
+                    let control_for_as = state.autostart_control.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = autostart::run_autostart_manager(
+                            cfg_for_as,
+                            ctx_for_as,
+                            mjai_for_as,
+                            notify_for_as,
+                            cfg_path_for_as,
+                            control_for_as,
+                        )
+                        .await
+                        {
+                            error!("Autostart manager failed: {e:#}");
                         }
                     });
                 }

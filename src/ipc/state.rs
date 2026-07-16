@@ -17,6 +17,7 @@
 
 use crate::analysis::runner::AnalysisCache;
 use crate::autoplay::AutoplayContext;
+use crate::autostart::AutoStartControl;
 use crate::bot::PythonRuntime;
 use crate::config::AppConfig;
 use crate::event_bus::{
@@ -117,6 +118,9 @@ pub struct AppState {
     /// process. Used by `update_config` to start the manager on a
     /// runtime false→true flip of `autoplay.enabled` without re-spawning.
     pub autoplay_manager_started: Arc<AtomicBool>,
+    /// Runtime control for the autostart manager (manual Start/Stop from the
+    /// GameDashboard, session epoch, and games-done for the UI).
+    pub autostart_control: Arc<AutoStartControl>,
     /// Serialises in-app update operations. `check_for_update` and
     /// `apply_update` both `try_lock()` it so the user mashing buttons
     /// can't race two HTTP fetches or — worse — two binary swaps.
@@ -164,6 +168,7 @@ impl AppState {
             bot_manager_started: Arc::new(AtomicBool::new(false)),
             autoplay_context: Arc::new(AutoplayContext::new()),
             autoplay_manager_started: Arc::new(AtomicBool::new(false)),
+            autostart_control: Arc::new(AutoStartControl::default()),
             updater_lock: Arc::new(Mutex::new(())),
         }
     }

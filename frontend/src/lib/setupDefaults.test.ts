@@ -55,6 +55,24 @@ function makeConfig(over: {
       },
     },
     overlay: { enabled: true, top_n: 3, opacity: 1, always_on_top: true },
+    autostart: {
+      category: 'Ranked',
+      player_count: 'Four',
+      round_length: 'South',
+      tier: 'Gold',
+      target_game_count: 0,
+      count_only_our_seat: true,
+      use_vision: true,
+      home_ncc_threshold: 0.65,
+      settle_delay_ms: 8000,
+      inter_click_delay_ms: 700,
+      confirm_interval_ms: 2500,
+      inter_game_delay_ms: 3000,
+      matchmaking_timeout_ms: 180000,
+      max_attempts: 12,
+      auto_calibrate_home: true,
+      rank_rules: [],
+    },
   }
 }
 

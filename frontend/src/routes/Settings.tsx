@@ -25,6 +25,9 @@ import {
 } from '@/components/ui/dialog'
 import { HAS_TAURI, invoke } from '@/lib/tauri'
 import { openExternal } from '@/lib/external'
+// Lobby coordinate calibration tool (dev-only). Uncomment to restore it when
+// coordinates need re-calibrating.
+// import { LobbyCalibrationCard } from '@/components/LobbyCalibration'
 import { useSidebar } from '@/hooks/useSidebar'
 import { useCaptureStore } from '@/stores/captureStore'
 import { useConfigStore } from '@/stores/configStore'
@@ -276,6 +279,12 @@ export function Settings() {
       </Card>
 
       <AutoplayCard draft={draft} setDraft={setDraft} />
+
+      {/* Auto-start's tier/game-count pickers live in the control bar on the
+          GameDashboard and only kick in when Start is pressed — Settings no
+          longer offers an enable toggle. */}
+
+      {/* <LobbyCalibrationCard /> */}
 
       <UpdatesCard />
 

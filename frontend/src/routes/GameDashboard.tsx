@@ -27,6 +27,7 @@ import {
 } from '@/tiles/defaults'
 import { renderTile } from '@/tiles/registry'
 import { AddTileMenu } from '@/components/AddTileMenu'
+import { AutoStartControlBar } from '@/components/AutoStartControlBar'
 import { DashboardOnboardingDialog } from '@/components/DashboardOnboardingDialog'
 import { OverlayToggle } from '@/components/OverlayToggle'
 
@@ -110,6 +111,8 @@ export function GameDashboard() {
           </Button>
         </div>
       </div>
+
+      <AutoStartControlBar />
 
       <DashboardOnboardingDialog open={helpOpen} onOpenChange={handleHelpOpenChange} />
 

@@ -35,6 +35,7 @@ dependencies = [
  "hyper-rustls",
  "native_bot",
  "opener",
+ "png",
  "prost",
  "prost-build",
  "prost-reflect",
