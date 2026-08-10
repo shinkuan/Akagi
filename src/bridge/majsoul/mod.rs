@@ -125,6 +125,11 @@ pub struct MajsoulBridge {
     /// next action is `ActionHule` — a ron on the declaration tile voids
     /// the riichi.
     pending_reach_accepted: Option<Actor>,
+    /// Dealer-opening guard for our first discard. Mahjong Soul reports the
+    /// opening discard as tedashi even when the synthesized 14th tile is cut;
+    /// strict full-stream replay requires tsumogiri in the no-spare-copy case.
+    dealer_opening_draw: Option<String>,
+    dealer_opening_rack_has_copy: bool,
     /// 3 (sanma) or 4 (yonma). Resolved from `seat_list.len()` on the
     /// `authGame` response. Defaults to 4 so per-flow code that runs before
     /// auth (none today, but be defensive) sees a sane value.
@@ -158,6 +163,8 @@ impl MajsoulBridge {
             deferred_dora: None,
             last_revealed_tile_actor: None,
             pending_reach_accepted: None,
+            dealer_opening_draw: None,
+            dealer_opening_rack_has_copy: false,
             num_players: 4,
             time_budget: None,
             replaying: false,
@@ -510,6 +517,10 @@ impl MajsoulBridge {
         } else {
             UNKNOWN_TILE.into()
         };
+        if actor == self_seat && self.dealer_opening_draw.is_some() {
+            self.dealer_opening_draw = None;
+            self.dealer_opening_rack_has_copy = false;
+        }
 
         let new_marker = self.consume_new_dora(data)?;
         let timing = self.dora_timing.take();
@@ -583,10 +594,20 @@ impl MajsoulBridge {
             bail!("ActionDiscardTile.tile is empty");
         }
         let pai = ms_to_mjai(tile_raw)?.to_string();
-        let tsumogiri = data
+        let mut tsumogiri = data
             .get("moqie")
             .and_then(JsonValue::as_bool)
             .unwrap_or(false);
+        if Some(actor) == self.seat {
+            if !tsumogiri
+                && self.dealer_opening_draw.as_deref() == Some(pai.as_str())
+                && !self.dealer_opening_rack_has_copy
+            {
+                tsumogiri = true;
+            }
+            self.dealer_opening_draw = None;
+            self.dealer_opening_rack_has_copy = false;
+        }
         let is_riichi = data
             .get("is_liqi")
             .and_then(JsonValue::as_bool)
@@ -983,6 +1004,8 @@ impl MajsoulBridge {
                 if oya == seat {
                     bail!("dealer must receive 14 tiles, got 13");
                 }
+                self.dealer_opening_draw = None;
+                self.dealer_opening_rack_has_copy = false;
                 MjaiEvent::Tsumo {
                     actor: oya,
                     pai: UNKNOWN_TILE.into(),
@@ -997,6 +1020,8 @@ impl MajsoulBridge {
                 let mut my_row: Vec<String> = my_tiles[..TEHAI_SIZE].to_vec();
                 my_row.sort_by(|a, b| compare_pai(a, b));
                 let tsumo_pai = my_tiles[TEHAI_SIZE].clone();
+                self.dealer_opening_rack_has_copy = my_row.iter().any(|tile| tile == &tsumo_pai);
+                self.dealer_opening_draw = Some(tsumo_pai.clone());
                 fill_seat_row(&mut tehais, seat, my_row)?;
                 MjaiEvent::Tsumo {
                     actor: seat,
@@ -3652,5 +3677,136 @@ mod tests {
             payload: json!({ "result": {} }),
         });
         assert!(slot.read().unwrap().is_none());
+    }
+
+    /// Regression (FlyAPI `state_replay_invalid`): we are the dealer and cut
+    /// the opening draw's value at the first turn while the 13-tile rack holds
+    /// no other copy. Mahjong Soul reports `moqie=false` for every opening
+    /// discard, which would produce the impossible sequence
+    /// `tsumo 1s` → `dahai 1s tsumogiri=false`. The emitted dahai must be
+    /// rewritten to tsumogiri so the transcript survives strict replay.
+    #[test]
+    fn dealer_opening_discard_of_uncopied_draw_is_rewritten_to_tsumogiri() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(0);
+        // Rack without 1s ("2z"→S, "3z"→W, "5z"→P, "6z"→F... see tile.rs);
+        // the 14th tile (opening draw) is 1s.
+        let msg = new_round_msg(json!({
+            "doras": ["4s"],
+            "scores": [25000, 25000, 25000, 25000],
+            "tiles": [
+                "5m","6m","8m","1p","2p","4p","5p","7p","2z","2z","3z","5z","1z",
+                "1s"
+            ],
+        }));
+        let events = bridge.dispatch(&msg);
+        assert!(matches!(&events[1], MjaiEvent::Tsumo { actor: 0, pai } if pai == "1s"));
+
+        let msg = action_msg(
+            ACTION_DISCARD_TILE,
+            json!({ "seat": 0, "tile": "1s", "moqie": false }),
+        );
+        match &bridge.dispatch(&msg)[0] {
+            MjaiEvent::Dahai {
+                actor,
+                pai,
+                tsumogiri,
+                ..
+            } => {
+                assert_eq!(*actor, 0);
+                assert_eq!(pai, "1s");
+                assert!(
+                    *tsumogiri,
+                    "cutting the uncopied opening draw must become tsumogiri"
+                );
+            }
+            other => panic!("expected Dahai, got {other:?}"),
+        }
+
+        // The guard is single-shot: a later discard passes moqie through.
+        let msg = action_msg(
+            ACTION_DISCARD_TILE,
+            json!({ "seat": 0, "tile": "5m", "moqie": false }),
+        );
+        match &bridge.dispatch(&msg)[0] {
+            MjaiEvent::Dahai { tsumogiri, .. } => assert!(!*tsumogiri),
+            other => panic!("expected Dahai, got {other:?}"),
+        }
+    }
+
+    /// The rewrite must NOT fire when the rack holds another copy of the drawn
+    /// value — that opening discard is legitimately tedashi.
+    #[test]
+    fn dealer_opening_discard_with_rack_copy_stays_tedashi() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(0);
+        // 1s appears twice in the dealt 13; the opening draw is a third 1s.
+        let msg = new_round_msg(json!({
+            "doras": ["4s"],
+            "scores": [25000, 25000, 25000, 25000],
+            "tiles": [
+                "1s","1s","6m","8m","1p","2p","4p","5p","7p","2z","3z","5z","1z",
+                "1s"
+            ],
+        }));
+        bridge.dispatch(&msg);
+
+        let msg = action_msg(
+            ACTION_DISCARD_TILE,
+            json!({ "seat": 0, "tile": "1s", "moqie": false }),
+        );
+        match &bridge.dispatch(&msg)[0] {
+            MjaiEvent::Dahai { tsumogiri, .. } => {
+                assert!(!*tsumogiri, "a spare rack copy keeps the discard tedashi")
+            }
+            other => panic!("expected Dahai, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dealer_opening_guard_is_cleared_by_a_later_self_draw() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(0);
+        bridge.dealer_opening_draw = Some("1s".into());
+        bridge.dealer_opening_rack_has_copy = false;
+
+        bridge
+            .build_tsumo(&json!({ "seat": 0, "tile": "2s" }))
+            .unwrap();
+        assert!(bridge.dealer_opening_draw.is_none());
+
+        let events = bridge
+            .build_dahai(&json!({ "seat": 0, "tile": "1s", "moqie": false }))
+            .unwrap();
+        assert!(matches!(
+            events.last(),
+            Some(MjaiEvent::Dahai {
+                tsumogiri: false,
+                ..
+            })
+        ));
+    }
+
+    /// Non-dealer kyokus leave moqie untouched even when the same pattern
+    /// appears later in the hand.
+    #[test]
+    fn non_dealer_discard_moqie_is_never_rewritten() {
+        let mut bridge = MajsoulBridge::new(None, None);
+        bridge.seat = Some(2);
+        let msg = new_round_msg(json!({
+            "doras": ["4s"],
+            "scores": [25000, 25000, 25000, 25000],
+            "tiles": ["7p","3p","3s","1s","2z","2m","8m","6p","7m","5m","0s","6s","7z"],
+        }));
+        bridge.dispatch(&msg);
+
+        let msg = action_msg(
+            ACTION_DISCARD_TILE,
+            json!({ "seat": 2, "tile": "1s", "moqie": false }),
+        );
+        match &bridge.dispatch(&msg)[0] {
+            MjaiEvent::Dahai { tsumogiri, .. } => assert!(!*tsumogiri),
+            other => panic!("expected Dahai, got {other:?}"),
+        }
     }
 }

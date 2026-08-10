@@ -146,10 +146,15 @@ export type AutoplayConfig = {
  *  Mirrors `crate::config::NativeApiConfig`. */
 export type NativeApiConfig = {
   enabled: boolean
+  provider: 'original' | 'flya'
   base_url: string
   key: string
   model_4p: string
   model_3p: string
+  flya_base_url: string
+  flya_key: string
+  flya_model_4p: string
+  flya_model_3p: string
   /** Whether `proxy` is applied. Off ⇒ direct even if `proxy` holds a value. */
   proxy_enabled: boolean
   /** Proxy for all inference-server traffic: http://, https://, socks5:// or

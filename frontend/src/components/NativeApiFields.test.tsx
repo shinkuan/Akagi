@@ -36,10 +36,15 @@ const FULL_KEY = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6'
 
 const base = (patch: Partial<NativeApiConfig> = {}): NativeApiConfig => ({
   enabled: false,
+  provider: 'original',
   base_url: 'https://mjapi.example.test',
   key: '',
   model_4p: '',
   model_3p: '',
+  flya_base_url: 'https://api.nashout.com',
+  flya_key: '',
+  flya_model_4p: '',
+  flya_model_3p: '',
   proxy_enabled: false,
   proxy: '',
   ...patch,
@@ -81,6 +86,7 @@ describe('NativeApiFields — entering a key', () => {
     expect(latest().model_4p).toBe('mortal-4p')
     expect(latest().model_3p).toBe('mortal-3p')
     expect(invoke).toHaveBeenCalledWith('native_api_models', {
+      provider: 'original',
       baseUrl: 'https://mjapi.example.test',
       proxy: '',
       key: FULL_KEY,

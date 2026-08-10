@@ -214,6 +214,7 @@ export const usePurchaseStore = create<PurchaseStore>((set, get) => {
   const fillExpiry = async (gen: number, key: string) => {
     try {
       const st = await invoke<KeyStatus>('native_api_key_status', {
+        provider: 'original',
         baseUrl: get().baseUrl,
         proxy: get().proxy,
         key,

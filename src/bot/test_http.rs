@@ -11,6 +11,7 @@
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 /// Serve one canned `(status_line, json_body)` per connection, capture each raw
 /// request, and return them all when the last response has been written.
@@ -22,11 +23,24 @@ use std::thread::JoinHandle;
 /// simulate "the server went away mid-conversation": the listener drops after
 /// the last scripted response, and the next connect is refused.
 pub fn mock_http(responses: Vec<(&'static str, String)>) -> (String, JoinHandle<Vec<String>>) {
+    mock_http_with_delays(
+        responses
+            .into_iter()
+            .map(|(status, body)| (status, body, Duration::ZERO))
+            .collect(),
+    )
+}
+
+/// Variant of [`mock_http`] that waits before each scripted response. Tests use
+/// it to prove caller-supplied request budgets are actually enforced.
+pub fn mock_http_with_delays(
+    responses: Vec<(&'static str, String, Duration)>,
+) -> (String, JoinHandle<Vec<String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let handle = std::thread::spawn(move || {
         let mut seen = Vec::new();
-        for (status_line, body) in responses {
+        for (status_line, body, delay) in responses {
             let (mut sock, _) = listener.accept().unwrap();
             let mut buf = Vec::new();
             let mut tmp = [0u8; 1024];
@@ -53,12 +67,13 @@ pub fn mock_http(responses: Vec<(&'static str, String)>) -> (String, JoinHandle<
                 }
             }
             seen.push(String::from_utf8_lossy(&buf).into_owned());
+            std::thread::sleep(delay);
             let resp = format!(
                 "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\n\
                  Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len(),
             );
-            sock.write_all(resp.as_bytes()).unwrap();
+            let _ = sock.write_all(resp.as_bytes());
         }
         seen
     });

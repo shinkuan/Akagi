@@ -39,10 +39,10 @@
 //! mid-kyoku has a complete stream to send — and shape it for the API in
 //! [`build_api_events`].
 
-use crate::bot::api::{ApiClient, Candidate};
+use crate::bot::api::{ApiClient, Candidate, FLYA_REQUEST_TIMEOUT, REACT_TIMEOUT};
 use crate::bot::runner::BotRunner;
 use crate::bot::types::BotResponse;
-use crate::config::{AppConfig, NativeApiConfig};
+use crate::config::{AppConfig, NativeApiConfig, NativeApiProvider};
 use crate::event_bus::NotifyBus;
 use crate::game_state::convert;
 use crate::schema::{MjaiEvent, Notification};
@@ -167,6 +167,7 @@ impl Breaker {
 /// was built from, so a change to any of them rebuilds it.
 struct ApiSession {
     client: ApiClient,
+    provider: NativeApiProvider,
     base_url: String,
     key: String,
     /// Proxy URL the client was built with; part of the rebuild key.
@@ -188,16 +189,19 @@ pub struct NativeBot {
     /// Accumulated even while the API is off, so enabling it mid-kyoku can
     /// upload the kyoku so far.
     stream: Vec<MjaiEvent>,
+    /// Full-match stream for FlyA's replay-based v2 protocol. Unlike the
+    /// original service's current-kyoku stream, this retains prior rounds.
+    flya_stream: Vec<MjaiEvent>,
     /// Toast channel — tells the user when cloud inference turns on/off, breaks,
     /// and recovers.
     notify_tx: NotifyBus,
     /// `Some` while cloud inference is configured (`enabled` + URL + key).
     api: Option<ApiSession>,
-    /// The (base_url, key, proxy, model) tuple that last failed client build
+    /// The (provider, base_url, key, proxy, model) tuple that last failed client build
     /// (e.g. an invalid proxy URL). Re-read every decision, so without this
     /// the same broken config would re-attempt and re-toast on every move;
     /// with it, the warning fires once until the user actually edits something.
-    api_failed: Option<(String, String, String, String)>,
+    api_failed: Option<(NativeApiProvider, String, String, String, String)>,
     breaker: Breaker,
 }
 
@@ -218,6 +222,7 @@ impl NativeBot {
             num_players,
             config,
             stream: Vec::new(),
+            flya_stream: Vec::new(),
             notify_tx,
             api: None,
             api_failed: None,
@@ -247,14 +252,18 @@ impl NativeBot {
             return;
         }
 
-        let base_url = cfg.base_url.trim();
-        let key = cfg.key.trim();
+        let base_url = cfg.selected_base_url().trim();
+        let key = cfg.selected_key().trim();
         // Collapses the on/off toggle into the effective value, so flipping
         // `proxy_enabled` alone changes this and rebuilds the client.
         let proxy = cfg.effective_proxy();
         let model = cfg.model_for(self.num_players).trim().to_string();
         let unchanged = self.api.as_ref().is_some_and(|s| {
-            s.base_url == base_url && s.key == key && s.proxy == proxy && s.model == model
+            s.provider == cfg.provider
+                && s.base_url == base_url
+                && s.key == key
+                && s.proxy == proxy
+                && s.model == model
         });
         if unchanged {
             return;
@@ -262,20 +271,19 @@ impl NativeBot {
         // This exact config already failed to build a client — stay on the
         // local model quietly instead of re-attempting (and re-toasting) on
         // every decision. Any edit to the config clears the tombstone below.
-        if self
-            .api_failed
-            .as_ref()
-            .is_some_and(|f| f.0 == base_url && f.1 == key && f.2 == proxy && f.3 == model)
-        {
+        if self.api_failed.as_ref().is_some_and(|f| {
+            f.0 == cfg.provider && f.1 == base_url && f.2 == key && f.3 == proxy && f.4 == model
+        }) {
             return;
         }
 
         let was_off = self.api.is_none();
-        match ApiClient::new(base_url, key, proxy) {
+        match ApiClient::new(cfg.provider, base_url, key, proxy) {
             Ok(client) => {
                 self.api_failed = None;
                 self.api = Some(ApiSession {
                     client,
+                    provider: cfg.provider,
                     base_url: base_url.to_string(),
                     key: key.to_string(),
                     proxy: proxy.to_string(),
@@ -307,6 +315,7 @@ impl NativeBot {
                 warn!("native API: client setup failed ({msg}); using the local model");
                 self.api = None;
                 self.api_failed = Some((
+                    cfg.provider,
                     base_url.to_string(),
                     key.to_string(),
                     proxy.to_string(),
@@ -360,6 +369,8 @@ impl NativeBot {
             MjaiEvent::StartGame { .. } => {
                 self.stream.clear();
                 self.stream.push(ev.clone());
+                self.flya_stream.clear();
+                self.flya_stream.push(ev.clone());
             }
             MjaiEvent::StartKyoku { .. } => {
                 // Keep the leading start_game (required as events[0]); drop the
@@ -374,8 +385,12 @@ impl NativeBot {
                     self.stream.push(sg);
                 }
                 self.stream.push(ev.clone());
+                self.flya_stream.push(ev.clone());
             }
-            _ => self.stream.push(ev.clone()),
+            _ => {
+                self.stream.push(ev.clone());
+                self.flya_stream.push(ev.clone());
+            }
         }
     }
 
@@ -383,7 +398,21 @@ impl NativeBot {
     /// to `local` (the local model's decision) on any error or a `null`
     /// reaction so a live game never stalls.
     async fn remote_decision(&mut self, local: &Decision) -> (MjaiEvent, Option<Value>) {
-        let events = build_api_events(&self.stream, self.seat, self.num_players);
+        let is_flya = self
+            .api
+            .as_ref()
+            .is_some_and(|session| session.client.is_flya());
+        let events = if is_flya {
+            build_flya_events(&self.flya_stream, self.seat, self.num_players)
+        } else {
+            build_api_events(&self.stream, self.seat, self.num_players)
+        };
+        let api_budget = if is_flya {
+            FLYA_REQUEST_TIMEOUT
+        } else {
+            REACT_TIMEOUT
+        };
+        let api_deadline = Instant::now() + api_budget;
         let result = match self.api.as_ref() {
             Some(s) => {
                 let model = s.model.clone();
@@ -403,7 +432,7 @@ impl NativeBot {
                 );
                 match resp.reaction {
                     Some(reaction) => match self
-                        .resolve_reaction(reaction, &resp.candidates, &title)
+                        .resolve_reaction(reaction, &resp.candidates, &title, api_deadline)
                         .await
                     {
                         Some(pair) => pair,
@@ -442,6 +471,7 @@ impl NativeBot {
         reaction: Value,
         candidates: &[Candidate],
         title: &str,
+        api_deadline: Instant,
     ) -> Option<(MjaiEvent, Option<Value>)> {
         let mut ev: MjaiEvent = serde_json::from_value(reaction).ok()?;
         set_actor(&mut ev, self.seat);
@@ -451,7 +481,7 @@ impl NativeBot {
         // now — ask the server again with the reach appended, or fall back to
         // the local model's predicted riichi discard.
         if let MjaiEvent::Reach { pai: None, .. } = &ev {
-            match self.reach_discard().await {
+            match self.reach_discard(api_deadline).await {
                 Some(discard) => {
                     ev = MjaiEvent::Reach {
                         actor: self.seat,
@@ -473,13 +503,28 @@ impl NativeBot {
     /// Resolve the post-reach discard: append the reach to the stream and
     /// re-query the server. Falls back to the local model's predicted riichi
     /// discard on any error.
-    async fn reach_discard(&mut self) -> Option<String> {
-        let mut events = build_api_events(&self.stream, self.seat, self.num_players);
+    async fn reach_discard(&mut self, api_deadline: Instant) -> Option<String> {
+        let remaining = api_deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            warn!("native API reach-discard budget exhausted; using local");
+            return self.engine.reach_discard();
+        }
+        let mut events = if self
+            .api
+            .as_ref()
+            .is_some_and(|session| session.client.is_flya())
+        {
+            build_flya_events(&self.flya_stream, self.seat, self.num_players)
+        } else {
+            build_api_events(&self.stream, self.seat, self.num_players)
+        };
         events.push(serde_json::json!({ "type": "reach", "actor": self.seat }));
         let result = {
             let s = self.api.as_ref()?;
             let model = s.model.clone();
-            s.client.react(model_arg(&model), self.seat, events).await
+            s.client
+                .react_with_timeout(model_arg(&model), self.seat, events, remaining)
+                .await
         };
         match result {
             Ok(resp) => {
@@ -562,6 +607,7 @@ impl BotRunner for NativeBot {
     async fn reset(&mut self) -> Result<()> {
         self.engine.reset();
         self.stream.clear();
+        self.flya_stream.clear();
         self.breaker.reset();
         Ok(())
     }
@@ -681,6 +727,227 @@ fn to_api_event(ev: &MjaiEvent, seat: u8, num_players: u8) -> Value {
         }
         // Everything else is public and already API-shaped.
         other => serde_json::to_value(other).unwrap_or_else(|_| json!({ "type": "none" })),
+    }
+}
+
+/// Shape the stream for FlyAPI's `flya-mahjong-events-v2` envelope.  FlyAPI
+/// uses the actual 3/4-seat width, redacts names, and hashes the canonical
+/// event fields; the older `/v3/*` service uses a different wire shape above.
+///
+/// v2 replaces the synthesized dealer-opening `tsumo`/`dahai` pair with the
+/// dedicated `dealer_opening` / `dealer_opening_dahai` events: the dealer's
+/// first draw of a kyoku becomes `dealer_opening` (real tile for our seat,
+/// "?" while hidden) and their first discard becomes `dealer_opening_dahai`,
+/// which carries no `tsumogiri` flag.  A `reach` declaration in between keeps
+/// the opening window alive; an `ankan`/`kakan`/`kita` ends it because the
+/// replacement draw is a normal `tsumo`, so the following discard stays a
+/// plain `dahai` with the bridge-computed `tsumogiri` flag.
+fn build_flya_events(stream: &[MjaiEvent], seat: u8, num_players: u8) -> Vec<Value> {
+    use serde_json::json;
+    // Dealer whose opening draw (first `tsumo` of the kyoku) is pending.
+    let mut opening_draw: Option<u8> = None;
+    // Dealer whose first discard after `dealer_opening` is pending.
+    let mut opening_dahai: Option<u8> = None;
+    let mut out = Vec::with_capacity(stream.len());
+    for event in stream {
+        match event {
+            // v2 rejects unknown event types; `None` is internal padding.
+            MjaiEvent::None => continue,
+            MjaiEvent::StartKyoku { oya, .. } => {
+                opening_draw = Some(*oya);
+                opening_dahai = None;
+            }
+            MjaiEvent::Tsumo { actor, pai } if opening_draw == Some(*actor) => {
+                opening_draw = None;
+                opening_dahai = Some(*actor);
+                out.push(json!({
+                    "type": "dealer_opening",
+                    "actor": actor,
+                    "pai": if *actor == seat { pai.clone() } else { "?".to_string() },
+                }));
+                continue;
+            }
+            MjaiEvent::Dahai { actor, pai, .. } if opening_dahai == Some(*actor) => {
+                opening_dahai = None;
+                out.push(json!({
+                    "type": "dealer_opening_dahai",
+                    "actor": actor,
+                    "pai": pai,
+                }));
+                continue;
+            }
+            MjaiEvent::Ankan { actor, .. }
+            | MjaiEvent::Kakan { actor, .. }
+            | MjaiEvent::Kita { actor, .. }
+                if opening_dahai == Some(*actor) =>
+            {
+                // A replacement draw follows, so the dealer's first discard
+                // is preceded by a normal `tsumo` and stays a plain `dahai`.
+                opening_dahai = None;
+            }
+            _ => {}
+        }
+        out.push(to_flya_event(event, seat, num_players));
+    }
+    out
+}
+
+fn to_flya_event(ev: &MjaiEvent, seat: u8, num_players: u8) -> Value {
+    use serde_json::json;
+    let seats = if num_players == 3 { 3 } else { 4 };
+    match ev {
+        MjaiEvent::StartGame { .. } => json!({
+            "type": "start_game",
+            "names": vec![String::new(); seats],
+            "seed": null,
+        }),
+        MjaiEvent::StartKyoku {
+            bakaze,
+            dora_marker,
+            kyoku,
+            honba,
+            kyotaku,
+            oya,
+            scores,
+            tehais,
+            ..
+        } => {
+            let mut scores = scores.iter().copied().take(seats).collect::<Vec<_>>();
+            scores.resize(seats, 0);
+            let tehais = (0..seats)
+                .map(|index| {
+                    if index as u8 == seat {
+                        tehais.get(index).cloned().unwrap_or_else(hidden_hand)
+                    } else {
+                        hidden_hand()
+                    }
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "type": "start_kyoku",
+                "bakaze": bakaze,
+                "dora_marker": dora_marker,
+                "honba": honba,
+                "kyoku": kyoku,
+                "kyotaku": kyotaku,
+                "oya": oya,
+                "scores": scores,
+                "tehais": tehais,
+            })
+        }
+        MjaiEvent::Tsumo { actor, pai } => json!({
+            "type": "tsumo",
+            "actor": actor,
+            "pai": if *actor == seat { pai.clone() } else { "?".into() },
+        }),
+        MjaiEvent::Dahai {
+            actor,
+            pai,
+            tsumogiri,
+            ..
+        } => json!({
+            "type": "dahai",
+            "actor": actor,
+            "pai": pai,
+            "tsumogiri": tsumogiri,
+        }),
+        MjaiEvent::Chi {
+            actor,
+            target,
+            pai,
+            consumed,
+        } => json!({
+            "type": "chi",
+            "actor": actor,
+            "consumed": consumed,
+            "pai": pai,
+            "target": target,
+        }),
+        MjaiEvent::Pon {
+            actor,
+            target,
+            pai,
+            consumed,
+        } => json!({
+            "type": "pon",
+            "actor": actor,
+            "consumed": consumed,
+            "pai": pai,
+            "target": target,
+        }),
+        MjaiEvent::Daiminkan {
+            actor,
+            target,
+            pai,
+            consumed,
+        } => json!({
+            "type": "daiminkan",
+            "actor": actor,
+            "consumed": consumed,
+            "pai": pai,
+            "target": target,
+        }),
+        MjaiEvent::Ankan { actor, consumed } => json!({
+            "type": "ankan",
+            "actor": actor,
+            "consumed": consumed,
+        }),
+        MjaiEvent::Kakan {
+            actor,
+            pai,
+            consumed,
+        } => json!({
+            "type": "kakan",
+            "actor": actor,
+            "consumed": consumed,
+            "pai": pai,
+        }),
+        MjaiEvent::Dora { dora_marker } => json!({
+            "type": "dora",
+            "dora_marker": dora_marker,
+        }),
+        MjaiEvent::Reach { actor, .. } => json!({ "type": "reach", "actor": actor }),
+        MjaiEvent::ReachAccepted { actor } => {
+            json!({ "type": "reach_accepted", "actor": actor })
+        }
+        MjaiEvent::Hora {
+            actor,
+            target,
+            deltas,
+            ..
+        } => {
+            let mut object = serde_json::Map::new();
+            object.insert("type".into(), json!("hora"));
+            object.insert("actor".into(), json!(actor));
+            if let Some(deltas) = deltas {
+                object.insert("deltas".into(), json!(deltas));
+            }
+            object.insert("target".into(), json!(target));
+            Value::Object(object)
+        }
+        MjaiEvent::Ryukyoku { deltas } => {
+            let mut object = serde_json::Map::new();
+            object.insert("type".into(), json!("ryukyoku"));
+            if let Some(deltas) = deltas {
+                object.insert("deltas".into(), json!(deltas));
+            }
+            Value::Object(object)
+        }
+        MjaiEvent::Kita { actor, pai } => {
+            // The v2 schema requires `pai` (const "N"); internal events may
+            // legitimately omit it, so fill the only legal value.
+            let mut object = serde_json::Map::new();
+            object.insert("type".into(), json!("kita"));
+            object.insert("actor".into(), json!(actor));
+            object.insert(
+                "pai".into(),
+                json!(pai.clone().unwrap_or_else(|| "N".to_string())),
+            );
+            Value::Object(object)
+        }
+        MjaiEvent::EndKyoku => json!({ "type": "end_kyoku" }),
+        MjaiEvent::EndGame { .. } => json!({ "type": "end_game" }),
+        MjaiEvent::None => json!({ "type": "none" }),
     }
 }
 
@@ -983,10 +1250,7 @@ mod tests {
             enabled: true,
             base_url: base_url.to_string(),
             key: key.to_string(),
-            model_4p: String::new(),
-            model_3p: String::new(),
-            proxy_enabled: false,
-            proxy: String::new(),
+            ..NativeApiConfig::default()
         }
     }
 
@@ -1996,5 +2260,293 @@ mod tests {
         // still healthy: silent.
         bot.record_health(true, None);
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn flya_event_uses_three_seat_width_and_redacts_names_and_hands() {
+        let start = MjaiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(1),
+            num_players: 3,
+        };
+        let round = MjaiEvent::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "2m".into(),
+            kyoku: 1,
+            honba: 0,
+            kyotaku: 0,
+            oya: 0,
+            scores: vec![25000, 25000, 25000],
+            tehais: vec![hand13(), hand13(), hand13()],
+            num_players: 3,
+        };
+        let events = build_flya_events(
+            &[
+                start,
+                round,
+                MjaiEvent::Tsumo {
+                    actor: 1,
+                    pai: "5p".into(),
+                },
+            ],
+            1,
+            3,
+        );
+        assert_eq!(events[0]["names"].as_array().unwrap().len(), 3);
+        assert!(events[0]["names"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|name| name == ""));
+        assert!(events[0]["seed"].is_null());
+        assert_eq!(events[1]["scores"].as_array().unwrap().len(), 3);
+        assert_eq!(events[1]["tehais"].as_array().unwrap().len(), 3);
+        assert_ne!(events[1]["tehais"][1][0], "?");
+        assert_eq!(events[1]["tehais"][0][0], "?");
+        assert_eq!(events[2]["pai"], "5p");
+    }
+
+    /// v2: the dealer's opening draw and first discard become the dedicated
+    /// `dealer_opening` / `dealer_opening_dahai` events, with no `tsumogiri`
+    /// flag on the latter; later turns keep the normal tsumo/dahai shape.
+    #[test]
+    fn flya_v2_dealer_opening_replaces_first_draw_and_discard() {
+        let round = MjaiEvent::StartKyoku {
+            bakaze: "S".into(),
+            dora_marker: "2m".into(),
+            kyoku: 4,
+            honba: 0,
+            kyotaku: 0,
+            oya: 1,
+            scores: vec![25000; 4],
+            tehais: vec![hand13(), hand13(), hand13(), hand13()],
+            num_players: 4,
+        };
+        let events = build_flya_events(
+            &[
+                round,
+                MjaiEvent::Tsumo {
+                    actor: 1,
+                    pai: "1s".into(),
+                },
+                MjaiEvent::Dahai {
+                    actor: 1,
+                    pai: "1s".into(),
+                    tsumogiri: true,
+                },
+                MjaiEvent::Tsumo {
+                    actor: 1,
+                    pai: "2s".into(),
+                },
+                MjaiEvent::Dahai {
+                    actor: 1,
+                    pai: "3s".into(),
+                    tsumogiri: false,
+                },
+            ],
+            1,
+            4,
+        );
+        assert_eq!(events.len(), 5);
+        assert_eq!(events[1]["type"], "dealer_opening");
+        assert_eq!(events[1]["actor"], 1);
+        assert_eq!(events[1]["pai"], "1s");
+        assert_eq!(events[2]["type"], "dealer_opening_dahai");
+        assert_eq!(events[2]["pai"], "1s");
+        assert!(
+            events[2].get("tsumogiri").is_none(),
+            "dealer_opening_dahai carries no tsumogiri flag"
+        );
+        assert_eq!(events[3]["type"], "tsumo");
+        assert_eq!(events[3]["pai"], "2s");
+        assert_eq!(events[4]["type"], "dahai");
+        assert_eq!(events[4]["pai"], "3s");
+        assert_eq!(events[4]["tsumogiri"], false);
+    }
+
+    /// v2: an opponent dealer's opening draw stays hidden ("?"), matching the
+    /// redaction of every other opponent draw.
+    #[test]
+    fn flya_v2_opponent_dealer_opening_hides_draw() {
+        let round = MjaiEvent::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "2m".into(),
+            kyoku: 1,
+            honba: 0,
+            kyotaku: 0,
+            oya: 0,
+            scores: vec![25000; 4],
+            tehais: vec![hand13(), hand13(), hand13(), hand13()],
+            num_players: 4,
+        };
+        let events = build_flya_events(
+            &[
+                round,
+                MjaiEvent::Tsumo {
+                    actor: 0,
+                    pai: "?".into(),
+                },
+                MjaiEvent::Dahai {
+                    actor: 0,
+                    pai: "5m".into(),
+                    tsumogiri: false,
+                },
+            ],
+            1,
+            4,
+        );
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[1]["type"], "dealer_opening");
+        assert_eq!(events[1]["pai"], "?");
+        assert_eq!(events[2]["type"], "dealer_opening_dahai");
+        assert_eq!(events[2]["pai"], "5m");
+    }
+
+    /// v2: a riichi declaration between the opening draw and the first
+    /// discard keeps the opening window alive.
+    #[test]
+    fn flya_v2_dealer_opening_reach_keeps_window() {
+        let round = MjaiEvent::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "2m".into(),
+            kyoku: 2,
+            honba: 0,
+            kyotaku: 0,
+            oya: 1,
+            scores: vec![25000; 4],
+            tehais: vec![hand13(), hand13(), hand13(), hand13()],
+            num_players: 4,
+        };
+        let events = build_flya_events(
+            &[
+                round,
+                MjaiEvent::Tsumo {
+                    actor: 1,
+                    pai: "9p".into(),
+                },
+                MjaiEvent::Reach {
+                    actor: 1,
+                    pai: None,
+                },
+                MjaiEvent::Dahai {
+                    actor: 1,
+                    pai: "9p".into(),
+                    tsumogiri: true,
+                },
+                MjaiEvent::ReachAccepted { actor: 1 },
+            ],
+            1,
+            4,
+        );
+        assert_eq!(events.len(), 5);
+        assert_eq!(events[1]["type"], "dealer_opening");
+        assert_eq!(events[2]["type"], "reach");
+        assert_eq!(events[3]["type"], "dealer_opening_dahai");
+        assert_eq!(events[4]["type"], "reach_accepted");
+    }
+
+    /// v2: an opening kan is followed by a replacement draw, so the dealer's
+    /// first discard has a preceding normal `tsumo` again and stays a plain
+    /// `dahai` with the bridge-computed `tsumogiri` flag.
+    #[test]
+    fn flya_v2_dealer_opening_kan_closes_window() {
+        let round = MjaiEvent::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "2m".into(),
+            kyoku: 3,
+            honba: 0,
+            kyotaku: 0,
+            oya: 1,
+            scores: vec![25000; 4],
+            tehais: vec![hand13(), hand13(), hand13(), hand13()],
+            num_players: 4,
+        };
+        let events = build_flya_events(
+            &[
+                round,
+                MjaiEvent::Tsumo {
+                    actor: 1,
+                    pai: "4p".into(),
+                },
+                MjaiEvent::Ankan {
+                    actor: 1,
+                    consumed: ["4p".into(), "4p".into(), "4p".into(), "4p".into()],
+                },
+                MjaiEvent::Tsumo {
+                    actor: 1,
+                    pai: "7m".into(),
+                },
+                MjaiEvent::Dahai {
+                    actor: 1,
+                    pai: "7m".into(),
+                    tsumogiri: true,
+                },
+            ],
+            1,
+            4,
+        );
+        assert_eq!(events.len(), 5);
+        assert_eq!(events[1]["type"], "dealer_opening");
+        assert_eq!(events[2]["type"], "ankan");
+        assert_eq!(events[3]["type"], "tsumo");
+        assert_eq!(events[4]["type"], "dahai");
+        assert_eq!(events[4]["tsumogiri"], true);
+    }
+
+    /// Internal `none` padding never reaches the wire: v2 rejects unknown
+    /// event types instead of ignoring them.
+    #[test]
+    fn flya_v2_filters_internal_none_events() {
+        let round = MjaiEvent::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "2m".into(),
+            kyoku: 1,
+            honba: 0,
+            kyotaku: 0,
+            oya: 0,
+            scores: vec![25000; 4],
+            tehais: vec![hand13(), hand13(), hand13(), hand13()],
+            num_players: 4,
+        };
+        let events = build_flya_events(
+            &[
+                round,
+                MjaiEvent::None,
+                MjaiEvent::Tsumo {
+                    actor: 1,
+                    pai: "5p".into(),
+                },
+            ],
+            1,
+            4,
+        );
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|event| event["type"] != "none"));
+    }
+
+    /// The v2 schema requires kita's `pai` (const "N"); internal events may
+    /// omit it, so the wire form always fills the only legal value.
+    #[test]
+    fn flya_kita_event_always_carries_pai() {
+        let with = to_flya_event(
+            &MjaiEvent::Kita {
+                actor: 2,
+                pai: Some("N".into()),
+            },
+            0,
+            3,
+        );
+        assert_eq!(with["pai"], "N");
+        let without = to_flya_event(
+            &MjaiEvent::Kita {
+                actor: 2,
+                pai: None,
+            },
+            0,
+            3,
+        );
+        assert_eq!(without["pai"], "N");
     }
 }

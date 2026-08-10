@@ -1,6 +1,44 @@
 import { invoke } from '@/lib/tauri'
 import { useConfigStore } from '@/stores/configStore'
+import { effectiveProxy } from '@/lib/proxy'
 import type { KeyStatus, NativeApiConfig } from '@/types'
+
+export type ApiProfile = Pick<NativeApiConfig, 'base_url' | 'key' | 'model_4p' | 'model_3p'>
+
+export const apiProvider = (api: NativeApiConfig) =>
+  api.provider.toLowerCase() === 'flya' ? 'flya' : 'original'
+
+export function selectedApiProfile(api: NativeApiConfig): ApiProfile {
+  return apiProvider(api) === 'flya'
+    ? {
+        base_url: api.flya_base_url,
+        key: api.flya_key,
+        model_4p: api.flya_model_4p,
+        model_3p: api.flya_model_3p,
+      }
+    : {
+        base_url: api.base_url,
+        key: api.key,
+        model_4p: api.model_4p,
+        model_3p: api.model_3p,
+      }
+}
+
+export function withSelectedApiProfile(
+  api: NativeApiConfig,
+  patch: Partial<ApiProfile>,
+): NativeApiConfig {
+  if (apiProvider(api) === 'flya') {
+    return {
+      ...api,
+      ...(patch.base_url === undefined ? {} : { flya_base_url: patch.base_url }),
+      ...(patch.key === undefined ? {} : { flya_key: patch.key }),
+      ...(patch.model_4p === undefined ? {} : { flya_model_4p: patch.model_4p }),
+      ...(patch.model_3p === undefined ? {} : { flya_model_3p: patch.model_3p }),
+    }
+  }
+  return { ...api, ...patch }
+}
 
 /**
  * Result of {@link checkApiBeforeSave}. `ok` gates whether the caller may
@@ -23,13 +61,16 @@ export type ApiSaveCheck =
  */
 export async function checkApiBeforeSave(api: NativeApiConfig): Promise<ApiSaveCheck> {
   if (!api.enabled) return { ok: true }
-  if (api.base_url.trim() === '' || api.key.trim() === '') {
+  const profile = selectedApiProfile(api)
+  if (profile.base_url.trim() === '' || profile.key.trim() === '') {
     return { ok: false, kind: 'missing' }
   }
   try {
     await invoke<KeyStatus>('native_api_key_status', {
-      baseUrl: api.base_url,
-      key: api.key,
+      provider: apiProvider(api),
+      baseUrl: profile.base_url,
+      proxy: effectiveProxy(api),
+      key: profile.key,
     })
     return { ok: true }
   } catch (e) {

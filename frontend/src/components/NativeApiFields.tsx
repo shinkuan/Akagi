@@ -19,6 +19,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -37,6 +44,12 @@ import { PurchaseDialog } from '@/components/PurchaseDialog'
 import { useConfigStore } from '@/stores/configStore'
 import { usePurchaseStore, type PurchasePhase } from '@/stores/purchaseStore'
 import { effectiveProxy, isValidProxyUrl } from '@/lib/proxy'
+import {
+  apiProvider,
+  selectedApiProfile,
+  withSelectedApiProfile,
+  type ApiProfile,
+} from '@/lib/nativeApi'
 import type { KeyStatus, ModelInfo, NativeApiConfig, RedeemResponse } from '@/types'
 
 /** Shape of a key the server issues: 32 letters and digits, nothing else. */
@@ -82,8 +95,12 @@ export function NativeApiFields({
   const purchasePhase = usePurchaseStore((s) => s.phase)
   const [err, setErr] = useState<string | null>(null)
 
+  const provider = apiProvider(value)
+  const profile = selectedApiProfile(value)
   const set = (patch: Partial<NativeApiConfig>) => onChange({ ...value, ...patch })
-  const hasUrlKey = value.base_url.trim() !== '' && value.key.trim() !== ''
+  const setProfile = (patch: Partial<ApiProfile>) =>
+    onChange(withSelectedApiProfile(value, patch))
+  const hasUrlKey = profile.base_url.trim() !== '' && profile.key.trim() !== ''
 
   // The server URL is a developer-only field: pointing a novice at a rogue
   // server is the obvious scam vector, so the input stays locked unless
@@ -105,10 +122,12 @@ export function NativeApiFields({
   }, [value])
 
   const queryModels = async (v: NativeApiConfig): Promise<ModelInfo[]> => {
+    const selected = selectedApiProfile(v)
     const list = await invoke<ModelInfo[]>('native_api_models', {
-      baseUrl: v.base_url,
+      provider: apiProvider(v),
+      baseUrl: selected.base_url,
       proxy: effectiveProxy(v),
-      key: v.key,
+      key: selected.key,
     })
     setModels(list)
     return list
@@ -127,8 +146,19 @@ export function NativeApiFields({
    * stays local, which beats a config that claims cloud inference it cannot do.
    */
   const adoptKey = async (key: string) => {
-    const next = { ...valueRef.current, key }
-    if (!KEY_PATTERN.test(key) || !next.base_url.trim() || adoptedKeyRef.current === key) {
+    const current = valueRef.current
+    const currentProvider = apiProvider(current)
+    const next = withSelectedApiProfile(current, { key })
+    const nextProfile = selectedApiProfile(next)
+    // The original service documents an exact key shape, so it can be adopted
+    // while typing. FlyA only documents the `flyat_` prefix; avoid retrying the
+    // network on every character and let Enable / Check / Fetch trigger it.
+    if (
+      currentProvider === 'flya' ||
+      !KEY_PATTERN.test(key) ||
+      !nextProfile.base_url.trim() ||
+      adoptedKeyRef.current === key
+    ) {
       onChange(next)
       return
     }
@@ -139,9 +169,12 @@ export function NativeApiFields({
     try {
       const list = await queryModels(next)
       const cur = valueRef.current
-      const filled = { ...cur, enabled: true }
-      if (!filled.model_4p) filled.model_4p = list.find((m) => m.game === '4p')?.id ?? ''
-      if (!filled.model_3p) filled.model_3p = list.find((m) => m.game === '3p')?.id ?? ''
+      const curProfile = selectedApiProfile(cur)
+      const filled = withSelectedApiProfile(cur, {
+        model_4p: curProfile.model_4p || list.find((m) => m.game === '4p')?.id || '',
+        model_3p: curProfile.model_3p || list.find((m) => m.game === '3p')?.id || '',
+      })
+      filled.enabled = true
       onChange(filled)
     } catch (e) {
       // Let the next edit try again — a rejected key is often a half-pasted one.
@@ -157,7 +190,8 @@ export function NativeApiFields({
   // for that mode. Never clobbers a model the user already chose.
   const toggleEnabled = async (on: boolean) => {
     const next = { ...value, enabled: on }
-    if (!on || !(next.base_url.trim() && next.key.trim())) {
+    const nextProfile = selectedApiProfile(next)
+    if (!on || !(nextProfile.base_url.trim() && nextProfile.key.trim())) {
       onChange(next)
       return
     }
@@ -172,11 +206,11 @@ export function NativeApiFields({
       // snapshot: the user may have typed into any field during the 1–2s fetch.
       // Fill only still-empty model slots so a model the user just chose wins.
       const cur = valueRef.current
-      const filled = { ...cur }
-      if (!filled.model_4p && first4p) filled.model_4p = first4p
-      if (!filled.model_3p && first3p) filled.model_3p = first3p
-      if (filled.model_4p !== cur.model_4p || filled.model_3p !== cur.model_3p) {
-        onChange(filled)
+      const curProfile = selectedApiProfile(cur)
+      const filled4p = curProfile.model_4p || first4p || ''
+      const filled3p = curProfile.model_3p || first3p || ''
+      if (filled4p !== curProfile.model_4p || filled3p !== curProfile.model_3p) {
+        onChange(withSelectedApiProfile(cur, { model_4p: filled4p, model_3p: filled3p }))
       }
     } catch (e) {
       setErr(String(e))
@@ -196,9 +230,10 @@ export function NativeApiFields({
     try {
       setStatus(
         await invoke<KeyStatus>('native_api_key_status', {
-          baseUrl: value.base_url,
+          provider,
+          baseUrl: profile.base_url,
           proxy: effectiveProxy(value),
-          key: value.key,
+          key: profile.key,
         }),
       )
     } catch (e) {
@@ -231,7 +266,7 @@ export function NativeApiFields({
   // Also flips `enabled` on: whoever just paid for (or redeemed) a key wants
   // it used — empty model slots are fine, the server picks its defaults.
   const adoptNewKey = async (key: string) => {
-    const nextApi = { ...value, key, enabled: true }
+    const nextApi = withSelectedApiProfile({ ...value, enabled: true }, { key })
     onChange(nextApi)
     if (onKeyMinted) {
       try {
@@ -243,7 +278,7 @@ export function NativeApiFields({
   }
 
   const health = async () => {
-    if (value.base_url.trim() === '') {
+    if (profile.base_url.trim() === '') {
       setErr(t('bots.api.need_url'))
       return
     }
@@ -251,7 +286,7 @@ export function NativeApiFields({
     setErr(null)
     try {
       const h = await invoke<{ status: string; models: string[] }>('native_api_health', {
-        baseUrl: value.base_url,
+        baseUrl: profile.base_url,
         proxy: effectiveProxy(value),
       })
       toast.success(t('bots.api.health_ok', { status: h.status }), {
@@ -268,18 +303,32 @@ export function NativeApiFields({
   // the typed proxy. The button is only reachable with a valid, enabled proxy,
   // so reaching the server proves the tunnel works end to end.
   const testProxy = async () => {
-    if (value.base_url.trim() === '') {
+    if (profile.base_url.trim() === '') {
       setErr(t('bots.api.need_url'))
       return
     }
     setTestingProxy(true)
     setErr(null)
     try {
-      const h = await invoke<{ status: string; models: string[] }>('native_api_health', {
-        baseUrl: value.base_url,
-        proxy: value.proxy.trim(),
-      })
-      toast.success(t('bots.api.proxy_ok', { status: h.status }))
+      if (provider === 'flya') {
+        if (!profile.key.trim()) {
+          setErr(t('bots.api.need_url_key'))
+          return
+        }
+        await invoke<ModelInfo[]>('native_api_models', {
+          provider,
+          baseUrl: profile.base_url,
+          proxy: value.proxy.trim(),
+          key: profile.key,
+        })
+        toast.success(t('bots.api.proxy_ok', { status: 'FlyA' }))
+      } else {
+        const h = await invoke<{ status: string; models: string[] }>('native_api_health', {
+          baseUrl: profile.base_url,
+          proxy: value.proxy.trim(),
+        })
+        toast.success(t('bots.api.proxy_ok', { status: h.status }))
+      }
     } catch (e) {
       setErr(String(e))
     } finally {
@@ -291,6 +340,29 @@ export function NativeApiFields({
     <div className="grid gap-4">
       <p className="text-sm text-muted-foreground">{t('bots.api.desc')}</p>
       <p className="text-xs text-muted-foreground -mt-2">{t('bots.api.apply_immediately')}</p>
+
+      <div className="grid gap-1.5">
+        <Label>{t('bots.api.provider')}</Label>
+        <Select
+          value={provider}
+          onValueChange={(next: 'original' | 'flya') => {
+            adoptedKeyRef.current = null
+            setModels(null)
+            setStatus(null)
+            setErr(null)
+            set({ provider: next })
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="original">{t('bots.api.provider_original')}</SelectItem>
+            <SelectItem value="flya">{t('bots.api.provider_flya')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">{t('bots.api.provider_hint')}</span>
+      </div>
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-col">
@@ -312,9 +384,9 @@ export function NativeApiFields({
           {!devMode && <Lock className="h-3 w-3 text-muted-foreground" />}
         </Label>
         <Input
-          value={value.base_url}
-          onChange={(e) => set({ base_url: e.target.value })}
-          placeholder="https://mjapi.shinkuan.me"
+          value={profile.base_url}
+          onChange={(e) => setProfile({ base_url: e.target.value })}
+          placeholder={provider === 'flya' ? 'https://api.nashout.com' : 'https://mjapi.shinkuan.me'}
           autoComplete="off"
           spellCheck={false}
           disabled={!devMode}
@@ -374,7 +446,7 @@ export function NativeApiFields({
         <div className="flex gap-2">
           <Input
             type={showKey ? 'text' : 'password'}
-            value={value.key}
+            value={profile.key}
             onChange={(e) => void adoptKey(e.target.value.trim())}
             placeholder="••••••••••••••••••••••••••••••••"
             autoComplete="off"
@@ -397,8 +469,8 @@ export function NativeApiFields({
         <div className="grid gap-1.5">
           <Label>{t('bots.api.model_4p')}</Label>
           <Input
-            value={value.model_4p}
-            onChange={(e) => set({ model_4p: e.target.value })}
+            value={profile.model_4p}
+            onChange={(e) => setProfile({ model_4p: e.target.value })}
             placeholder="4p-model"
             autoComplete="off"
             spellCheck={false}
@@ -408,8 +480,8 @@ export function NativeApiFields({
         <div className="grid gap-1.5">
           <Label>{t('bots.api.model_3p')}</Label>
           <Input
-            value={value.model_3p}
-            onChange={(e) => set({ model_3p: e.target.value })}
+            value={profile.model_3p}
+            onChange={(e) => setProfile({ model_3p: e.target.value })}
             placeholder="3p-model"
             autoComplete="off"
             spellCheck={false}
@@ -433,7 +505,9 @@ export function NativeApiFields({
                 variant="secondary"
                 className="h-7 font-mono text-xs"
                 title={m.desc}
-                onClick={() => set(m.game === '3p' ? { model_3p: m.id } : { model_4p: m.id })}
+                onClick={() =>
+                  setProfile(m.game === '3p' ? { model_3p: m.id } : { model_4p: m.id })
+                }
               >
                 {m.id}
               </Button>
@@ -469,45 +543,61 @@ export function NativeApiFields({
           <RefreshCw className={`h-4 w-4 ${loadingModels ? 'animate-spin' : ''}`} />
           {t('bots.api.fetch_models')}
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={health}
-          disabled={checkingHealth}
-          className="gap-1.5"
-        >
-          <Activity className={`h-4 w-4 ${checkingHealth ? 'animate-spin' : ''}`} />
-          {t('bots.api.health')}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setRedeemOpen(true)} className="gap-1.5">
-          <Ticket className="h-4 w-4" />
-          {t('bots.api.redeem')}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setBuyOpen(true)} className="gap-1.5">
-          <ShoppingCart className="h-4 w-4" />
-          {t('bots.api.buy')}
-        </Button>
+        {provider === 'original' && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={health}
+            disabled={checkingHealth}
+            className="gap-1.5"
+          >
+            <Activity className={`h-4 w-4 ${checkingHealth ? 'animate-spin' : ''}`} />
+            {t('bots.api.health')}
+          </Button>
+        )}
+        {provider === 'original' && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRedeemOpen(true)}
+              className="gap-1.5"
+            >
+              <Ticket className="h-4 w-4" />
+              {t('bots.api.redeem')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBuyOpen(true)}
+              className="gap-1.5"
+            >
+              <ShoppingCart className="h-4 w-4" />
+              {t('bots.api.buy')}
+            </Button>
+          </>
+        )}
       </div>
 
-      {purchasePhase !== 'idle' && !buyOpen && (
+      {provider === 'original' && purchasePhase !== 'idle' && !buyOpen && (
         <PurchaseChip phase={purchasePhase} onOpen={() => setBuyOpen(true)} />
       )}
 
-      {redeemOpen && (
+      {provider === 'original' && redeemOpen && (
         <RedeemDialog
-          baseUrl={value.base_url}
+          baseUrl={profile.base_url}
           proxy={effectiveProxy(value)}
-          currentKey={value.key}
+          currentKey={profile.key}
           onClose={() => setRedeemOpen(false)}
           onNewKey={(key) => void adoptNewKey(key)}
         />
       )}
 
-      {buyOpen && (
+      {provider === 'original' && buyOpen && (
         <PurchaseDialog
-          baseUrl={value.base_url}
+          baseUrl={profile.base_url}
           proxy={effectiveProxy(value)}
-          currentKey={value.key}
+          currentKey={profile.key}
           onClose={() => setBuyOpen(false)}
           onNewKey={(key) => void adoptNewKey(key)}
         />

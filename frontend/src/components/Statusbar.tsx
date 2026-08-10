@@ -3,6 +3,7 @@ import { useConfigStore } from '@/stores/configStore'
 import { useApiStatusStore } from '@/stores/apiStatusStore'
 import { useCaptureStore } from '@/stores/captureStore'
 import { useBotStore } from '@/stores/botStore'
+import { selectedApiProfile } from '@/lib/nativeApi'
 import {
   BOT_LABEL,
   botTone,
@@ -68,6 +69,7 @@ export function Statusbar() {
   // configured (enabled + URL + key). Config-derived so it reflects intent even
   // between games; health (degraded) comes from the live backend notifications.
   const api = config?.bot.api
+  const apiProfile = api ? selectedApiProfile(api) : null
   const nativeActive =
     config?.bot.active_4p === NATIVE_4P ||
     config?.bot.active_4p === NATIVE_3P ||
@@ -75,9 +77,10 @@ export function Statusbar() {
     config?.bot.active_3p === NATIVE_3P
   const usingApi =
     !!api &&
+    !!apiProfile &&
     api.enabled &&
-    api.base_url.trim() !== '' &&
-    api.key.trim() !== '' &&
+    apiProfile.base_url.trim() !== '' &&
+    apiProfile.key.trim() !== '' &&
     nativeActive
 
   return (

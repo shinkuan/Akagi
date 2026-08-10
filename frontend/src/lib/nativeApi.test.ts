@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { checkApiBeforeSave } from './nativeApi'
+import { apiProvider, checkApiBeforeSave } from './nativeApi'
 import type { NativeApiConfig } from '@/types'
 
 // The helper reaches the backend through `@/lib/tauri`'s `invoke`; mock it so
@@ -12,10 +12,15 @@ vi.mock('@/lib/tauri', () => ({
 
 const api = (patch: Partial<NativeApiConfig> = {}): NativeApiConfig => ({
   enabled: true,
+  provider: 'original',
   base_url: 'https://mjapi.example.test',
   key: 'sk-test-key',
   model_4p: '',
   model_3p: '',
+  flya_base_url: 'https://api.nashout.com',
+  flya_key: '',
+  flya_model_4p: '',
+  flya_model_3p: '',
   proxy_enabled: false,
   proxy: '',
   ...patch,
@@ -53,9 +58,33 @@ describe('checkApiBeforeSave', () => {
     const cfg = api()
     expect(await checkApiBeforeSave(cfg)).toEqual({ ok: true })
     expect(invoke).toHaveBeenCalledWith('native_api_key_status', {
+      provider: 'original',
       baseUrl: cfg.base_url,
+      proxy: '',
       key: cfg.key,
     })
+  })
+
+  it('checks the selected FlyA profile without overwriting the original profile', async () => {
+    invoke.mockResolvedValueOnce({ status: 'active' })
+    const cfg = api({
+      provider: 'flya',
+      flya_base_url: 'https://flya.example.test',
+      flya_key: 'flyat_test',
+    })
+    expect(await checkApiBeforeSave(cfg)).toEqual({ ok: true })
+    expect(invoke).toHaveBeenCalledWith('native_api_key_status', {
+      provider: 'flya',
+      baseUrl: 'https://flya.example.test',
+      proxy: '',
+      key: 'flyat_test',
+    })
+    expect(cfg.base_url).toBe('https://mjapi.example.test')
+    expect(cfg.key).toBe('sk-test-key')
+  })
+
+  it('normalizes a legacy mixed-case FlyA provider value', () => {
+    expect(apiProvider(api({ provider: 'FlyA' as NativeApiConfig['provider'] }))).toBe('flya')
   })
 
   it('blocks as `error` and forwards the reason when the server rejects the key', async () => {

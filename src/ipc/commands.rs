@@ -1391,11 +1391,12 @@ pub async fn native_api_redeem(
 /// Fetch a key's plan / expiry / live limits (`GET /v3/key`).
 #[tauri::command]
 pub async fn native_api_key_status(
+    provider: crate::config::NativeApiProvider,
     base_url: String,
     proxy: Option<String>,
     key: String,
 ) -> CmdResult<crate::bot::api::KeyStatus> {
-    crate::bot::api::ApiClient::new(&base_url, &key, proxy.as_deref().unwrap_or(""))
+    crate::bot::api::ApiClient::new(provider, &base_url, &key, proxy.as_deref().unwrap_or(""))
         .map_err(|e| format!("{e:#}"))?
         .key_status()
         .await
@@ -1405,11 +1406,12 @@ pub async fn native_api_key_status(
 /// List the models a key's plan may use (`GET /v3/models`).
 #[tauri::command]
 pub async fn native_api_models(
+    provider: crate::config::NativeApiProvider,
     base_url: String,
     proxy: Option<String>,
     key: String,
 ) -> CmdResult<Vec<crate::bot::api::ModelInfo>> {
-    crate::bot::api::ApiClient::new(&base_url, &key, proxy.as_deref().unwrap_or(""))
+    crate::bot::api::ApiClient::new(provider, &base_url, &key, proxy.as_deref().unwrap_or(""))
         .map_err(|e| format!("{e:#}"))?
         .models()
         .await

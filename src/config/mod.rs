@@ -11,7 +11,7 @@ mod proxy;
 pub use autoplay::{
     AutoplayConfig, DelayDistribution, DelayMode, DelayModelConfig, MajsoulAutoplayConfig,
 };
-pub use bot::{BotConfig, NativeApiConfig};
+pub use bot::{BotConfig, NativeApiConfig, NativeApiProvider};
 pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig, HttpCaptureConfig};
 pub use general::GeneralConfig;
 pub use logging::LoggingConfig;
@@ -260,6 +260,10 @@ mod tests {
         cfg.bot.api.key = "test-key-not-real".into();
         cfg.bot.api.model_4p = "4p-model".into();
         cfg.bot.api.model_3p = "3p-model".into();
+        cfg.bot.api.provider = NativeApiProvider::Flya;
+        cfg.bot.api.flya_key = "test-flya-key".into();
+        cfg.bot.api.flya_model_4p = "flya-4p-model".into();
+        cfg.bot.api.flya_model_3p = "flya-3p-model".into();
 
         let body = toml::to_string_pretty(&cfg).unwrap();
         assert!(
@@ -273,9 +277,11 @@ mod tests {
         assert_eq!(back.bot.api.key, "test-key-not-real");
         assert_eq!(back.bot.api.model_4p, "4p-model");
         assert_eq!(back.bot.api.model_3p, "3p-model");
+        assert_eq!(back.bot.api.provider, NativeApiProvider::Flya);
+        assert_eq!(back.bot.api.flya_key, "test-flya-key");
         assert!(back.bot.api.is_active());
-        assert_eq!(back.bot.api.model_for(3), "3p-model");
-        assert_eq!(back.bot.api.model_for(4), "4p-model");
+        assert_eq!(back.bot.api.model_for(3), "flya-3p-model");
+        assert_eq!(back.bot.api.model_for(4), "flya-4p-model");
     }
 
     /// A legacy config file without any `[bot.api]` section still parses, with
