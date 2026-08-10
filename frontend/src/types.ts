@@ -44,6 +44,8 @@ export type ShowItem = {
 export type ShowMeta = {
   /** Optional title; falls back to the tile's default title. */
   title?: string
+  /** Complete legal operation-button types before policy Top-N truncation. */
+  legal_ops?: string[]
   items: ShowItem[]
 }
 
@@ -389,6 +391,8 @@ export type PlayerSnapshot = {
   riichi_declaration_index: number | null
   /** 3p only: north tiles set aside via kita / nukidora. Empty in 4p. */
   kita_tiles: string[]
+  /** The just-drawn tile for the active player, when known. */
+  drawn_tile?: string | null
 }
 
 export type GameStateSnapshot = {

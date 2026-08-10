@@ -86,6 +86,9 @@ pub struct Decision {
     /// is `candidates[0].0`; the rest are the runner-up recommendations the HUD
     /// shows as a top-N card. Probabilities are a softmax over the legal set.
     pub candidates: Vec<(BotAction, f32)>,
+    /// Complete deduplicated operation-button set before the HUD's top-N
+    /// truncation. Discards are omitted; `pass` is kept beside any operation.
+    pub legal_ops: Vec<String>,
     /// Raw action logits (indexed by the mode's action space).
     pub logits: Vec<f32>,
     /// The full legal set (before the top-N cut in `candidates`) held exactly
@@ -200,52 +203,70 @@ impl Engine {
     /// legal action (not our turn / nothing to respond to).
     pub fn decide(&mut self) -> Result<Option<Decision>> {
         let seat = self.seat;
-        let (mut ranked, logits, last_discarder, drawn, reach_pai, forced) = match &mut self.backend
-        {
-            Backend::Four { state, model } => {
-                // `last_discard` is `(discarder_pid, tile)`.
-                let last_discarder = state.last_discard.map(|(pid, _tile)| pid);
-                let drawn = state.drawn_tile;
-                let (obs, legal) = obs_and_legal_4p(state, seat);
-                if legal.is_empty() {
-                    return Ok(None);
+        let (mut ranked, logits, last_discarder, drawn, reach_pai, forced, legal_ops) =
+            match &mut self.backend {
+                Backend::Four { state, model } => {
+                    // `last_discard` is `(discarder_pid, tile)`.
+                    let last_discarder = state.last_discard.map(|(pid, _tile)| pid);
+                    let drawn = state.drawn_tile;
+                    let (obs, legal) = obs_and_legal_4p(state, seat);
+                    if legal.is_empty() {
+                        return Ok(None);
+                    }
+                    // Forced ⇔ the *legal* set is a singleton — `ranked` is cut to
+                    // SHOW_TOP_N below, so its length can't be used for this.
+                    let forced = legal.len() == 1;
+                    let legal_ops = collect_legal_ops(&legal);
+                    let logits = model.forward_logits(&obs)?;
+                    let ranked = rank_by_logits(&legal, &logits, 4, SHOW_TOP_N);
+                    let Some((top, _)) = ranked.first() else {
+                        return Ok(None);
+                    };
+                    let reach_pai = if top.action_type == ActionType::Riichi {
+                        predict_reach_discard(state, model, seat, 4)
+                    } else {
+                        None
+                    };
+                    (
+                        ranked,
+                        logits,
+                        last_discarder,
+                        drawn,
+                        reach_pai,
+                        forced,
+                        legal_ops,
+                    )
                 }
-                // Forced ⇔ the *legal* set is a singleton — `ranked` is cut to
-                // SHOW_TOP_N below, so its length can't be used for this.
-                let forced = legal.len() == 1;
-                let logits = model.forward_logits(&obs)?;
-                let ranked = rank_by_logits(&legal, &logits, 4, SHOW_TOP_N);
-                let Some((top, _)) = ranked.first() else {
-                    return Ok(None);
-                };
-                let reach_pai = if top.action_type == ActionType::Riichi {
-                    predict_reach_discard(state, model, seat, 4)
-                } else {
-                    None
-                };
-                (ranked, logits, last_discarder, drawn, reach_pai, forced)
-            }
-            Backend::Three { state, model } => {
-                let last_discarder = state.last_discard.map(|(pid, _tile)| pid);
-                let drawn = state.drawn_tile;
-                let (obs, legal) = obs_and_legal_3p(state, seat);
-                if legal.is_empty() {
-                    return Ok(None);
+                Backend::Three { state, model } => {
+                    let last_discarder = state.last_discard.map(|(pid, _tile)| pid);
+                    let drawn = state.drawn_tile;
+                    let (obs, legal) = obs_and_legal_3p(state, seat);
+                    if legal.is_empty() {
+                        return Ok(None);
+                    }
+                    let forced = legal.len() == 1;
+                    let legal_ops = collect_legal_ops(&legal);
+                    let logits = model.forward_logits(&obs)?;
+                    let ranked = rank_by_logits(&legal, &logits, 3, SHOW_TOP_N);
+                    let Some((top, _)) = ranked.first() else {
+                        return Ok(None);
+                    };
+                    let reach_pai = if top.action_type == ActionType::Riichi {
+                        predict_reach_discard_3p(state, model, seat)
+                    } else {
+                        None
+                    };
+                    (
+                        ranked,
+                        logits,
+                        last_discarder,
+                        drawn,
+                        reach_pai,
+                        forced,
+                        legal_ops,
+                    )
                 }
-                let forced = legal.len() == 1;
-                let logits = model.forward_logits(&obs)?;
-                let ranked = rank_by_logits(&legal, &logits, 3, SHOW_TOP_N);
-                let Some((top, _)) = ranked.first() else {
-                    return Ok(None);
-                };
-                let reach_pai = if top.action_type == ActionType::Riichi {
-                    predict_reach_discard_3p(state, model, seat)
-                } else {
-                    None
-                };
-                (ranked, logits, last_discarder, drawn, reach_pai, forced)
-            }
-        };
+            };
 
         // An mjai `reach` must name the discard or autoplay stalls (Majsoul fuses
         // declaring and discarding into one click). If the riichi-discard
@@ -265,6 +286,7 @@ impl Engine {
         Ok(Some(Decision {
             action,
             candidates,
+            legal_ops,
             logits,
             forced,
         }))
@@ -306,6 +328,31 @@ fn build_candidates(
             (build_bot_action(a, seat, last_discarder, drawn, rp), *p)
         })
         .collect()
+}
+
+/// Operation buttons represented by the full legal set, before policy Top-N.
+fn collect_legal_ops(legal: &[Action]) -> Vec<String> {
+    let mut ops: Vec<String> = Vec::new();
+    for action in legal {
+        let op = match action.action_type {
+            ActionType::Discard if action.tile.is_none() => Some("pass"),
+            ActionType::Discard => None,
+            ActionType::Chi => Some("chi"),
+            ActionType::Pon => Some("pon"),
+            ActionType::Daiminkan | ActionType::Ankan | ActionType::Kakan => Some("kan"),
+            ActionType::Riichi => Some("reach"),
+            ActionType::Tsumo | ActionType::Ron => Some("hora"),
+            ActionType::KyushuKyuhai => Some("ryukyoku"),
+            ActionType::Kita => Some("kita"),
+            ActionType::Pass => Some("pass"),
+        };
+        if let Some(op) = op {
+            if !ops.iter().any(|existing| existing == op) {
+                ops.push(op.to_string());
+            }
+        }
+    }
+    ops
 }
 
 /// Predict the tile we'd discard on a riichi declaration, by advancing a clone
@@ -408,6 +455,19 @@ mod tests {
 
     fn act(kind: ActionType, tile: Option<u8>, consumed: Vec<u8>) -> Action {
         Action::new(kind, tile, consumed, Some(0))
+    }
+
+    #[test]
+    fn legal_ops_are_not_truncated_with_the_hud_top_n() {
+        let legal = vec![
+            act(ActionType::Pass, None, vec![]),
+            act(ActionType::Chi, Some(88), vec![76, 80]),
+            act(ActionType::Pon, Some(88), vec![89, 90]),
+            act(ActionType::Daiminkan, Some(88), vec![89, 90, 91]),
+            act(ActionType::Chi, Some(88), vec![80, 84]),
+        ];
+
+        assert_eq!(collect_legal_ops(&legal), ["pass", "chi", "pon", "kan"]);
     }
 
     // ---------- `build_bot_action` field mapping (pure) ----------

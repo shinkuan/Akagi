@@ -337,6 +337,172 @@ html.overlay-window #root {
   overflow: hidden;
 }
 
+/* ---- Maka-style tile recommendation plates ----
+ * One-line probability plate with a cat-head tab protruding from its upper
+ * right corner. Palette and proportions measured pixel-by-pixel from MAKA
+ * review screenshots: the gold variant marks the top-ranked choice and the
+ * blue variant marks the alternatives.
+ * Dimensions are supplied from the normalized 16:9 canvas in Overlay.tsx.
+ */
+.tile-hint {
+  --hint-edge: #2c5680;
+  --hint-top: #6798d6;
+  --hint-mid: #4482c4;
+  --hint-bottom: #689ad1;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  overflow: visible;
+  white-space: nowrap;
+  color: #fff;
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  background: linear-gradient(
+    180deg,
+    var(--hint-top) 0%,
+    var(--hint-mid) 12%,
+    var(--hint-mid) 88%,
+    var(--hint-bottom) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 3px;
+  text-shadow:
+    -0.5px 0 var(--hint-edge),
+     0.5px 0 var(--hint-edge),
+     0 0.5px var(--hint-edge),
+     0 1px 2px rgba(0, 0, 0, 0.42);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.32);
+  transform: translateZ(0);
+}
+
+/* Cat-head tab: two ear tips and rounded cheeks protruding above the plate's
+ * upper-right corner, matching MAKA's marker silhouette. */
+.tile-hint::before {
+  content: "";
+  position: absolute;
+  right: -1px;
+  bottom: calc(100% - 2px);
+  width: 40%;
+  height: 50%;
+  background: linear-gradient(
+    180deg,
+    var(--hint-top) 0%,
+    var(--hint-mid) 12%,
+    var(--hint-mid) 88%,
+    var(--hint-bottom) 100%
+  );
+  clip-path: polygon(
+    0 100%, 3% 58%, 14% 42%, 20% 0,
+    40% 29%, 62% 29%, 82% 0, 87% 42%,
+    98% 58%, 100% 100%
+  );
+  filter: drop-shadow(0 -1px 0 rgba(0, 0, 0, 0.18));
+  pointer-events: none;
+}
+
+/* Cat eyes: two light-blue dots on the tab, placed where MAKA draws them
+ * (lower half of the cat face). The gold variant overrides them to warm white. */
+.tile-hint::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  bottom: calc(100% - 2px);
+  width: 40%;
+  height: 50%;
+  background:
+    radial-gradient(circle at 31% 84%, #83aef0 0 7%, transparent 12%),
+    radial-gradient(circle at 61% 84%, #83aef0 0 7%, transparent 12%);
+  pointer-events: none;
+}
+
+.tile-hint--secondary {
+  --hint-edge: #2c5680;
+  --hint-top: #6798d6;
+  --hint-mid: #4482c4;
+  --hint-bottom: #689ad1;
+}
+
+.tile-hint--primary::after {
+  background:
+    radial-gradient(circle at 31% 84%, #fff1ce 0 7%, transparent 12%),
+    radial-gradient(circle at 61% 84%, #fff1ce 0 7%, transparent 12%);
+}
+
+.tile-hint--primary {
+  --hint-edge: #7a5210;
+  --hint-top: #f2d778;
+  --hint-mid: #f8d863;
+  --hint-bottom: #fad863;
+  color: #5c3f1b;
+  text-shadow:
+    -0.5px 0 rgba(255,255,255,.62),
+     0.5px 0 rgba(255,255,255,.62),
+     0 1px 1px rgba(139, 91, 17, .38);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.34),
+    0 0 8px rgba(250, 216, 99, 0.38);
+}
+
+/* Operation-button labels use the same Maka plate, centred above Majsoul's
+ * right-to-left action slots rather than aligned to a hand tile's left edge.
+ * MAKA sizes these as large banners whose silhouette follows the game's meld
+ * buttons: a large rounded banner with a cat head protruding from the top
+ * centre (matching the discard plates' tab, just bigger and centred). */
+.action-hint,
+.meld-choice-hint {
+  transform: translateX(-50%) translateZ(0);
+  border-radius: 8px;
+  letter-spacing: -0.02em;
+}
+
+/* Centred cat head protruding above the banner, same family as the discard
+ * tab but wider and sitting over the middle of the plate. */
+.action-hint::before,
+.meld-choice-hint::before {
+  left: 30%;
+  right: auto;
+  bottom: calc(100% - 2px);
+  width: 40%;
+  height: 46%;
+  background: linear-gradient(
+    180deg,
+    var(--hint-top) 0%,
+    var(--hint-mid) 12%,
+    var(--hint-mid) 88%,
+    var(--hint-bottom) 100%
+  );
+  clip-path: polygon(
+    0 100%, 6% 62%, 13% 46%, 18% 16%, 22% 8%, 27% 6%, 33% 11%,
+    43% 27%, 50% 31%, 57% 27%,
+    67% 11%, 73% 6%, 78% 8%, 82% 16%, 87% 46%, 94% 62%, 100% 100%
+  );
+  filter: drop-shadow(0 -1px 0 rgba(0, 0, 0, 0.18));
+}
+
+.action-hint::after,
+.meld-choice-hint::after {
+  left: 30%;
+  right: auto;
+  bottom: calc(100% - 2px);
+  width: 40%;
+  height: 46%;
+  background:
+    radial-gradient(circle at 33% 82%, #83aef0 0 8%, transparent 13%),
+    radial-gradient(circle at 67% 82%, #83aef0 0 8%, transparent 13%);
+}
+
+.action-hint.tile-hint--primary::after,
+.meld-choice-hint.tile-hint--primary::after {
+  background:
+    radial-gradient(circle at 33% 82%, #fff1ce 0 8%, transparent 13%),
+    radial-gradient(circle at 67% 82%, #fff1ce 0 8%, transparent 13%);
+}
+
 /* ---- react-grid-layout placeholder + handle skin ----
  * Uses var(--primary) so palette + light/dark swaps cascade automatically.
  */
