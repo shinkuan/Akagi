@@ -64,6 +64,12 @@ pub struct GameStatus {
     /// True between `cmd_enter_room` and the first `cmd_game_start`, when
     /// `start_game` is still owed.
     pub game_start: bool,
+    /// Whether the dealer rotation and our seat have been resolved. Set by
+    /// the first `cmd_game_start`, or immediately on a mid-game reconnect
+    /// (`cmd_enter_room` with `is_reconnect`, which carries the same
+    /// `initial_dealer_pos` but never delivers a `cmd_game_start` for the
+    /// running hand).
+    pub seat_resolved: bool,
 }
 
 impl Default for GameStatus {
@@ -85,6 +91,7 @@ impl Default for GameStatus {
             pending_reach: None,
             pending_dora: Vec::new(),
             game_start: false,
+            seat_resolved: false,
         }
     }
 }
