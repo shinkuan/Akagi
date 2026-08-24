@@ -176,6 +176,9 @@ impl GameTracker {
                             m.from_who = target;
                         }
                     }
+                    if let AkagiEvent::Dahai { actor, pai, .. } = ev {
+                        open_haitei_claims(s, *actor, pai);
+                    }
                     // Runs after `apply_ippatsu_patch_4p`, which has already
                     // retired every ippatsu window (a kakan is a call) — the
                     // live path checks chankan with ippatsu still up. Harmless
@@ -206,6 +209,9 @@ impl GameTracker {
                         if let Some(m) = s.players.get_mut(actor).and_then(|p| p.melds.last_mut()) {
                             m.from_who = target;
                         }
+                    }
+                    if let AkagiEvent::Dahai { actor, pai, .. } = ev {
+                        open_haitei_claims_3p(s, *actor, pai);
                     }
                     // Same ippatsu-ordering caveat as the 4p arm above.
                     if let Some((actor, pai, seat)) = &opponent_kakan {
@@ -325,6 +331,81 @@ fn meld_target(ev: &AkagiEvent) -> Option<(usize, i8)> {
         | AkagiEvent::Chi { actor, target, .. }
         | AkagiEvent::Daiminkan { actor, target, .. } => Some((*actor as usize, *target as i8)),
         _ => None,
+    }
+}
+
+/// riichienv-core 0.4.8 gates chi/pon/kan detection on
+/// `wall.drawable_count > 0`, a stricter variant than Riichi City plays:
+/// on a live 2026-08-24 capture the server offered a chi on the haitei
+/// discard (the last live-wall tile) and the claim window timed out
+/// because the engine's empty claim set made `can_act` false — the bot
+/// was never asked. Re-run the engine's own claim detection with the
+/// gate satisfied — restoring the wall immediately after, since the ron
+/// arm already ran during apply with the true haitei conditions — and
+/// splice only the chi/pon claims back in (kan at an empty live wall is
+/// left to the engine's own judgment).
+fn open_haitei_claims(s: &mut GameState, discarder: u8, pai: &str) {
+    use riichienv_core::action::{ActionType, Phase};
+    if s.wall.drawable_count != 0 || s.phase != Phase::WaitAct {
+        return;
+    }
+    let Some(tile) = riichienv_core::parser::mjai_to_tid(pai) else {
+        return;
+    };
+    s.wall.drawable_count = 1;
+    let mut claimants = Vec::new();
+    for i in 0..s.players.len() as u8 {
+        if i == discarder {
+            continue;
+        }
+        let (legals, _) = s._get_claim_actions_for_player(i, discarder, tile);
+        let calls: Vec<_> = legals
+            .into_iter()
+            .filter(|a| matches!(a.action_type, ActionType::Chi | ActionType::Pon))
+            .collect();
+        if !calls.is_empty() {
+            s.current_claims.insert(i, calls);
+            claimants.push(i);
+        }
+    }
+    s.wall.drawable_count = 0;
+    if !claimants.is_empty() {
+        s.phase = Phase::WaitResponse;
+        s.active_players = claimants;
+    }
+}
+
+/// Sanma twin of [`open_haitei_claims`]: pon (there is no chi in sanma)
+/// on the last live-wall discard, same engine gate, same live incident
+/// class.
+fn open_haitei_claims_3p(s: &mut GameState3P, discarder: u8, pai: &str) {
+    use riichienv_core::action::{ActionType, Phase};
+    if s.wall.drawable_count != 0 || s.phase != Phase::WaitAct {
+        return;
+    }
+    let Some(tile) = riichienv_core::parser::mjai_to_tid(pai) else {
+        return;
+    };
+    s.wall.drawable_count = 1;
+    let mut claimants = Vec::new();
+    for i in 0..s.players.len() as u8 {
+        if i == discarder {
+            continue;
+        }
+        let (legals, _) = s._get_claim_actions_for_player(i, discarder, tile);
+        let calls: Vec<_> = legals
+            .into_iter()
+            .filter(|a| matches!(a.action_type, ActionType::Chi | ActionType::Pon))
+            .collect();
+        if !calls.is_empty() {
+            s.current_claims.insert(i, calls);
+            claimants.push(i);
+        }
+    }
+    s.wall.drawable_count = 0;
+    if !claimants.is_empty() {
+        s.phase = Phase::WaitResponse;
+        s.active_players = claimants;
     }
 }
 
@@ -543,6 +624,49 @@ mod tests {
             pai: pai.into(),
             tsumogiri: false,
         }
+    }
+
+    /// riichienv-core gates chi/pon on a non-empty live wall; Riichi City
+    /// offers them on the haitei discard too (live 2026-08-24 capture:
+    /// the server offered a chi on the very last live-wall tile and the
+    /// window timed out because the engine's empty claim set made
+    /// `can_act` false). The post-apply patch must splice those claims
+    /// back in — with the wall restored, so the false non-empty wall
+    /// doesn't leak into anything else.
+    #[test]
+    fn haitei_discard_still_offers_claims() {
+        use riichienv_core::action::Phase;
+        let mut t = GameTracker::new();
+        t.handle(&start_game()).unwrap();
+        // Our seat (0) holds 3m4m among others; seat 3 is our claim
+        // source ((3+1)%4 = 0).
+        t.handle(&start_kyoku_with_our_hand()).unwrap();
+        if let Some(TrackedGame::Four(s)) = t.state.as_mut() {
+            s.wall.drawable_count = 0;
+        }
+        t.handle(&dahai(3, "2m")).unwrap();
+        assert_eq!(
+            t.our_seat_can_act(),
+            Some(true),
+            "the chi on the haitei discard must be offered"
+        );
+        if let Some(TrackedGame::Four(s)) = t.state.as_ref() {
+            assert_eq!(s.wall.drawable_count, 0, "wall restored after the splice");
+            assert_eq!(s.phase, Phase::WaitResponse);
+        }
+        // And a tile we cannot use still yields nothing at haitei.
+        let mut t2 = GameTracker::new();
+        t2.handle(&start_game()).unwrap();
+        t2.handle(&start_kyoku_with_our_hand()).unwrap();
+        if let Some(TrackedGame::Four(s)) = t2.state.as_mut() {
+            s.wall.drawable_count = 0;
+        }
+        t2.handle(&dahai(3, "S")).unwrap();
+        assert_eq!(
+            t2.our_seat_can_act(),
+            Some(false),
+            "no pair, no run — nothing to claim"
+        );
     }
 
     #[test]
