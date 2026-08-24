@@ -1051,12 +1051,9 @@ mod tests {
         // Roster [1001,1002,1003,1004] rotated left by 2 → actor order
         // [1003,1004,1001,1002]; our uid 1001 lands at seat 2.
         assert_eq!(b.status.seat, 2);
-        assert_eq!(b.status.seat_resolved, true);
+        assert!(b.status.seat_resolved);
         assert_eq!(b.status.shift, 2);
-        assert_eq!(
-            b.status.game_start, false,
-            "mid-hand: start_game is not owed"
-        );
+        assert!(!b.status.game_start, "mid-hand: start_game is not owed");
         assert_eq!(b.status.actor_of(1003), Some(0));
         assert_eq!(b.status.actor_of(1001), Some(2));
 
@@ -1127,7 +1124,7 @@ mod tests {
         let mut b = RiichiCityBridge::new(None, None);
         auth(&mut b);
         reconnect_room(&mut b, Value::Null);
-        assert_eq!(b.status.game_start, true, "start_game still owed");
+        assert!(b.status.game_start, "start_game still owed");
         assert_eq!(b.status.seat, 2);
         let events = feed(
             &mut b,
