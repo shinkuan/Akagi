@@ -15,6 +15,12 @@ companion to read alongside this guide.
 > Akagi *runs* bots (the Rust runner, the lifecycle manager, the bundled
 > Python runtime, GitHub install), see [`../src/bot/README.md`](../src/bot/README.md).
 
+> **Ready-made example.** Mortal (4-player and 3-player) is shipped as a
+> template under [`../scripts/mortal_bot/`](../scripts/mortal_bot/) plus a
+> setup helper [`../scripts/setup-mortal-bots.sh`](../scripts/setup-mortal-bots.sh).
+> It shows a full, real-world `bot.py` that loads an external model/checkpoint
+> and emits both raw `meta` and a structured `meta.show` card.
+
 ## Contents
 
 - [Directory layout](#directory-layout)

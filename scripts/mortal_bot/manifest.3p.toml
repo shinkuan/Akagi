@@ -1,0 +1,33 @@
+# Akagi bot manifest for Mortal 3-player (sanma).
+#
+# The 3p Mortal build is maintained separately from upstream Mortal (the
+# upstream repo is 4-player only). It needs a 3p-capable `libriichi` extension
+# (e.g. Akagi's `bot_3p_*.zip` support files) plus `mortal_3p.pth`.
+#
+# The resolved values land in `<bot>/.akagi/resolved_settings.json` and are
+# read by `bot.py` through `AKAGI_BOT_CONFIG`.
+
+manifest_version = 1
+
+[bot]
+name = "mortal3p"
+display = "Mortal · 3p"
+description = "Mortal (AGPL-3.0) 3-player build. Needs a 3p Mortal checkout + 3p libriichi + mortal_3p.pth."
+version = "0.1.0"
+supported_modes = ["3p"]
+
+[settings]
+mode = { type = "enum", label = "Game mode", default = "3p", choices = ["3p"], help = "Which model layout this bot serves." }
+model_file = { type = "string", label = "Checkpoint file", default = "mortal_3p.pth", help = "Path to the 3p Mortal checkpoint (relative to the bot folder or absolute)." }
+mortal_root = { type = "string", label = "Mortal checkout root", default = "src", help = "Directory containing the 3p Mortal mortal/ modules (a clone/fork of Equim-chan/Mortal)." }
+libriichi_root = { type = "string", label = "3p libriichi directory", default = "libriichi3p", help = "Directory containing the 3p libriichi extension (.so/.pyd). Required for sanma." }
+device = { type = "enum", label = "Torch device", default = "cpu", choices = ["cpu", "mps", "cuda:0", "cuda:1"], help = "Inference device." }
+enable_amp = { type = "bool", label = "Use AMP", default = false, help = "Mixed precision (GPU only)." }
+enable_quick_eval = { type = "bool", label = "Enable quick eval", default = true, help = "Skip metadata on fast-eval paths." }
+enable_rule_based_agari_guard = { type = "bool", label = "Rule-based agari guard", default = true }
+boltzmann_epsilon = { type = "float", label = "Boltzmann epsilon", default = 0.0, min = 0.0, max = 1.0, step = 0.001 }
+boltzmann_temp = { type = "float", label = "Boltzmann temperature", default = 1.0, min = 0.01, max = 100.0, step = 0.01 }
+top_p = { type = "float", label = "Top-p", default = 1.0, min = 0.0, max = 1.0, step = 0.01 }
+emit_show = { type = "bool", label = "Emit meta.show card", default = true, help = "Show the chosen move in Akagi's Bot Show HUD." }
+emit_show_candidates = { type = "bool", label = "Emit top-N candidates", default = true, help = "Rank the legal actions' Q-values in the HUD card. 3p shares the 4p mask raster (no chi bits), so labels line up." }
+show_top_n = { type = "int", label = "Show top-N", default = 3, min = 1, max = 10 }

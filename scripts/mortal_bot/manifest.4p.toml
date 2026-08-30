@@ -1,0 +1,30 @@
+# Akagi bot manifest for Mortal 4-player.
+#
+# Used by Akagi's Settings -> Bots panel and by `scripts/setup-mortal-bots.sh`.
+# The resolved values land in `<bot>/.akagi/resolved_settings.json` and are
+# read by `bot.py` through `AKAGI_BOT_CONFIG`.
+
+manifest_version = 1
+
+[bot]
+name = "mortal"
+display = "Mortal · 4p"
+description = "Mortal (AGPL-3.0) strong 4-player model, run as an external subprocess. Needs a Mortal checkout + libriichi + mortal_4p.pth."
+version = "0.1.0"
+supported_modes = ["4p"]
+
+[settings]
+mode = { type = "enum", label = "Game mode", default = "4p", choices = ["4p"], help = "Which model layout this bot serves." }
+model_file = { type = "string", label = "Checkpoint file", default = "mortal_4p.pth", help = "Path to the 4p Mortal checkpoint (relative to the bot folder or absolute)." }
+mortal_root = { type = "string", label = "Mortal checkout root", default = "src", help = "Directory containing mortal/ and libriichi.so/.pyd (a clone of Equim-chan/Mortal)." }
+libriichi_root = { type = "string", label = "libriichi directory (optional)", default = "", help = "Optional directory containing the libriichi extension; defaults to mortal_root." }
+device = { type = "enum", label = "Torch device", default = "cpu", choices = ["cpu", "mps", "cuda:0", "cuda:1"], help = "Inference device." }
+enable_amp = { type = "bool", label = "Use AMP", default = false, help = "Mixed precision (GPU only)." }
+enable_quick_eval = { type = "bool", label = "Enable quick eval", default = true, help = "Skip metadata on fast-eval paths (faster, less meta)." }
+enable_rule_based_agari_guard = { type = "bool", label = "Rule-based agari guard", default = true, help = "Prevent the model from ronning obviously-incorrect calls." }
+boltzmann_epsilon = { type = "float", label = "Boltzmann epsilon", default = 0.0, min = 0.0, max = 1.0, step = 0.001 }
+boltzmann_temp = { type = "float", label = "Boltzmann temperature", default = 1.0, min = 0.01, max = 100.0, step = 0.01 }
+top_p = { type = "float", label = "Top-p", default = 1.0, min = 0.0, max = 1.0, step = 0.01 }
+emit_show = { type = "bool", label = "Emit meta.show card", default = true, help = "Show the chosen move in Akagi's Bot Show HUD." }
+emit_show_candidates = { type = "bool", label = "Emit top-N candidates", default = true, help = "Rank the legal actions' Q-values in the HUD card." }
+show_top_n = { type = "int", label = "Show top-N", default = 3, min = 1, max = 10 }

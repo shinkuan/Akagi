@@ -264,6 +264,36 @@ Beyond these two backends, Akagi can also run **external mjai bots** as
 subprocesses. That's an extension point for developers rather than a step
 anyone needs — see [mjai Bots (plugin interface)](#mjai-bots-plugin-interface).
 
+### Running Mortal as the bot (4p + 3p)
+
+The repository ships ready-to-use **Mortal** external bots under
+`scripts/mortal_bot/` (template) and a setup helper
+[`scripts/setup-mortal-bots.sh`](scripts/setup-mortal-bots.sh). It copies the
+bot into `mjai_bot/mortal/` (4-player) and `mjai_bot/mortal3p/` (3-player),
+clones/builds the 4p Mortal checkout + `libriichi`, and points
+`bot.active_4p` / `bot.active_3p` at them:
+
+```sh
+scripts/setup-mortal-bots.sh --model-4p /path/to/mortal_4p.pth \
+                             --model-3p /path/to/mortal_3p.pth
+```
+
+Requirements:
+
+- **4p**: a Mortal checkout (`mortal_4p.pth` / `mortal.pth`,
+  `config.version=4`, ResNet 192×40), the upstream `libriichi`, and PyTorch.
+- **3p**: a separate 3p Mortal build (`mortal_3p.pth`, 775×34 obs,
+  44 actions) plus a **3p-capable** `libriichi3p` (upstream Mortal is
+  4-player only — the 3p files come from the Akagi Discord
+  `bot_3p_..zip` package).
+
+Mortal remains an AGPL-3.0 **subprocess** inside the bot directories, exactly
+as the [AGPL boundary](#agpl-boundary) describes; the tracked repository only
+contains the Apache-compatible wrapper and setup script, never Mortal code or
+weights. Once installed, select the bot in **Settings → Bots** (or set
+`active_4p`/`active_3p` as the helper does) and the status bar will show
+`mortal`.
+
 ---
 
 ## Game History
