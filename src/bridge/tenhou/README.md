@@ -31,8 +31,8 @@ out any deliberate divergence.
 | `INIT` | start of kyoku | `start_kyoku` (sanma detected via 0-score slot) |
 | `REINIT` | rejoin: snapshot of the hand in progress | (none — see *Reconnecting mid-hand*) |
 | `T<n>` / `U<n>` / `V<n>` / `W<n>` | tsumo (rel seats 0..3) | `tsumo` |
-| `D<n>` / `E<n>` / `F<n>` / `G<n>` (uppercase) | discard of just-drawn tile | `dahai { tsumogiri: true }` |
-| `d<n>` / `e<n>` / `f<n>` / `g<n>` (lowercase) | tedashi | `dahai { tsumogiri: false }` |
+| `D<n>` / `E<n>` / `F<n>` / `G<n>` (uppercase) | tedashi (discard from the hand) | `dahai { tsumogiri: false }` |
+| `d<n>` / `e<n>` / `f<n>` / `g<n>` (lowercase) | tsumogiri (discard of the just-drawn tile) | `dahai { tsumogiri: true }` |
 | `N` with `m` | call (chi/pon/kan/kakan/nukidora) | `chi` / `pon` / `daiminkan` / `kakan` / `ankan` / `kita` |
 | `REACH step=1` | declare riichi | `reach` |
 | `REACH step=2` | riichi accepted | `reach_accepted` |
@@ -41,6 +41,10 @@ out any deliberate divergence.
 | `AGARI` (with `owari`) | win at game end | `hora` + `end_kyoku` + `end_game` |
 | `RYUUKYOKU` (no `owari`) | exhaustive draw | `ryukyoku` + `end_kyoku` |
 | `RYUUKYOKU` (with `owari`) | draw at game end | `ryukyoku` + `end_kyoku` + `end_game` |
+
+The tag case only decides tsumogiri for *other* seats. Our own discards
+compare the tile against our last draw instead (`on_dahai`), which also
+covers the digit-less own-discard echo (a `D`/`d` tag with no tile index).
 
 ### Tile encoding
 
