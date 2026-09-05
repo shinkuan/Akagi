@@ -420,6 +420,7 @@ impl ProxyHandler {
                     } else {
                         None
                     },
+                    notify: self.notify_tx.clone(),
                     ..bridge::BridgeHooks::default()
                 };
                 Arc::new(StdMutex::new(bridge::for_platform(
