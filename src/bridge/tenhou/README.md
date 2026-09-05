@@ -24,7 +24,7 @@ out any deliberate divergence.
 | Tag | Trigger | mjai output |
 |---|---|---|
 | `<Z/>` | heartbeat | (none) |
-| `HELO` / `REJOIN` / `BYE` / `SHUFFLE` | session control | (none) |
+| `HELO` / `REJOIN` / `SAIKAI` / `BYE` / `SHUFFLE` | session control | (none) |
 | `GO` | rules / room, before `TAIKYOKU` | (none; stashed for `MatchInfo`, bit `0x10` = sanma) |
 | `UN` | roster, wire-relative names | (none; consumed by `start_game`, an empty slot = sanma) |
 | `TAIKYOKU` | start of game | `start_game` (resolves our seat from `oya`) |
