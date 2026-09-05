@@ -155,8 +155,11 @@ impl TenhouBridge {
 
         // Tags that contribute no mjai events — silently ignored. The Python
         // reference does the same in `_convert_helo`, `_convert_rejoin`, etc.
+        // `SAIKAI` (再開) is the rejoin's resume notice — `ba`, `oya`, `sc` —
+        // sent between `<UN/>` and `<REINIT/>`; everything it says, REINIT
+        // repeats.
         match tag {
-            "HELO" | "REJOIN" | "BYE" | "SHUFFLE" => return Vec::new(),
+            "HELO" | "REJOIN" | "SAIKAI" | "BYE" | "SHUFFLE" => return Vec::new(),
             _ => {}
         }
 
@@ -327,6 +330,10 @@ impl TenhouBridge {
         first_deal: bool,
     ) {
         let derived = state::seat_from_kyoku(kyoku_index, oya_rel);
+        if self.state.seat_resolved && first_deal && derived == self.state.seat {
+            // TAIKYOKU and the first deal agree, as they always should.
+            return;
+        }
         if self.state.seat_resolved && !first_deal {
             if derived != self.state.seat {
                 warn!(
@@ -2595,5 +2602,92 @@ mod tests {
             MjaiEvent::StartGame { num_players: 4, .. }
         ));
         assert_eq!(tehais_len(&events), 4);
+    }
+
+    /// The rejoin sequence as captured from the web client on a fresh
+    /// socket: `HELO`, `GO`, `UN` (full roster), `SAIKAI`, `REINIT`, then
+    /// live play — no `TAIKYOKU`. Our riichi is the `255` in `kawa0`; the
+    /// only call on the table is another seat's (`m3`), so we track none.
+    #[test]
+    fn rejoin_sequence_as_captured_from_the_web_client() {
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(
+            &mut b,
+            r#"{"tag":"GO","type":"1","lobby":"0","gpid":"00000000-00000000"}"#,
+        );
+        parse_one(
+            &mut b,
+            r#"{"tag":"UN","n0":"us","n1":"shimocha","n2":"toimen","n3":"kamicha","dan":"0,11,0,0","rate":"1500.00,1605.68,1500.00,1500.00","sx":"M,M,M,M"}"#,
+        );
+        assert!(parse_one(
+            &mut b,
+            r#"{"tag":"SAIKAI","ba":"0,1","oya":"2","sc":"240,0,250,0,250,0,250,0"}"#
+        )
+        .is_empty());
+        let reinit = r#"{"tag":"REINIT","seed":"0,0,1,3,0,23","ten":"240,250,250,250","oya":"2","hai":"14,18,22,36,37,48,52,57,58,61,89,93,96","m3":"48203","kawa0":"1,106,74,8,255,40","kawa1":"79,122,3,6,41","kawa2":"72,100,9,21,98","kawa3":"107,78,67,43,113,73"}"#;
+        assert!(parse_one(&mut b, reinit).is_empty());
+        assert_eq!(b.state.seat, 2, "E1 dealer at rel 2 → we sit at wire-abs 2");
+        assert!(b.state.seat_resolved);
+        assert!(b.state.suspended);
+        assert!(b.state.in_riichi);
+        assert!(b.state.melds.is_empty());
+        assert_eq!(b.state.hand.len(), 13);
+        assert!(!b.state.is_tsumo);
+        assert!(!b.state.is_3p);
+        assert_eq!(b.state.num_players, 4);
+
+        // Our draw right after the rejoin: tracked for autoplay, not emitted.
+        assert!(parse_one(&mut b, r#"{"tag":"T120"}"#).is_empty());
+        assert!(b.state.is_tsumo);
+        assert_eq!(b.state.hand.len(), 14);
+        assert!(b.state.window.is_some());
+        assert!(parse_one(&mut b, r#"{"tag":"D120"}"#).is_empty());
+        assert_eq!(b.state.hand.len(), 13);
+        assert!(parse_one(&mut b, r#"{"tag":"U"}"#).is_empty());
+
+        // The hand ends (our ron) and E2 begins: the game reopens on seat 2
+        // with the roster from the rejoin's <UN/>.
+        assert!(parse_one(
+            &mut b,
+            r#"{"tag":"AGARI","who":"0","fromWho":"1","sc":"240,77,250,-77,250,0,250,0","ba":"0,1"}"#
+        )
+        .is_empty());
+        let events = parse_one(
+            &mut b,
+            r#"{"tag":"INIT","seed":"1,0,0,2,0,55","ten":"317,173,250,250","oya":"3","hai":"36,4,124,72,84,50,60,128,32,40,62,44,63"}"#,
+        );
+        assert_eq!(events.len(), 2, "{events:?}");
+        match &events[0] {
+            MjaiEvent::StartGame {
+                id,
+                num_players,
+                names,
+                ..
+            } => {
+                assert_eq!(*id, Some(2));
+                assert_eq!(*num_players, 4);
+                assert_eq!(names, &vec!["toimen", "kamicha", "us", "shimocha"]);
+            }
+            other => panic!("expected StartGame, got {other:?}"),
+        }
+        match &events[1] {
+            MjaiEvent::StartKyoku {
+                kyoku,
+                oya,
+                scores,
+                tehais,
+                ..
+            } => {
+                assert_eq!(*kyoku, 2);
+                assert_eq!(*oya, 1);
+                assert_eq!(scores, &vec![25_000, 25_000, 31_700, 17_300]);
+                assert_eq!(tehais[2].len(), 13);
+                assert_ne!(tehais[2][0], "?");
+            }
+            other => panic!("expected StartKyoku, got {other:?}"),
+        }
+        assert!(!b.state.suspended);
+        let events = parse_one(&mut b, r#"{"tag":"W"}"#);
+        assert!(matches!(&events[0], MjaiEvent::Tsumo { actor: 1, pai } if pai == "?"));
     }
 }

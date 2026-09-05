@@ -136,14 +136,22 @@ Akagi observes a real client, which sends those itself.
 
 ## Reconnecting mid-hand (`REINIT`)
 
-When the client rejoins a game the server sends `<REINIT/>` in place of
-`<INIT/>`: `seed` / `ten` / `oya` / `hai` as in `INIT`, plus per-seat
-`m<rel>` (comma-separated `<N m=…/>` bitfields) and `kawa<rel>` (tile
-indices, with `255` marking the riichi declaration). It is a *snapshot*, not
-a log — nothing says when a call happened relative to the discards — so the
-mjai event stream for the hand in progress cannot be reconstructed. (Majsoul's
-`GameRestore` is an ordered action log, which is why the Majsoul bridge can
-replay and this one cannot.)
+When the web client rejoins a game it opens a fresh socket, so the bridge
+that sees the rejoin is a fresh one. The captured sequence is
+
+```
+↑ HELO            ↓ GO (type, lobby)      ↓ UN (full roster)
+↑ GOK             ↓ SAIKAI (ba, oya, sc)  ↓ REINIT …   then live play
+```
+
+— **no `TAIKYOKU`**. `<REINIT/>` stands in for `<INIT/>`: `seed` / `ten` /
+`oya` / `hai` as in `INIT`, plus `m<rel>` for every seat that has called
+(comma-separated `<N m=…/>` bitfields; absent otherwise) and `kawa<rel>`
+(tile indices, with `255` marking the riichi declaration — the next entry is
+the riichi tile). It is a *snapshot*, not a log — nothing says when a call
+happened relative to the discards — so the mjai event stream for the hand in
+progress cannot be reconstructed. (Majsoul's `GameRestore` is an ordered
+action log, which is why the Majsoul bridge can replay and this one cannot.)
 
 The bridge therefore:
 
