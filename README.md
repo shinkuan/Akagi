@@ -375,6 +375,12 @@ Useful when debugging a bot or a bridge issue.
   "couldn't terminate the browser already using profile …" — close it
   manually and click Restart. Running two Akagi instances against the
   same profile is unsupported.
+- **Tenhou reconnected in the middle of a hand.** Tenhou's rejoin message
+  is a snapshot of the table, not a replay, so Akagi cannot rebuild the
+  hand in progress. It shows a "rejoined mid-hand" toast and pauses
+  analysis and autoplay until the next hand starts; from there on the
+  game is tracked normally. The hands played before the drop are not
+  kept in History.
 - **Bot crashed mid-game.** The Inspector tab shows the last frame the
   bot saw before dying; attach it to the bug report.
 - **Wrong bot picked for a 3-player game.** Check `bot.active_3p` in

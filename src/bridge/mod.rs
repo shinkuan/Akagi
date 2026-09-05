@@ -94,6 +94,10 @@ pub struct BridgeHooks {
     /// Riichi City: frame-injection gate, maintained by the bridge between
     /// `cmd_enter_room` and `cmd_room_end` (see `autoplay::inject`).
     pub riichi_inject: Option<crate::autoplay::inject::SharedInjectBus>,
+    /// Frontend toast channel, for states a bridge must tell the user about
+    /// that no mjai event can carry (Tenhou: a mid-hand rejoin pauses
+    /// analysis until the next hand). Wired by both capture backends.
+    pub notify: Option<crate::event_bus::NotifyBus>,
 }
 
 /// Construct a bridge for the given platform.
@@ -114,9 +118,11 @@ pub fn for_platform(
                 .with_time_budget(hooks.time_budget)
                 .with_input_watch(hooks.input_watch),
         ),
-        crate::config::Platform::Tenhou => {
-            Box::new(TenhouBridge::new(flow_log, session).with_shared_state(hooks.tenhou_state))
-        }
+        crate::config::Platform::Tenhou => Box::new(
+            TenhouBridge::new(flow_log, session)
+                .with_shared_state(hooks.tenhou_state)
+                .with_notify(hooks.notify),
+        ),
         crate::config::Platform::RiichiCity => {
             Box::new(RiichiCityBridge::new(flow_log, session).with_inject(hooks.riichi_inject))
         }

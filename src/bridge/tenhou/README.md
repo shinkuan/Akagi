@@ -24,9 +24,12 @@ out any deliberate divergence.
 | Tag | Trigger | mjai output |
 |---|---|---|
 | `<Z/>` | heartbeat | (none) |
-| `HELO` / `REJOIN` / `GO` / `UN` / `BYE` / `SHUFFLE` | session control | (none) |
+| `HELO` / `REJOIN` / `BYE` / `SHUFFLE` | session control | (none) |
+| `GO` | rules / room, before `TAIKYOKU` | (none; stashed for `MatchInfo`, bit `0x10` = sanma) |
+| `UN` | roster, wire-relative names | (none; consumed by `start_game`, an empty slot = sanma) |
 | `TAIKYOKU` | start of game | `start_game` (resolves our seat from `oya`) |
 | `INIT` | start of kyoku | `start_kyoku` (sanma detected via 0-score slot) |
+| `REINIT` | rejoin: snapshot of the hand in progress | (none — see *Reconnecting mid-hand*) |
 | `T<n>` / `U<n>` / `V<n>` / `W<n>` | tsumo (rel seats 0..3) | `tsumo` |
 | `D<n>` / `E<n>` / `F<n>` / `G<n>` (uppercase) | discard of just-drawn tile | `dahai { tsumogiri: true }` |
 | `d<n>` / `e<n>` / `f<n>` / `g<n>` (lowercase) | tedashi | `dahai { tsumogiri: false }` |
@@ -49,8 +52,28 @@ Tenhou tiles are integer indices `0..=135`. `index / 4` gives tile type
 
 Tenhou messages always use *relative* seats: rel 0 is the observing player.
 `State::rel_to_abs` / `abs_to_rel` translate to mjai's absolute frame. The
-bridge resolves our absolute seat from `<TAIKYOKU oya="N"/>`: `seat = (4 - N) % 4`
-(`(3 - N) % 3` once sanma is detected at INIT).
+bridge resolves our absolute seat from `<TAIKYOKU oya="N"/>`: `seat = (4 - N) % 4`.
+Wire-abs 0 is whoever dealt E1, and the wire stays 4-positional in sanma (the
+absent seat is a ghost at wire-abs 3; `seed[0]` skips its deal, so E1 E2 E3 S1
+are 0 1 2 4).
+
+A flow that starts mid-game — a reconnect, or Akagi attaching between hands —
+never sees `<TAIKYOKU/>`. Every kyoku frame (`INIT` / `REINIT`) carries the
+same information in another form: the dealer of kyoku index `seed[0]` sits at
+wire-abs `seed[0] % 4`, and `oya` is that dealer's seat relative to us, so
+`state::seat_from_kyoku` recovers ours. `TAIKYOKU` stays authoritative when
+both were seen; the kyoku frame only fills in when it was not
+(`State::seat_resolved`).
+
+### Player count
+
+`start_game` must say 3 or 4, and only the E1H0 `<INIT/>` proves it (a 0 in
+`ten` at the very first deal is the absent seat; nobody starts a real game on
+0 points). That check is final. Before it fires — and on a flow that joined
+mid-game and will never see it — the bridge takes the earlier hints in this
+order: `<GO type>` bit `0x10`, then a `<UN/>` roster with exactly one empty
+slot, then (REINIT only) the shape of the snapshot itself: the ghost's score
+still 0, its river empty, and no 2m–8m in our hand.
 
 ### Meld bitfield
 
@@ -106,6 +129,38 @@ two distinct indices.
 
 Session control (`JOIN` / `GOK` / `NEXTREADY`) is deliberately **not** encoded:
 Akagi observes a real client, which sends those itself.
+
+## Reconnecting mid-hand (`REINIT`)
+
+When the client rejoins a game the server sends `<REINIT/>` in place of
+`<INIT/>`: `seed` / `ten` / `oya` / `hai` as in `INIT`, plus per-seat
+`m<rel>` (comma-separated `<N m=…/>` bitfields) and `kawa<rel>` (tile
+indices, with `255` marking the riichi declaration). It is a *snapshot*, not
+a log — nothing says when a call happened relative to the discards — so the
+mjai event stream for the hand in progress cannot be reconstructed. (Majsoul's
+`GameRestore` is an ordered action log, which is why the Majsoul bridge can
+replay and this one cannot.)
+
+The bridge therefore:
+
+1. resolves our seat and the player count from the frame (see above), so the
+   rest of the game is attributed correctly even though `<TAIKYOKU/>` was
+   never seen on this flow;
+2. rebuilds only what this flow itself needs — our hand (`hai`), our calls
+   (`m0`), riichi (`255` in `kawa0`) and whether a draw is in hand (tile
+   count) — so autoplay and `Bridge::build` keep working for the remainder of
+   the hand;
+3. emits **nothing** and sets `State::suspended`: every handler still runs
+   (the hand and window keep tracking), but `dispatch` drops their events
+   until the next `<INIT/>`. Feeding them to the tracker would apply live
+   play to a hand it last saw several turns ago (or, with a seat-0 bridge, to
+   the wrong seats), and each `?` draw that lands on our seat renders as 1m;
+4. posts a warning toast (via `BridgeHooks::notify`) and owes a fresh
+   `start_game` at the next `<INIT/>`, which reopens the game for the
+   tracker, bots and history on the right seat and player count.
+
+Games that end while suspended end silently: the `end_game` is withheld like
+everything else, and the next game's `<TAIKYOKU/>` lifts the suspension.
 
 ## Adding a new tag handler
 
