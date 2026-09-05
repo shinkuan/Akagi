@@ -146,8 +146,8 @@ impl TenhouBridge {
         if let Some(actor) = tsumo_actor(tag) {
             return self.on_tsumo(actor, tag, msg);
         }
-        if let Some((actor, tsumogiri_uppercase)) = dahai_actor(tag) {
-            return self.on_dahai(actor, tag, tsumogiri_uppercase, msg);
+        if let Some((actor, tag_tsumogiri)) = dahai_actor(tag) {
+            return self.on_dahai(actor, tag, tag_tsumogiri, msg);
         }
         if tag == "N" && msg.get("m").is_some() {
             return self.on_meld(msg);
@@ -389,13 +389,14 @@ impl TenhouBridge {
     }
 
     /// `<D7/>`, `<E/>`, `<f12/>` — dahai.
-    /// `tsumogiri_uppercase` is true when the tag's leading letter is uppercase
-    /// (Tenhou's signal that the discard is just-drawn).
+    /// `tag_tsumogiri` is true when the tag's leading letter is lowercase
+    /// (Tenhou's signal that the discard is the just-drawn tile); uppercase
+    /// means tedashi. See `dahai_actor`.
     fn on_dahai(
         &mut self,
         actor_rel: u8,
         tag: &str,
-        tsumogiri_uppercase: bool,
+        tag_tsumogiri: bool,
         msg: &JsonValue,
     ) -> Vec<MjaiEvent> {
         if actor_rel >= 4 {
@@ -434,7 +435,7 @@ impl TenhouBridge {
         let tsumogiri = if actor == self.state.seat {
             self.state.is_tsumo && self.state.hand.last().copied() == Some(idx)
         } else {
-            tsumogiri_uppercase
+            tag_tsumogiri
         };
 
         self.state.last_kawa_tile = pai.clone();
@@ -801,26 +802,34 @@ fn tsumo_actor(tag: &str) -> Option<u8> {
     Some(rel)
 }
 
-/// Dahai tags are `D/E/F/G<n>` (uppercase = tsumogiri of just-drawn tile)
-/// or `d/e/f/g<n>` (lowercase = tedashi). Returns `(rel_actor, uppercase)`.
+/// Dahai tags are `D/E/F/G<n>` (uppercase = tedashi, a tile from the hand)
+/// or `d/e/f/g<n>` (lowercase = tsumogiri of the just-drawn tile). Returns
+/// `(rel_actor, tsumogiri)`.
+///
+/// This is the case convention of the Tenhou wire protocol (tenhou-python-bot
+/// documents `<e21/>` as tsumogiri and `<E21/>` as a discard from the hand).
+/// The original Python Akagi bridge read it the other way round and this port
+/// inherited that, so every other seat's river reached the model with its
+/// tedashi/tsumogiri channel inverted (#281). Our own discards never depend on
+/// the case: `on_dahai` compares the tile against our last draw instead.
 fn dahai_actor(tag: &str) -> Option<(u8, bool)> {
     let mut bytes = tag.bytes();
     let first = bytes.next()?;
-    let (rel, upper) = match first {
-        b'D' => (0, true),
-        b'E' => (1, true),
-        b'F' => (2, true),
-        b'G' => (3, true),
-        b'd' => (0, false),
-        b'e' => (1, false),
-        b'f' => (2, false),
-        b'g' => (3, false),
+    let (rel, tsumogiri) = match first {
+        b'D' => (0, false),
+        b'E' => (1, false),
+        b'F' => (2, false),
+        b'G' => (3, false),
+        b'd' => (0, true),
+        b'e' => (1, true),
+        b'f' => (2, true),
+        b'g' => (3, true),
         _ => return None,
     };
     if !bytes.all(|b| b.is_ascii_digit()) {
         return None;
     }
-    Some((rel, upper))
+    Some((rel, tsumogiri))
 }
 
 /// Parse `tag[skip..]` as a `u32`. Returns `None` if there is no digit suffix.
@@ -1280,27 +1289,75 @@ mod tests {
         }
     }
 
-    #[test]
-    fn dahai_other_player_uppercase_is_tsumogiri() {
+    /// Bridge at our seat 0 (dealer), one kyoku started, ready for discards.
+    fn bridge_in_kyoku() -> TenhouBridge {
         let mut b = TenhouBridge::new(None, None);
         parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"0"}"#);
         parse_one(
             &mut b,
             r#"{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"0,1,2,3,4,5,6,7,8,9,10,11,12"}"#,
         );
-        let events = parse_one(&mut b, r#"{"tag":"E40"}"#); // uppercase E -> rel=1, tsumogiri
+        b
+    }
+
+    fn other_dahai(b: &mut TenhouBridge, tag: &str) -> (u8, String, bool) {
+        let events = parse_one(b, &format!(r#"{{"tag":"{tag}"}}"#));
         match &events[0] {
             MjaiEvent::Dahai {
                 actor,
                 pai,
                 tsumogiri,
-            } => {
-                assert_eq!(*actor, 1);
-                // index 40 / 4 = 10 → 2p (pin block starts at type 9 = 1p).
-                assert_eq!(pai, "2p");
-                assert!(*tsumogiri);
-            }
+            } => (*actor, pai.clone(), *tsumogiri),
             other => panic!("expected Dahai, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dahai_other_player_uppercase_is_tedashi() {
+        let mut b = bridge_in_kyoku();
+        // Uppercase E -> rel=1, discard from the hand.
+        let (actor, pai, tsumogiri) = other_dahai(&mut b, "E40");
+        assert_eq!(actor, 1);
+        // index 40 / 4 = 10 → 2p (pin block starts at type 9 = 1p).
+        assert_eq!(pai, "2p");
+        assert!(!tsumogiri, "uppercase tag is a tedashi");
+    }
+
+    /// Regression for #281: Tenhou marks a tsumogiri with a *lowercase* tag
+    /// (`<e21/>`) and a tedashi with uppercase (`<E21/>`). The bridge had the
+    /// two swapped for other seats, so every opponent river reached the model
+    /// with its tedashi/tsumogiri channel inverted and live suggestions
+    /// drifted from a review of the same game.
+    #[test]
+    fn dahai_other_player_lowercase_is_tsumogiri() {
+        let mut b = bridge_in_kyoku();
+        let (actor, pai, tsumogiri) = other_dahai(&mut b, "e40");
+        assert_eq!(actor, 1);
+        assert_eq!(pai, "2p");
+        assert!(tsumogiri, "lowercase tag is a tsumogiri");
+    }
+
+    /// Regression for #281, in the shape that exposed it: after a riichi every
+    /// discard is a forced tsumogiri, and Tenhou sends those lowercase. Before
+    /// the fix the whole post-riichi river came out as `tsumogiri: false`.
+    #[test]
+    fn other_seat_discards_after_riichi_are_tsumogiri() {
+        let mut b = bridge_in_kyoku();
+        // Seat 1 draws, declares riichi and discards from the hand (uppercase).
+        parse_one(&mut b, r#"{"tag":"U"}"#);
+        parse_one(&mut b, r#"{"tag":"REACH","who":"1","step":"1"}"#);
+        let (_, _, declared) = other_dahai(&mut b, "E40");
+        assert!(!declared, "riichi declaration tile was a tedashi");
+        parse_one(
+            &mut b,
+            r#"{"tag":"REACH","who":"1","step":"2","ten":"250,240,250,250"}"#,
+        );
+        // Every later discard of the riichi player is a tsumogiri (lowercase).
+        for tag in ["e44", "e48", "e52"] {
+            parse_one(&mut b, r#"{"tag":"U"}"#);
+            let (actor, _, tsumogiri) = other_dahai(&mut b, tag);
+            assert_eq!(actor, 1);
+            assert!(tsumogiri, "{tag}: post-riichi discard must be a tsumogiri");
         }
     }
 
@@ -1729,7 +1786,7 @@ mod tests {
             other => panic!("expected Tsumo, got {other:?}"),
         }
 
-        // Dealer's dahai of tile 56 (6p), tsumogiri.
+        // Dealer's dahai of tile 56 (6p), tsumogiri (lowercase tag).
         let g56 = parse_one(&mut b, r#"{"tag":"g56"}"#);
         match &g56[0] {
             MjaiEvent::Dahai {
@@ -1739,7 +1796,7 @@ mod tests {
             } => {
                 assert_eq!(*actor, 0);
                 assert_eq!(pai, "6p");
-                assert!(!*tsumogiri, "lowercase g → tedashi");
+                assert!(*tsumogiri, "lowercase g → tsumogiri");
             }
             other => panic!("expected Dahai, got {other:?}"),
         }
