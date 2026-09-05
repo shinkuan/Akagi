@@ -160,7 +160,7 @@ impl TenhouBridge {
             _ => {}
         }
 
-        let events = self.dispatch_tag(tag, msg);
+        let mut events = self.dispatch_tag(tag, msg);
 
         // A flow that attached mid-kyoku (`<REINIT/>`) has no history for the
         // hand in progress, so its events would land on whatever the tracker
@@ -168,15 +168,34 @@ impl TenhouBridge {
         // all. The handler still ran (autoplay needs the hand and window it
         // maintains); only the stream is withheld until `on_init` lifts the
         // suspension at the next kyoku.
-        if self.state.suspended && !events.is_empty() {
-            debug!(
-                target: "akagi::bridge::tenhou",
-                "dropping {} event(s) from <{tag}/>: joined mid-kyoku, waiting for the next INIT",
-                events.len()
-            );
-            return Vec::new();
+        // The one exception is the game's end: the tracker has to close the
+        // game, the bot manager stop its runner, History reset — so
+        // `end_game` alone passes, and as terminated (see `end_game_event`).
+        if self.state.suspended {
+            let before = events.len();
+            events.retain(|e| matches!(e, MjaiEvent::EndGame { .. }));
+            if before != events.len() {
+                debug!(
+                    target: "akagi::bridge::tenhou",
+                    "dropping {} event(s) from <{tag}/>: joined mid-kyoku, waiting for the next INIT",
+                    before - events.len()
+                );
+            }
         }
         events
+    }
+
+    /// The game-end event for this flow. A game this flow joined mid-way has
+    /// no complete record — the hands before the rejoin were never seen here
+    /// — so its end is reported as terminated: the tracker and bots still
+    /// close the game, but History drops it instead of filing the remainder
+    /// as a full game with its own per-hand stats.
+    fn end_game_event(&self) -> MjaiEvent {
+        if self.state.rejoined_mid_game {
+            MjaiEvent::terminated_game()
+        } else {
+            MjaiEvent::end_game()
+        }
     }
 
     fn dispatch_tag(&mut self, tag: &str, msg: &JsonValue) -> Vec<MjaiEvent> {
@@ -287,6 +306,7 @@ impl TenhouBridge {
         self.state.seat_resolved = true;
         // A new game on a flow that was waiting out a mid-kyoku join.
         self.state.suspended = false;
+        self.state.rejoined_mid_game = false;
         self.state.pending_start_game = true;
         self.rotate_mjai_log();
         Vec::new()
@@ -295,10 +315,19 @@ impl TenhouBridge {
     /// Adopt the seat a kyoku frame implies when `<TAIKYOKU/>` never told
     /// us — a flow that attached mid-game (reconnect, late start). When it
     /// did, TAIKYOKU stays authoritative and a disagreement is only logged:
-    /// it would mean a malformed frame, not a seat change.
-    fn resolve_seat_from_kyoku(&mut self, tag: &str, kyoku_index: i32, oya_rel: u8) {
+    /// it would mean a malformed frame, not a seat change. The first deal
+    /// (`first_deal`: E1 honba 0) is the exception — it is the same
+    /// statement TAIKYOKU makes, so it always wins, which also lets a new
+    /// game re-seat a flow whose TAIKYOKU went missing.
+    fn resolve_seat_from_kyoku(
+        &mut self,
+        tag: &str,
+        kyoku_index: i32,
+        oya_rel: u8,
+        first_deal: bool,
+    ) {
         let derived = state::seat_from_kyoku(kyoku_index, oya_rel);
-        if self.state.seat_resolved {
+        if self.state.seat_resolved && !first_deal {
             if derived != self.state.seat {
                 warn!(
                     target: "akagi::bridge::tenhou",
@@ -367,10 +396,18 @@ impl TenhouBridge {
 
         // The seat, in case this flow never saw <TAIKYOKU/>. Must precede
         // every rel→abs translation below.
-        self.resolve_seat_from_kyoku("INIT", seed[0], oya_rel);
+        let first_deal = seed[0] == 0 && seed[1] == 0;
+        self.resolve_seat_from_kyoku("INIT", seed[0], oya_rel, first_deal);
         // A new kyoku is a clean slate for the tracker: whatever this flow
         // missed of the previous one no longer matters.
         self.state.suspended = false;
+        if first_deal {
+            // E1H0 happens once per game, so it is a game start whether or
+            // not a <TAIKYOKU/> announced it; a flow that rejoined the
+            // previous game is whole again from here.
+            self.state.pending_start_game = true;
+            self.state.rejoined_mid_game = false;
+        }
         self.ensure_mjai_log();
 
         let bakaze = BAKAZE[(seed[0] as usize) / 4];
@@ -387,8 +424,14 @@ impl TenhouBridge {
         // the <GO/> / <UN/> hints. We do NOT wrap `seat` after detection —
         // wire-abs is still 4-cycle, and our wire-abs (already in {0, 1, 2}
         // for any real sanma player) doubles as mjai-abs.
-        if bakaze == "E" && kyoku == 1 && honba == 0 {
+        if first_deal {
             self.state.set_three_players(raw_ten.contains(&0));
+        } else if self.state.three_players_hint().is_none() {
+            // A flow that joined mid-game with neither <GO/> nor <UN/> —
+            // the table total still says how many are playing.
+            if let Some(three) = state::three_players_from_scores(&raw_ten, kyotaku) {
+                self.state.set_three_players(three);
+            }
         }
 
         // Our hand. Tenhou messages are already in *our* viewpoint (rel seat 0
@@ -496,7 +539,8 @@ impl TenhouBridge {
             warn!(target: "akagi::bridge::tenhou", "REINIT missing seed field: {msg}");
             return Vec::new();
         }
-        self.resolve_seat_from_kyoku("REINIT", seed[0], oya_rel);
+        let first_deal = seed[0] == 0 && seed.get(1) == Some(&0);
+        self.resolve_seat_from_kyoku("REINIT", seed[0], oya_rel, first_deal);
 
         let hai = parse_csv_u32(msg, "hai");
         let kawa = |rel: u8| -> Vec<u32> {
@@ -507,39 +551,57 @@ impl TenhouBridge {
         };
 
         // Player count. <GO/> / <UN/> normally precede a rejoin and decide
-        // it; a flow that saw neither falls back to the shape of the frame:
-        // the sanma ghost has no score to move (stays 0), no river, and our
-        // hand can hold no 2m–8m (sanma removes them). Any one alone is
-        // possible in yonma; all three together are not.
-        if self.state.three_players_hint().is_none() && !self.state.is_3p {
-            let ghost_rel = self.state.abs_to_rel(3);
-            let ghost_score_zero = ten.get(ghost_rel as usize) == Some(&0);
-            let ghost_river_empty = kawa(ghost_rel).is_empty();
-            let no_middle_manzu = hai.iter().all(|&t| !(4..=31).contains(&t));
-            if ghost_score_zero && ghost_river_empty && no_middle_manzu {
-                info!(target: "akagi::bridge::tenhou", "REINIT looks like sanma (ghost slot idle, no 2m–8m)");
-                self.state.set_three_players(true);
+        // it. A flow that saw neither reads the table total (see
+        // `three_players_from_scores`); should that be unreadable, the
+        // frame's shape is the last resort: the sanma ghost has no score to
+        // move (stays 0) and no river, and neither our hand nor any river can
+        // hold a 2m–8m (sanma removes them). Each alone happens in yonma;
+        // all of them together do not.
+        if self.state.three_players_hint().is_none() {
+            let raw_ten: Vec<i32> = ten.iter().map(|s| s * 100).collect();
+            let kyotaku = seed.get(2).copied().unwrap_or(0).max(0) as u8;
+            match state::three_players_from_scores(&raw_ten, kyotaku) {
+                Some(three) => self.state.set_three_players(three),
+                None if !self.state.is_3p => {
+                    let ghost_rel = self.state.abs_to_rel(3);
+                    let ghost_score_zero = ten.get(ghost_rel as usize) == Some(&0);
+                    let ghost_river_empty = kawa(ghost_rel).is_empty();
+                    let middle_manzu = |t: &u32| (4..=31).contains(t);
+                    let no_middle_manzu = !hai.iter().any(middle_manzu)
+                        && !(0..4).any(|rel| kawa(rel).iter().any(middle_manzu));
+                    if ghost_score_zero && ghost_river_empty && no_middle_manzu {
+                        info!(target: "akagi::bridge::tenhou", "REINIT looks like sanma (ghost slot idle, no 2m–8m in play)");
+                        self.state.set_three_players(true);
+                    }
+                }
+                None => {}
             }
         }
 
         // Rebuild the per-kyoku state autoplay reads. Only our own calls are
-        // tracked (as in `on_meld`); nukidora is not a meld.
+        // tracked (as in `on_meld`); nukidora is not a meld, but each one
+        // took a tile out of the hand.
         self.state.reset_for_kyoku();
         self.state.hand = hai;
-        self.state.melds = parse_csv_u32(msg, "m0")
+        let m0 = parse_csv_u32(msg, "m0");
+        let nukidora = m0.iter().filter(|m| (*m & 0x3F) == 0x20).count();
+        self.state.melds = m0
             .into_iter()
             .filter(|m| (m & 0x3F) != 0x20)
             .map(Meld::parse)
             .collect();
         self.state.in_riichi = parse_csv_u32(msg, "kawa0").contains(&REINIT_RIICHI_MARK);
-        // 13 tiles (+ a 14th while a draw is in hand), less 3 per call.
-        self.state.is_tsumo = (self.state.hand.len() + 3 * self.state.melds.len()) % 3 == 2;
+        // 13 tiles (+ a 14th while a draw is in hand), less 3 per call and
+        // 1 per nukidora.
+        self.state.is_tsumo =
+            (self.state.hand.len() + 3 * self.state.melds.len() + nukidora) % 3 == 2;
         // Every discard followed a draw or a call; close enough for a
         // counter nothing downstream reads precisely.
         let discarded: u32 = (0..4).map(|rel| kawa(rel).len() as u32).sum();
         self.state.live_wall = 70u32.saturating_sub(discarded + u32::from(self.state.is_tsumo));
 
         self.state.suspended = true;
+        self.state.rejoined_mid_game = true;
         self.state.pending_start_game = true;
         self.ensure_mjai_log();
         warn!(
@@ -879,7 +941,7 @@ impl TenhouBridge {
         }];
         events.push(MjaiEvent::EndKyoku);
         if msg.get("owari").is_some() {
-            events.push(MjaiEvent::end_game());
+            events.push(self.end_game_event());
         }
         events
     }
@@ -905,7 +967,7 @@ impl TenhouBridge {
             MjaiEvent::EndKyoku,
         ];
         if msg.get("owari").is_some() {
-            events.push(MjaiEvent::end_game());
+            events.push(self.end_game_event());
         }
         events
     }
@@ -1080,6 +1142,7 @@ fn parse_tile_csv(v: &JsonValue) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::GameEndReason;
 
     fn parse_one(b: &mut TenhouBridge, json: &str) -> Vec<MjaiEvent> {
         b.parse(Direction::Down, json.as_bytes()).events
@@ -2148,14 +2211,17 @@ mod tests {
         assert_eq!(b.state.seat, 2);
     }
 
-    /// TAIKYOKU remains the authority when both are present; a kyoku frame
-    /// that disagrees is a malformed frame, not a seat change.
+    /// TAIKYOKU remains the authority mid-game; a later kyoku frame that
+    /// disagrees is a malformed frame, not a seat change. The first deal is
+    /// the one frame that says the same thing TAIKYOKU does, so it wins.
     #[test]
     fn taikyoku_seat_wins_over_a_disagreeing_kyoku_frame() {
         let mut b = TenhouBridge::new(None, None);
         parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"1"}"#); // seat 3
+                                                              // E2 (seed 1): dealer wire-abs 1 sits at rel 2 from seat 3; oya "0"
+                                                              // would put us at 1.
         let init = format!(
-            r#"{{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}"}}"#
+            r#"{{"tag":"INIT","seed":"1,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}"}}"#
         );
         let events = parse_one(&mut b, &init);
         assert_eq!(b.state.seat, 3);
@@ -2166,6 +2232,19 @@ mod tests {
             }
             other => panic!("expected StartKyoku, got {other:?}"),
         }
+
+        // E1H0 disagreeing with TAIKYOKU: the deal wins.
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"1"}"#); // seat 3
+        let init = format!(
+            r#"{{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}"}}"#
+        );
+        let events = parse_one(&mut b, &init);
+        assert_eq!(b.state.seat, 0);
+        assert!(matches!(
+            &events[0],
+            MjaiEvent::StartGame { id: Some(0), .. }
+        ));
     }
 
     /// REINIT on a flow that did see TAIKYOKU (same-socket re-auth, or a
@@ -2299,14 +2378,15 @@ mod tests {
     }
 
     /// A rejoining flow that saw neither `<GO/>` nor `<UN/>` reads the
-    /// player count off the REINIT frame: an idle ghost slot plus a hand
-    /// with no 2m–8m.
+    /// player count off the table total; when that is unreadable, off the
+    /// frame's shape: an idle ghost slot and no 2m–8m anywhere in play.
     #[test]
     fn reinit_on_a_fresh_flow_infers_sanma_from_the_frame_shape() {
         // E2 (seed 1): dealer wire-abs 1 at rel 1 → seat 0, ghost at rel 3.
+        // 104000 on the table is neither yonma nor sanma, so shape decides.
         let sanma_hand = "0,32,36,40,44,72,76,80,108,112,116,120,124";
         let reinit = format!(
-            r#"{{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"{sanma_hand}","kawa0":"36","kawa1":"40","kawa2":"44"}}"#
+            r#"{{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"340,300,400,0","oya":"1","hai":"{sanma_hand}","kawa0":"36","kawa1":"40","kawa2":"44"}}"#
         );
         let mut b = TenhouBridge::new(None, None);
         parse_one(&mut b, &reinit);
@@ -2320,21 +2400,44 @@ mod tests {
         ));
         assert_eq!(tehais_len(&events), 3);
 
-        // A 5m in hand rules sanma out even with the other two signs.
-        let reinit = r#"{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"17,32,36,40,44,72,76,80,108,112,116,120,124","kawa0":"36","kawa1":"40","kawa2":"44"}"#;
+        // A 5m in hand rules sanma out even with the other signs.
+        let reinit = r#"{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"340,300,400,0","oya":"1","hai":"17,32,36,40,44,72,76,80,108,112,116,120,124","kawa0":"36","kawa1":"40","kawa2":"44"}"#;
         let mut b = TenhouBridge::new(None, None);
         parse_one(&mut b, reinit);
         assert!(!b.state.is_3p);
-        // So does a river on the 4th wire slot.
+        // So does a 2m–8m in anyone's river...
         let reinit = format!(
-            r#"{{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"{sanma_hand}","kawa0":"36","kawa1":"40","kawa2":"44","kawa3":"48"}}"#
+            r#"{{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"340,300,400,0","oya":"1","hai":"{sanma_hand}","kawa0":"36","kawa1":"20","kawa2":"44"}}"#
+        );
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(&mut b, &reinit);
+        assert!(!b.state.is_3p);
+        // ...or a river on the 4th wire slot.
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"340,300,400,0","oya":"1","hai":"{sanma_hand}","kawa0":"36","kawa1":"40","kawa2":"44","kawa3":"48"}}"#
+        );
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(&mut b, &reinit);
+        assert!(!b.state.is_3p);
+
+        // The table total alone settles it when it is readable: 105000 is
+        // sanma even with a 4p-looking hand, 100000 is yonma even with a
+        // sanma-looking one.
+        let reinit = r#"{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"17,32,36,40,44,72,76,80,108,112,116,120,124","kawa0":"36"}"#;
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(&mut b, reinit);
+        assert!(b.state.is_3p);
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"250,250,500,0","oya":"1","hai":"{sanma_hand}","kawa0":"36"}}"#
         );
         let mut b = TenhouBridge::new(None, None);
         parse_one(&mut b, &reinit);
         assert!(!b.state.is_3p);
     }
 
-    /// Suspension is per hand: a new game's TAIKYOKU lifts it as well.
+    /// Suspension is per hand: a new game's TAIKYOKU lifts it as well, and
+    /// a game rejoined mid-way ends terminated while the next, seen whole,
+    /// ends confirmed.
     #[test]
     fn new_game_after_a_suspended_hand_resumes_normally() {
         let mut b = TenhouBridge::new(None, None);
@@ -2343,14 +2446,24 @@ mod tests {
         );
         parse_one(&mut b, &reinit);
         assert!(b.state.suspended);
-        assert!(parse_one(
+        // The game's end still goes out — as terminated, since this flow
+        // never saw the whole game — so every consumer closes it.
+        let events = parse_one(
             &mut b,
-            r#"{"tag":"RYUUKYOKU","sc":"250,0,250,0,250,0,250,0","owari":"1"}"#
-        )
-        .is_empty());
+            r#"{"tag":"RYUUKYOKU","sc":"250,0,250,0,250,0,250,0","owari":"1"}"#,
+        );
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert!(matches!(
+            &events[0],
+            MjaiEvent::EndGame {
+                reason: GameEndReason::Terminated,
+                ..
+            }
+        ));
         parse_one(&mut b, r#"{"tag":"GO","type":"9","lobby":"0"}"#);
         parse_one(&mut b, r#"{"tag":"TAIKYOKU","oya":"1"}"#);
         assert!(!b.state.suspended);
+        assert!(!b.state.rejoined_mid_game);
         let init = format!(
             r#"{{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"1","hai":"{HAND_NO_1M}"}}"#
         );
@@ -2359,5 +2472,128 @@ mod tests {
             &events[0],
             MjaiEvent::StartGame { id: Some(3), .. }
         ));
+        let events = parse_one(
+            &mut b,
+            r#"{"tag":"RYUUKYOKU","sc":"250,0,250,0,250,0,250,0","owari":"1"}"#,
+        );
+        assert!(matches!(
+            events.last(),
+            Some(MjaiEvent::EndGame {
+                reason: GameEndReason::Confirmed,
+                ..
+            })
+        ));
+    }
+
+    /// The hands after the rejoin resume normally, but the game as a whole
+    /// was never seen by this flow, so its end is still terminated: History
+    /// must not file the remainder as a complete game.
+    #[test]
+    fn rejoined_game_ends_terminated_even_after_resuming() {
+        let mut b = TenhouBridge::new(None, None);
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"6,0,0,1,2,4","ten":"250,250,250,250","oya":"2","hai":"{HAND_NO_1M}"}}"#
+        );
+        parse_one(&mut b, &reinit);
+        let init = format!(
+            r#"{{"tag":"INIT","seed":"7,0,0,1,2,4","ten":"250,250,250,250","oya":"3","hai":"{HAND_NO_1M}"}}"#
+        );
+        let events = parse_one(&mut b, &init);
+        assert_eq!(events.len(), 2);
+        assert!(b.state.rejoined_mid_game);
+        let events = parse_one(
+            &mut b,
+            r#"{"tag":"AGARI","who":"0","fromWho":"1","sc":"250,80,250,-80,250,0,250,0","ba":"0,0","owari":"1"}"#,
+        );
+        assert_eq!(events.len(), 3, "{events:?}");
+        assert!(matches!(
+            &events[2],
+            MjaiEvent::EndGame {
+                reason: GameEndReason::Terminated,
+                ..
+            }
+        ));
+    }
+
+    /// If a new game's TAIKYOKU went missing too, its first deal is enough:
+    /// E1H0 re-seats the flow, reopens the game, and clears the rejoin.
+    #[test]
+    fn first_deal_without_taikyoku_opens_a_new_game() {
+        let mut b = TenhouBridge::new(None, None);
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"7,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}"}}"#
+        );
+        parse_one(&mut b, &reinit);
+        assert_eq!(b.state.seat, 3);
+        parse_one(
+            &mut b,
+            r#"{"tag":"AGARI","who":"0","fromWho":"0","sc":"250,120,250,-40,250,-40,250,-40","ba":"0,0","owari":"1"}"#,
+        );
+        // Next game, different seat, no TAIKYOKU: E1 dealer at rel 3 → seat 1.
+        let init = format!(
+            r#"{{"tag":"INIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"3","hai":"{HAND_NO_1M}"}}"#
+        );
+        let events = parse_one(&mut b, &init);
+        assert_eq!(b.state.seat, 1);
+        assert!(!b.state.rejoined_mid_game);
+        assert!(matches!(
+            &events[0],
+            MjaiEvent::StartGame { id: Some(1), .. }
+        ));
+        assert!(matches!(&events[1], MjaiEvent::StartKyoku { oya: 0, .. }));
+        let events = parse_one(
+            &mut b,
+            r#"{"tag":"RYUUKYOKU","sc":"250,0,250,0,250,0,250,0","owari":"1"}"#,
+        );
+        assert!(matches!(
+            events.last(),
+            Some(MjaiEvent::EndGame {
+                reason: GameEndReason::Confirmed,
+                ..
+            })
+        ));
+    }
+
+    /// Nukidora took tiles out of the hand without adding a meld; the
+    /// draw-in-hand judgement has to count them.
+    #[test]
+    fn reinit_counts_nukidora_when_judging_the_draw_in_hand() {
+        let mut b = TenhouBridge::new(None, None);
+        // Sanma table (35000 × 3), two kita declared (`m` low bits 0x20).
+        let reinit = r#"{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"0,32,36,40,44,72,76,80,112,116,120","m0":"32,32","kawa0":"36"}"#;
+        parse_one(&mut b, reinit);
+        assert!(b.state.is_3p);
+        assert!(b.state.melds.is_empty(), "kita is not a meld");
+        assert!(!b.state.is_tsumo, "11 tiles + 2 kita = 13, nothing drawn");
+        let reinit = r#"{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"0,32,36,40,44,72,76,80,112,116,120,124","m0":"32,32","kawa0":"36"}"#;
+        parse_one(&mut b, reinit);
+        assert!(b.state.is_tsumo, "12 tiles + 2 kita = 14, draw in hand");
+    }
+
+    /// A flow that joined mid-game with neither GO nor UN reads the player
+    /// count off the table total on its first INIT.
+    #[test]
+    fn init_on_a_fresh_flow_reads_player_count_off_the_scores() {
+        let mut b = TenhouBridge::new(None, None);
+        // S1 (seed 4): dealer wire-abs 0 at rel 2 → seat 2. Total 105000.
+        let init = r#"{"tag":"INIT","seed":"4,0,0,1,2,8","ten":"400,300,350,0","oya":"2","hai":"0,32,36,40,44,72,76,80,108,112,116,120,124"}"#;
+        let events = parse_one(&mut b, init);
+        assert!(matches!(
+            &events[0],
+            MjaiEvent::StartGame { num_players: 3, .. }
+        ));
+        assert_eq!(tehais_len(&events), 3);
+
+        // Yonma with one riichi stick out: 99000 + 1000.
+        let mut b = TenhouBridge::new(None, None);
+        let init = format!(
+            r#"{{"tag":"INIT","seed":"1,0,1,1,2,8","ten":"240,250,250,250","oya":"1","hai":"{HAND_NO_1M}"}}"#
+        );
+        let events = parse_one(&mut b, &init);
+        assert!(matches!(
+            &events[0],
+            MjaiEvent::StartGame { num_players: 4, .. }
+        ));
+        assert_eq!(tehais_len(&events), 4);
     }
 }

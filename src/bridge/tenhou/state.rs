@@ -60,6 +60,11 @@ pub struct State {
     /// window from here) but their events are dropped — see
     /// `TenhouBridge::dispatch`.
     pub suspended: bool,
+    /// True from a `<REINIT/>` until the next game starts: this flow never
+    /// saw the hands before the rejoin, so the game's record is incomplete
+    /// and its `end_game` goes out as terminated (History drops it rather
+    /// than filing the remainder as a complete game with its own stats).
+    pub rejoined_mid_game: bool,
     /// `<GO type=…/>` rule/room bitfield (room tier in bits 0x20/0x80),
     /// stashed for `start_game` emission. Read non-destructively so a
     /// reconnect's re-emitted `start_game` (TAIKYOKU+INIT with no fresh
@@ -96,6 +101,7 @@ impl Default for State {
             last_revealed_tile_actor: None,
             pending_start_game: true,
             suspended: false,
+            rejoined_mid_game: false,
             go_type: None,
             lobby: None,
             log_id: None,
@@ -121,6 +127,21 @@ pub fn seat_from_kyoku(kyoku_index: i32, oya_rel: u8) -> u8 {
     (oya_abs + 4 - oya_rel % 4) % 4
 }
 
+/// Player count from a kyoku frame's scores. Tenhou deals 25000 × 4 =
+/// 100000 points in yonma and 35000 × 3 = 105000 in sanma, and points only
+/// move between the players and the riichi sticks on the table (a bust ends
+/// the game), so the total names the player count on any frame, not just
+/// the first deal. `ten` is in points (already × 100); `kyotaku` is the
+/// stick count from `seed[2]`. `None` for a total that is neither.
+pub fn three_players_from_scores(ten: &[i32], kyotaku: u8) -> Option<bool> {
+    let total = ten.iter().sum::<i32>() + 1000 * i32::from(kyotaku);
+    match total {
+        100_000 => Some(false),
+        105_000 => Some(true),
+        _ => None,
+    }
+}
+
 impl State {
     /// Set the player count. `<GO/>`, `<UN/>`, `<TAIKYOKU/>` and the E1H0
     /// `<INIT/>` all feed this; the last one wins, and E1H0 is authoritative.
@@ -130,15 +151,23 @@ impl State {
     }
 
     /// Player count implied by the session frames seen on this flow, before
-    /// any kyoku frame: `<GO/>`'s sanma bit, else a `<UN/>` roster with one
-    /// empty slot. `None` when neither was seen (a flow attached mid-game).
+    /// any kyoku frame: `<GO/>`'s sanma bit, else a `<UN/>` roster with
+    /// exactly one empty slot (the ghost) or none. `None` when neither was
+    /// seen (a flow attached mid-game) or the roster is not readable — our
+    /// own name (`n0`) is never blank, so a blank one is not a roster.
     pub fn three_players_hint(&self) -> Option<bool> {
         if let Some(t) = self.go_type {
             return Some(t & GO_TYPE_SANMA != 0);
         }
-        self.un_names
-            .as_ref()
-            .map(|names| names.iter().filter(|n| !n.is_empty()).count() == 3)
+        let names = self.un_names.as_ref()?;
+        if names[0].is_empty() {
+            return None;
+        }
+        match names.iter().filter(|n| n.is_empty()).count() {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
     }
 
     /// Convert wire-relative seat to wire-absolute seat. Always uses 4-cycle
@@ -283,6 +312,37 @@ mod tests {
         assert_eq!(s.three_players_hint(), Some(true), "GO bit wins");
         s.go_type = Some(0x09);
         assert_eq!(s.three_players_hint(), Some(false));
+        // A blank own name is not a roster; two blanks is not a table.
+        s.go_type = None;
+        s.un_names = Some(["".into(), "".into(), "b".into(), "c".into()]);
+        assert_eq!(s.three_players_hint(), None);
+        s.un_names = Some(["a".into(), "".into(), "".into(), "c".into()]);
+        assert_eq!(s.three_players_hint(), None);
+    }
+
+    /// 100000 points on the table (players + sticks) is yonma, 105000 is
+    /// sanma, on any deal.
+    #[test]
+    fn three_players_from_scores_reads_the_table_total() {
+        assert_eq!(three_players_from_scores(&[25_000; 4], 0), Some(false));
+        assert_eq!(
+            three_players_from_scores(&[35_000, 35_000, 35_000, 0], 0),
+            Some(true)
+        );
+        assert_eq!(
+            three_players_from_scores(&[35_000, 35_000, 35_000], 0),
+            Some(true)
+        );
+        // Mid-game, two riichi sticks out.
+        assert_eq!(
+            three_players_from_scores(&[18_000, 31_000, 24_000, 25_000], 2),
+            Some(false)
+        );
+        assert_eq!(
+            three_players_from_scores(&[40_000, 30_000, 34_000, 0], 1),
+            Some(true)
+        );
+        assert_eq!(three_players_from_scores(&[30_000; 4], 0), None);
     }
 
     #[test]

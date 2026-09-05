@@ -72,8 +72,12 @@ both were seen; the kyoku frame only fills in when it was not
 0 points). That check is final. Before it fires — and on a flow that joined
 mid-game and will never see it — the bridge takes the earlier hints in this
 order: `<GO type>` bit `0x10`, then a `<UN/>` roster with exactly one empty
-slot, then (REINIT only) the shape of the snapshot itself: the ghost's score
-still 0, its river empty, and no 2m–8m in our hand.
+slot, then the table total on the kyoku frame itself (`ten` plus the riichi
+sticks in `seed[2]`: Tenhou deals 100000 points in yonma and 105000 in sanma,
+and a bust ends the game, so the total never changes — see
+`state::three_players_from_scores`), and as a last resort on `REINIT` the
+shape of the snapshot: the ghost's score still 0, its river empty, and no
+2m–8m in our hand or any river.
 
 ### Meld bitfield
 
@@ -159,8 +163,16 @@ The bridge therefore:
    `start_game` at the next `<INIT/>`, which reopens the game for the
    tracker, bots and history on the right seat and player count.
 
-Games that end while suspended end silently: the `end_game` is withheld like
-everything else, and the next game's `<TAIKYOKU/>` lifts the suspension.
+The game's end is the one event that still passes while suspended, so the
+tracker closes the game, the bot manager stops its runner and History resets.
+Whether it arrives during the suspended hand or after play resumed, the
+`end_game` of a game this flow joined mid-way is emitted as *terminated*
+(`MjaiEvent::terminated_game`): the hands before the rejoin were never seen
+here, so History drops the game instead of filing the remainder as a complete
+one with its own per-hand stats. The flag clears at the next `<TAIKYOKU/>`,
+or at an E1H0 `<INIT/>` — the first deal is a game start whether or not a
+`TAIKYOKU` announced it, and it re-seats the flow the same way `TAIKYOKU`
+would.
 
 ## Adding a new tag handler
 

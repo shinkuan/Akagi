@@ -379,8 +379,9 @@ Useful when debugging a bot or a bridge issue.
   is a snapshot of the table, not a replay, so Akagi cannot rebuild the
   hand in progress. It shows a "rejoined mid-hand" toast and pauses
   analysis and autoplay until the next hand starts; from there on the
-  game is tracked normally. The hands played before the drop are not
-  kept in History.
+  game is tracked normally. A game rejoined this way is not saved to
+  History, since Akagi never saw the hands before the drop and a partial
+  record would skew the statistics.
 - **Bot crashed mid-game.** The Inspector tab shows the last frame the
   bot saw before dying; attach it to the bug report.
 - **Wrong bot picked for a 3-player game.** Check `bot.active_3p` in
