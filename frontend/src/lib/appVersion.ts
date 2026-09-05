@@ -6,7 +6,7 @@ import { HAS_TAURI } from '@/lib/tauri'
 // string until the real version resolves. The release tagging script
 // rewrites this line on every release — keep the exact
 // `const VERSION_FALLBACK = '…'` shape it greps for.
-export const VERSION_FALLBACK = '3.7.0'
+export const VERSION_FALLBACK = '3.7.1'
 
 /** Resolve the running app version, falling back for browser previews. */
 export async function getAppVersion(): Promise<string> {
