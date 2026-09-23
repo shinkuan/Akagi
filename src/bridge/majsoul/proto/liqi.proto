@@ -2231,6 +2231,7 @@ message Character {
     bool is_upgraded = 6;
     repeated uint32 extra_emoji = 7;
     repeated uint32 rewarded_level = 8;
+    repeated uint32 enabled_emoji = 9;
 }
 
 message CharacterStatistic {
@@ -2920,6 +2921,7 @@ message GameUserInput {
     uint32 seat = 1;
     uint32 type = 2;
     uint32 emo = 3;
+    uint32 emo_id = 4;
     .lq.GameSelfOperation operation = 10;
     .lq.GameChiPengGang cpg = 11;
     .lq.GameVoteGameEnd vote = 12;
@@ -3626,6 +3628,7 @@ message PaymentSettingV2 {
         uint32 goods_click_action = 3;
         string goods_click_text = 4;
         repeated string enabled_channel = 5;
+        repeated string disabled_platform = 6;
     }
     message PaymentSettingUnit {
         string platform = 1;
@@ -3636,6 +3639,7 @@ message PaymentSettingV2 {
         bool enable_for_frozen_account = 6;
         string extra_data = 7;
         repeated string enabled_channel = 8;
+        repeated string disabled_platform = 9;
     }
     uint32 open_payment = 1;
     repeated .lq.PaymentSettingV2.PaymentSettingUnit payment_platforms = 2;
@@ -5287,8 +5291,24 @@ message ReqLikeSNS {
 }
 
 message ReqLogReport {
-    uint32 success = 1;
-    uint32 failed = 2;
+    message EmojiStat {
+        uint32 id = 1;
+        uint32 count = 2;
+    }
+    repeated .lq.ReqLogReport.EmojiStat emoji = 3;
+    uint32 m = 4;
+    uint32 d = 5;
+    uint32 e = 6;
+    uint32 f = 7;
+    uint32 t = 8;
+    uint32 g = 9;
+    string uuid = 10;
+    uint32 x = 11;
+    uint32 y = 12;
+    uint32 z = 13;
+    uint32 a = 14;
+    .lq.ClientDeviceInfo c = 15;
+    uint32 v = 16;
 }
 
 message ReqLogin {
@@ -7185,6 +7205,7 @@ message ResFetchManagerCustomizedContest {
     .lq.ResFetchManagerCustomizedContest.SeasonInfo season = 13;
     uint32 match_start_time = 14;
     uint32 match_end_time = 15;
+    uint32 version = 16;
 }
 
 message ResFetchManagerCustomizedContestList {
