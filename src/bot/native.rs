@@ -540,6 +540,18 @@ fn model_arg(model: &str) -> Option<&str> {
     (!model.is_empty()).then_some(model)
 }
 
+fn attach_legal_ops(meta: &mut Option<Value>, legal_ops: &[String]) {
+    let Some(show) = meta
+        .as_mut()
+        .and_then(Value::as_object_mut)
+        .and_then(|root| root.get_mut("show"))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    show.insert("legal_ops".to_string(), serde_json::json!(legal_ops));
+}
+
 #[async_trait]
 impl BotRunner for NativeBot {
     async fn react(&mut self, events: &[MjaiEvent]) -> Result<BotResponse> {
@@ -595,11 +607,12 @@ impl BotRunner for NativeBot {
         // riichi) has only one possible answer, so asking the server would
         // spend a metered API call to learn nothing. Answer it locally.
         let use_api = self.api.is_some() && self.breaker.allows() && !local.forced;
-        let (action, meta) = if use_api {
+        let (action, mut meta) = if use_api {
             self.remote_decision(&local).await
         } else {
             local_reply(&local, self.seat)
         };
+        attach_legal_ops(&mut meta, &local.legal_ops);
         Ok(BotResponse { action, meta })
     }
 
@@ -1947,6 +1960,31 @@ mod tests {
         assert_eq!(item["label"], "Discard");
         assert_eq!(item["pais"][0], "W");
         assert_eq!(item["value"], "83%");
+    }
+
+    #[test]
+    fn show_meta_carries_legal_ops_omitted_by_policy_top_n() {
+        let mut meta = Some(serde_json::json!({
+            "show": {
+                "items": [
+                    {"label": "Pon", "value": "27%"},
+                    {"label": "Pass", "value": "27%"},
+                    {"label": "Chi", "value": "26%"}
+                ]
+            }
+        }));
+        attach_legal_ops(
+            &mut meta,
+            &["pass", "chi", "pon", "kan"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+        );
+
+        assert_eq!(
+            meta.unwrap()["show"]["legal_ops"],
+            serde_json::json!(["pass", "chi", "pon", "kan"]),
+        );
     }
 
     /// The card title names the API model that served the decision: the
