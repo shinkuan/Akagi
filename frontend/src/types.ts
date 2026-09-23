@@ -424,6 +424,8 @@ export type Hand13Result = {
   riichi_point: number
   mixed_round_point: number
   yaku_ids: number[]
+  yaku_names: string[]
+  yaku_names_en: string[]
 }
 
 export type DiscardCandidate = { discard: string; result: Hand13Result }
