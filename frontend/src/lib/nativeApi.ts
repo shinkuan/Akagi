@@ -2,6 +2,7 @@ import i18n from 'i18next'
 import { invoke } from '@/lib/tauri'
 import { toast } from '@/components/ui/sonner'
 import { NATIVE_3P, NATIVE_4P } from '@/lib/nativeBots'
+import { effectiveProxy } from '@/lib/proxy'
 import { useConfigStore } from '@/stores/configStore'
 import type { AppConfig, KeyStatus, NativeApiConfig } from '@/types'
 
@@ -21,8 +22,11 @@ export type ApiSaveCheck =
  * Guard run before persisting `bot.api`: when cloud inference is **enabled**,
  * confirm the key actually works (via `GET /v3/key`) so a broken key can't be
  * saved in the enabled state — otherwise the built-in bot would silently fall
- * back to the local model every turn with no signal to the user. A disabled
- * API always passes; there is nothing to check.
+ * back to the local model every turn with no signal to the user. The check
+ * travels through the config's proxy ([`effectiveProxy`]): it must succeed on
+ * the same route live inference will use, or a server only reachable via
+ * proxy could never be saved. A disabled API always passes; there is nothing
+ * to check.
  */
 export async function checkApiBeforeSave(api: NativeApiConfig): Promise<ApiSaveCheck> {
   if (!api.enabled) return { ok: true }
@@ -32,6 +36,7 @@ export async function checkApiBeforeSave(api: NativeApiConfig): Promise<ApiSaveC
   try {
     await invoke<KeyStatus>('native_api_key_status', {
       baseUrl: api.base_url,
+      proxy: effectiveProxy(api),
       key: api.key,
     })
     return { ok: true }
