@@ -55,6 +55,22 @@ describe('checkApiBeforeSave', () => {
     expect(await checkApiBeforeSave(cfg)).toEqual({ ok: true })
     expect(invoke).toHaveBeenCalledWith('native_api_key_status', {
       baseUrl: cfg.base_url,
+      proxy: '',
+      key: cfg.key,
+    })
+  })
+
+  // Regression: the pre-save check used to omit `proxy`, so it went direct.
+  // On a network where the inference server is only reachable through the
+  // proxy, Save could never pass — and the proxy setting never persisted.
+  it('routes the pre-save check through an enabled proxy', async () => {
+    invoke.mockResolvedValueOnce({ plan: 'pro' })
+    const cfg = api({ proxy_enabled: true, proxy: '  socks5://127.0.0.1:1080  ' })
+    expect(await checkApiBeforeSave(cfg)).toEqual({ ok: true })
+    expect(invoke).toHaveBeenCalledWith('native_api_key_status', {
+      baseUrl: cfg.base_url,
+      // Trimmed, and only because the toggle is on (see `effectiveProxy`).
+      proxy: 'socks5://127.0.0.1:1080',
       key: cfg.key,
     })
   })
