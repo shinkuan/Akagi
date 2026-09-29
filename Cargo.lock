@@ -72,6 +72,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "which",
+ "windows-sys 0.61.2",
  "x509-parser",
  "zip 8.6.0",
 ]

@@ -15,6 +15,8 @@ use crate::util::NoConsoleWindow;
 use anyhow::{anyhow, Context, Result};
 use std::net::TcpListener;
 use std::path::Path;
+#[cfg(windows)]
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::process::{Child, Command};
 use tracing::{debug, warn};
@@ -25,6 +27,17 @@ const PORT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const HTTP_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(1);
 const TERM_GRACE: Duration = Duration::from_secs(5);
 const KILL_GRACE: Duration = Duration::from_secs(2);
+
+// The overlay uses this PID only to follow the visible top-level window of the
+// Chromium instance that this process launched. It never opens the process,
+// injects code, reads memory, or touches the page DOM.
+#[cfg(windows)]
+static CONTROLLED_BROWSER_PID: AtomicU32 = AtomicU32::new(0);
+
+#[cfg(windows)]
+pub fn controlled_browser_pid() -> u32 {
+    CONTROLLED_BROWSER_PID.load(Ordering::Relaxed)
+}
 
 pub struct SpawnedChromium {
     pub child: Child,
@@ -81,6 +94,8 @@ pub fn spawn(exe: &Path, profile: &Path, cfg: &ChromiumConfig) -> Result<Spawned
     let child = cmd
         .spawn()
         .with_context(|| format!("failed to spawn chromium binary at {}", exe.display()))?;
+    #[cfg(windows)]
+    CONTROLLED_BROWSER_PID.store(child.id().unwrap_or(0), Ordering::Relaxed);
     debug!(
         "spawned chromium pid={:?} remote_debugging_port={}",
         child.id(),
