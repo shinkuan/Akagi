@@ -210,7 +210,15 @@ async fn handle_socket(shared: Arc<Shared>, mut socket: WebSocket, check: Origin
             break;
         }
         let msg = tokio::select! {
-            _ = stop.changed() => continue,
+            changed = stop.changed() => {
+                // A dropped sender means the backend is gone without having
+                // said so; `changed()` would then return at once forever.
+                if changed.is_err() {
+                    let _ = socket.send(Message::Close(None)).await;
+                    break;
+                }
+                continue;
+            }
             m = socket.recv() => m,
         };
         match msg {

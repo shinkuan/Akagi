@@ -244,8 +244,11 @@ browser window.
 
 The script only reads: every frame reaches the game unchanged, and
 nothing it does can break the page. Start Akagi before you enter a
-match, or reload the page — frames sent before the script reached Akagi
-are only held for a short while. Autoplay needs a page Akagi can drive,
+match, or reload the page — while Akagi is unreachable the script holds
+only the last minute of frames, and drops those of a game that already
+ended. If Akagi turns the page away (wrong platform, outdated script),
+the script stays quiet until the page is reloaded. Autoplay needs a page
+Akagi can drive,
 so it is not available in this mode; use Chromium mode for that.
 
 ---

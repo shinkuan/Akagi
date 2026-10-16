@@ -111,23 +111,33 @@ incompatibly.
 as if it were not installed. It is valid JavaScript as committed — every
 placeholder (`__AKAGI_ENDPOINT__`, `__AKAGI_VERSION__`, the `@match`
 line) sits in a string or a comment — so `frontend/src/lib/userscript.test.ts`
-runs it against a fake page. Change its behaviour there first.
+runs it against a fake page. Change its behaviour there first. While Akagi
+is unreachable it holds only the last minute of frames (capped by count
+and size), forgets those of sockets that closed in the meantime — so a
+game that ended while Akagi was down is never replayed as live — and stops
+encoding altogether once the reconnect backoff tops out. A policy close
+(`1008`, the version and platform rejections above) stops it until the
+page reloads; retrying could not change the answer.
 
 Autoplay is unavailable on this backend: there is no page handle to drive.
 
 **Adding a source.** Anything that can speak the protocol above over a
-WebSocket works — a browser extension, a tool on the same machine. A
-browser page needs its site in `GAME_SITES`; a local program sends no
-`Origin` and names its page in `hello.origin` instead.
+WebSocket works, if its handshake passes the Origin check: code running
+in the game page itself (it carries the page's `Origin`), or a program on
+this machine (no `Origin`; it names its page in `hello.origin` instead).
+An extension's background page or service worker sends its own
+`chrome-extension://` / `moz-extension://` origin and is refused unless
+that origin is added to the check.
 
 ## HTTP capture
 
-Both backends record the HTTP traffic they intercept, not just WebSocket
-frames. Before this, everything except WS was discarded, which hid the
-game's own HTTP entirely — route topology, version and CDN endpoints, and
-the analytics beacons through which the client reports on itself.
+The MITM and Chromium backends record the HTTP traffic they intercept,
+not just WebSocket frames; ingest sees no HTTP at all. Before this,
+everything except WS was discarded, which hid the game's own HTTP
+entirely — route topology, version and CDN endpoints, and the analytics
+beacons through which the client reports on itself.
 
-`http.rs` holds the policy both backends share: what to keep, what to
+`http.rs` holds the policy both of them share: what to keep, what to
 skip, and how to say so. Nothing in it understands any protocol above
 HTTP; meaning is added separately by `crate::inspector::annotate`.
 
@@ -141,7 +151,7 @@ Two rules are load-bearing:
   stalls the forward. Akagi forwards traffic untouched; buffering is the
   one thing that could change that.
 
-### What the two backends see differently
+### What MITM and Chromium see differently
 
 | | MITM | Chromium |
 |---|---|---|

@@ -26,46 +26,102 @@
   var ENDPOINT = '__AKAGI_ENDPOINT__';
   var PROTOCOL_VERSION = 1;
   var AGENT = 'userscript/__AKAGI_VERSION__';
-  // Frames held while Akagi is not reachable yet. A game socket usually
-  // opens before ours does, so its first frames (the ones naming our seat)
-  // must wait instead of being lost. Oldest are dropped past the cap.
-  var MAX_QUEUE = 2000;
+  // Frames are held while Akagi is not reachable yet: a game socket usually
+  // opens before ours does, and its first frames are the ones naming our
+  // seat. Only recent ones, though, and only from sockets still open —
+  // replaying a game that already ended would feed Akagi a match that is
+  // not happening.
+  var HOLD_MS = 60000;
+  var HOLD_MAX_FRAMES = 2000;
+  var HOLD_MAX_CHARS = 8 * 1024 * 1024;
   var RETRY_MIN_MS = 1000;
   var RETRY_MAX_MS = 30000;
+  // The close code Akagi turns a page away with (wrong platform, outdated
+  // script). Retrying cannot change that answer; reloading the page can.
+  var CLOSE_POLICY = 1008;
+  var OPEN = 1;
 
   var NativeWebSocket = window.WebSocket;
   if (!NativeWebSocket || window.__akagiCapture) return;
   Object.defineProperty(window, '__akagiCapture', { value: true });
 
+  // Native members, captured before the page gets a chance to override
+  // them: the wrapper runs inside a page subclass's `super()` call, before
+  // that subclass's own fields exist, so it must not call anything the
+  // subclass may have replaced.
+  var addListener = EventTarget.prototype.addEventListener;
+  var urlDescriptor = Object.getOwnPropertyDescriptor(NativeWebSocket.prototype, 'url');
+  var readUrl = urlDescriptor && urlDescriptor.get;
+  var nativeSend = NativeWebSocket.prototype.send;
+
   var flows = new WeakMap();
   var liveFlows = {};
   var nextFlow = 1;
+
+  function now() {
+    return window.performance ? window.performance.now() : Date.now();
+  }
 
   // ---- connection to Akagi ------------------------------------------------
 
   var akagi = null;
   var akagiOpen = false;
-  var queue = [];
+  var held = [];
+  var heldChars = 0;
   var retryMs = RETRY_MIN_MS;
   var retryTimer = null;
+  // Akagi has stayed unreachable through the whole backoff, so it is
+  // probably not running: stop encoding and holding frames until a
+  // connection succeeds.
+  var dormant = false;
+  // Akagi turned this page away. Nothing more until the page is reloaded.
+  var refused = false;
 
-  function post(msg) {
+  function connected() {
+    return akagiOpen && akagi !== null && akagi.readyState === OPEN;
+  }
+
+  function post(flow, msg) {
+    if (refused) return;
     var text = JSON.stringify(msg);
-    if (akagiOpen) {
+    if (connected()) {
       try {
         akagi.send(text);
         return;
       } catch (e) {
-        akagiOpen = false;
+        // Fall through and hold it; onclose reconnects.
       }
     }
-    queue.push(text);
-    if (queue.length > MAX_QUEUE) queue.shift();
+    held.push({ flow: flow, at: now(), text: text });
+    heldChars += text.length;
+    prune();
     connect();
   }
 
+  function prune() {
+    var cutoff = now() - HOLD_MS;
+    while (
+      held.length > 0 &&
+      (held.length > HOLD_MAX_FRAMES || heldChars > HOLD_MAX_CHARS || held[0].at < cutoff)
+    ) {
+      heldChars -= held.shift().text.length;
+    }
+  }
+
+  function dropHeld(flow) {
+    var kept = [];
+    heldChars = 0;
+    for (var i = 0; i < held.length; i++) {
+      if (held[i].flow !== flow) {
+        kept.push(held[i]);
+        heldChars += held[i].text.length;
+      }
+    }
+    held = kept;
+  }
+
   function connect() {
-    if (akagi || retryTimer) return;
+    if (refused || akagi || retryTimer) return;
     var sock;
     try {
       // The page's constructor, not the wrapped one: our own socket must
@@ -78,9 +134,12 @@
     akagi = sock;
     sock.onopen = function () {
       akagiOpen = true;
+      dormant = false;
       retryMs = RETRY_MIN_MS;
-      var held = queue;
-      queue = [];
+      prune();
+      var pending = held;
+      held = [];
+      heldChars = 0;
       try {
         sock.send(
           JSON.stringify({
@@ -93,18 +152,24 @@
         );
         // Announce every live game socket — the ones opened while Akagi was
         // unreachable, and after a reconnect all of them — so Akagi can name
-        // their flows. `open` is never queued; this is where it is sent.
+        // their flows. `open` is never held; this is where it is sent.
         for (var id in liveFlows) {
           sock.send(JSON.stringify({ t: 'open', flow: Number(id), url: liveFlows[id] }));
         }
-        for (var i = 0; i < held.length; i++) sock.send(held[i]);
+        for (var i = 0; i < pending.length; i++) sock.send(pending[i].text);
       } catch (e) {
         // The socket died mid-flush; onclose reconnects.
       }
     };
-    sock.onclose = function () {
+    sock.onclose = function (ev) {
       akagiOpen = false;
       akagi = null;
+      if (ev && ev.code === CLOSE_POLICY) {
+        refused = true;
+        held = [];
+        heldChars = 0;
+        return;
+      }
       scheduleRetry();
     };
     sock.onerror = function () {
@@ -113,7 +178,8 @@
   }
 
   function scheduleRetry() {
-    if (retryTimer) return;
+    if (refused || retryTimer) return;
+    if (retryMs >= RETRY_MAX_MS) dormant = true;
     retryTimer = window.setTimeout(function () {
       retryTimer = null;
       connect();
@@ -145,15 +211,25 @@
     });
   }
 
+  // Copy mutable buffers now: they are encoded later, by which time the
+  // page may have reused or transferred them. Strings and Blobs are
+  // immutable.
+  function snapshot(data) {
+    if (data instanceof ArrayBuffer) return data.slice(0);
+    if (ArrayBuffer.isView(data)) {
+      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice();
+    }
+    return data;
+  }
+
   // Resolves to `{kind, data}`, or null for data this cannot represent.
   function encode(data) {
     if (typeof data === 'string') return Promise.resolve({ kind: 'text', data: data });
     if (data instanceof ArrayBuffer) {
       return Promise.resolve({ kind: 'binary', data: base64(new Uint8Array(data)) });
     }
-    if (ArrayBuffer.isView(data)) {
-      var view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-      return Promise.resolve({ kind: 'binary', data: base64(view) });
+    if (data instanceof Uint8Array) {
+      return Promise.resolve({ kind: 'binary', data: base64(data) });
     }
     if (window.Blob && data instanceof window.Blob) {
       return readBlob(data).then(function (buf) {
@@ -173,14 +249,16 @@
     state.chain = state.chain
       .then(make)
       .then(function (msg) {
-        if (msg) post(msg);
+        if (msg) post(state.flow, msg);
       })
       .catch(function () {});
   }
 
   function forward(state, dir, data) {
+    if (refused || dormant) return;
+    var copy = snapshot(data);
     enqueue(state, function () {
-      return encode(data).then(function (enc) {
+      return encode(copy).then(function (enc) {
         return enc && { t: 'frame', flow: state.flow, dir: dir, kind: enc.kind, data: enc.data };
       });
     });
@@ -188,37 +266,43 @@
 
   function watch(ws, requestedUrl) {
     var flow = nextFlow++;
-    var url = String(ws.url || requestedUrl);
     var state = { flow: flow, chain: Promise.resolve() };
-    flows.set(ws, state);
-    liveFlows[flow] = url;
-    if (akagiOpen) post({ t: 'open', flow: flow, url: url });
-    else connect();
-    ws.addEventListener('message', function (ev) {
+    addListener.call(ws, 'message', function (ev) {
       try {
         forward(state, 'down', ev.data);
       } catch (e) {}
     });
-    ws.addEventListener('close', function () {
+    addListener.call(ws, 'close', function () {
       try {
         delete liveFlows[flow];
+        // After everything already queued for this socket: tell Akagi it
+        // closed, or — if Akagi never heard of it — forget its held frames.
         enqueue(state, function () {
-          return { t: 'close', flow: flow };
+          if (connected()) return { t: 'close', flow: flow };
+          dropHeld(flow);
+          return null;
         });
       } catch (e) {}
     });
+    var url = String((readUrl ? readUrl.call(ws) : ws.url) || requestedUrl);
+    flows.set(ws, state);
+    liveFlows[flow] = url;
+    if (connected()) post(flow, { t: 'open', flow: flow, url: url });
+    else connect();
   }
 
-  var nativeSend = NativeWebSocket.prototype.send;
   NativeWebSocket.prototype.send = function (data) {
+    // Send first: a frame the socket refused (it throws, as natively) never
+    // left, so it must not reach Akagi either.
+    var result = nativeSend.apply(this, arguments);
     try {
       var state = flows.get(this);
       if (state) forward(state, 'up', data);
     } catch (e) {}
-    return nativeSend.apply(this, arguments);
+    return result;
   };
 
-  window.WebSocket = new Proxy(NativeWebSocket, {
+  var WrappedWebSocket = new Proxy(NativeWebSocket, {
     construct: function (target, args, newTarget) {
       var ws = Reflect.construct(target, args, newTarget);
       try {
@@ -227,4 +311,9 @@
       return ws;
     },
   });
+  // Keep `ws.constructor === WebSocket` true, as it is without the script.
+  try {
+    NativeWebSocket.prototype.constructor = WrappedWebSocket;
+  } catch (e) {}
+  window.WebSocket = WrappedWebSocket;
 })();
