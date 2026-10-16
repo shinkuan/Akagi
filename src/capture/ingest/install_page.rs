@@ -29,7 +29,7 @@ struct Strings {
 const EN: Strings = Strings {
     html_lang: "en",
     title: "Install the Akagi userscript",
-    intro: "Akagi reads the game in this browser through a small userscript. It only reads: every frame reaches the game unchanged.",
+    intro: "Akagi uses a userscript to read the WebSocket traffic of the supported games in this browser. It only reads; nothing is modified.",
     install: "Install userscript",
     no_manager_title: "Only seeing a page of code?",
     no_manager: "Then this browser has no userscript manager yet. Install one of these, come back to this page and click the button again:",
@@ -42,7 +42,7 @@ const EN: Strings = Strings {
 const JA: Strings = Strings {
     html_lang: "ja",
     title: "Akagi ユーザースクリプトのインストール",
-    intro: "Akagi は小さなユーザースクリプトを通じて、このブラウザのゲームを読み取ります。読み取りのみで、ゲームの通信は一切変更しません。",
+    intro: "Akagi はユーザースクリプトで、このブラウザ上の対象ゲームの WebSocket 通信を読み取ります。読み取りのみで、変更はしません。",
     install: "ユーザースクリプトをインストール",
     no_manager_title: "コードのページが表示されるだけの場合",
     no_manager: "このブラウザにはまだユーザースクリプトマネージャーがありません。次のどちらかをインストールしてから、このページに戻ってもう一度ボタンを押してください：",
@@ -55,7 +55,7 @@ const JA: Strings = Strings {
 const ZH_TW: Strings = Strings {
     html_lang: "zh-Hant",
     title: "安裝 Akagi userscript",
-    intro: "Akagi 透過一支小小的 userscript 讀取這個瀏覽器裡的遊戲。它只讀取：每個訊框都原封不動送到遊戲。",
+    intro: "Akagi 透過 userscript 讀取這個瀏覽器裡指定遊戲的 WebSocket，只讀取、不修改。",
     install: "安裝 userscript",
     no_manager_title: "按下去只看到一堆程式碼？",
     no_manager: "代表這個瀏覽器還沒有 userscript 管理器。請先安裝下面其中一個，再回到這一頁重新按一次按鈕：",
@@ -68,7 +68,7 @@ const ZH_TW: Strings = Strings {
 const ZH_CN: Strings = Strings {
     html_lang: "zh-Hans",
     title: "安装 Akagi userscript",
-    intro: "Akagi 通过一个小小的 userscript 读取这个浏览器里的游戏。它只读取：每个帧都原封不动送到游戏。",
+    intro: "Akagi 通过 userscript 读取这个浏览器里指定游戏的 WebSocket，只读取、不修改。",
     install: "安装 userscript",
     no_manager_title: "点击后只看到一堆代码？",
     no_manager: "说明这个浏览器还没有 userscript 管理器。请先安装下面其中一个，再回到这个页面重新点击按钮：",

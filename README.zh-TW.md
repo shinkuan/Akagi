@@ -207,8 +207,8 @@ Akagi 以 portable zip 發佈 — 每個平台一個自帶所需檔案的資料�
 ### D. 自己的瀏覽器（userscript）
 
 適合在平常用的瀏覽器玩雀魂或天鳳 — 自己的設定檔、自己的登入狀態，
-Firefox 也可以。Akagi 監聽 `127.0.0.1:23411`，遊戲頁面上的一支小
-userscript 把遊戲的 WebSocket 訊框送過來。不需 proxy、不需憑證，
+Firefox 也可以。Akagi 監聽 `127.0.0.1:23411`，由遊戲頁面上的 userscript
+讀取遊戲的 WebSocket 並轉送過來。不需 proxy、不需憑證，
 也不會多開一個瀏覽器視窗。
 
 1. 在 Setup 或 *設定 → 封包擷取* 選擇 **自己的瀏覽器（userscript）**。

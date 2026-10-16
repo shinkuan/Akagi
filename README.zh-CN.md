@@ -207,8 +207,8 @@ bot 配置，以及 CA 信任（仅 MITM 模式才需要）。没有 bot 要安�
 ### D. 自己的浏览器（userscript）
 
 适合在平常用的浏览器玩雀魂或天凤 — 自己的配置文件、自己的登录状态，
-Firefox 也可以。Akagi 监听 `127.0.0.1:23411`，游戏页面上的一个小
-userscript 把游戏的 WebSocket 帧发过来。无需 proxy、无需证书，
+Firefox 也可以。Akagi 监听 `127.0.0.1:23411`，由游戏页面上的 userscript
+读取游戏的 WebSocket 并转发过来。无需 proxy、无需证书，
 也不会多开一个浏览器窗口。
 
 1. 在 Setup 或 *设置 → 封包捕获* 选择 **自己的浏览器（userscript）**。

@@ -223,8 +223,8 @@ System-wide proxy with a self-signed root CA at `./ca/`:
 
 For playing Mahjong Soul or Tenhou in your everyday browser — your own
 profile, your own login, Firefox included. Akagi listens on
-`127.0.0.1:23411`, and a small userscript running on the game page sends
-it the game's WebSocket frames. No proxy, no certificate, no extra
+`127.0.0.1:23411`, and a userscript on the game page reads the game's
+WebSocket and forwards it there. No proxy, no certificate, no extra
 browser window.
 
 1. Pick **Your own browser (userscript)** as the capture mode, in Setup
