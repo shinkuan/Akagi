@@ -15,17 +15,24 @@ import { invoke } from '@/lib/tauri'
 // ingest backend, so it only works once ingest capture is running on
 // `addr`. "Copy script" renders the script locally and always works, for a
 // browser that is not the default one or before the backend is up.
+//
+// In Setup the backend cannot be up yet — nothing is saved until Finish —
+// so instead of a button that can never be pressed there, the panel says
+// where Install will be once setup is done.
 export function IngestUserscriptPanel({
   addr,
   endpointLive,
+  context,
 }: {
   addr: string
   /** The ingest backend is running and listening on `addr`. */
   endpointLive: boolean
+  context: 'setup' | 'settings'
 }) {
   const { t } = useTranslation()
   const [copying, setCopying] = useState(false)
   const url = userscriptUrl(addr)
+  const showInstall = endpointLive || context === 'settings'
 
   const copy = async () => {
     setCopying(true)
@@ -49,15 +56,19 @@ export function IngestUserscriptPanel({
       </ol>
       <code className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">{url}</code>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => openExternal(url)} disabled={!endpointLive}>
-          {t('ingest.install')}
-        </Button>
+        {showInstall && (
+          <Button size="sm" onClick={() => openExternal(url)} disabled={!endpointLive}>
+            {t('ingest.install')}
+          </Button>
+        )}
         <Button size="sm" variant="outline" onClick={copy} disabled={copying}>
           {t('ingest.copy')}
         </Button>
       </div>
       {!endpointLive && (
-        <p className="text-xs text-muted-foreground">{t('ingest.install_needs_running')}</p>
+        <p className="text-xs text-muted-foreground">
+          {context === 'setup' ? t('ingest.install_after_setup') : t('ingest.install_needs_running')}
+        </p>
       )}
       <p className="text-xs text-muted-foreground">{t('ingest.no_autoplay')}</p>
     </div>

@@ -1294,7 +1294,11 @@ function CaptureCard({
                 placeholder="127.0.0.1:23411"
               />
             </Field>
-            <IngestUserscriptPanel addr={draft.capture.ingest.addr} endpointLive={ingestLive} />
+            <IngestUserscriptPanel
+              addr={draft.capture.ingest.addr}
+              endpointLive={ingestLive}
+              context="settings"
+            />
           </>
         )}
       </CardContent>

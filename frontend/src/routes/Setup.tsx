@@ -560,7 +560,11 @@ function IngestConfigStep({
           placeholder="127.0.0.1:23411"
         />
       </Field>
-      <IngestUserscriptPanel addr={draft.capture.ingest.addr} endpointLive={endpointLive} />
+      <IngestUserscriptPanel
+        addr={draft.capture.ingest.addr}
+        endpointLive={endpointLive}
+        context="setup"
+      />
     </div>
   )
 }

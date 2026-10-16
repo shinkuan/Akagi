@@ -934,6 +934,7 @@
     "copied": "已复制 userscript，请在管理器中新建脚本并粘贴。",
     "copy_failed": "无法复制 userscript。",
     "install_needs_running": "「安装」会从 Akagi 本身打开脚本，所以要等 userscript 捕获启动后才能用(请先保存)。「复制脚本」随时都能用。",
+    "install_after_setup": "完成设置后，Akagi 才会启动 userscript 捕获；届时到 设置 → 捕获 点击「安装 userscript」。也可以现在先「复制脚本」，到管理器新建脚本后粘贴。",
     "no_autoplay": "此模式不支持自动打牌。",
     "finish_next": "下一步：到 设置 → 捕获 安装 userscript。",
     "overview_title": "Userscript 捕获"
