@@ -224,8 +224,9 @@ Firefox 也可以。Akagi 监听 `127.0.0.1:23411`，由游戏页面上的 users
    userscript 管理器，说明页会告诉你去哪里装。（如果玩游戏的浏览器不是
    默认浏览器，请在该浏览器自行打开 `http://127.0.0.1:23411/`，或用
    **复制脚本** 粘贴到新脚本。）
-5. 完成 Setup（或保存）后，打开（或刷新）游戏页面，Akagi 会弹出
-   *Userscript connected* 通知。
+5. 完成 Setup（或保存）后，打开（或刷新）游戏页面。浏览器询问该网站
+   能否 **访问局域网中的设备** 时，请选 **允许**，脚本才连得上这台电脑上
+   的 Akagi。之后 Akagi 会弹出 *Userscript connected* 通知。
 
 这个脚本只读取：每个帧都原封不动送到游戏，它做的任何事都不会让页面
 出错。请在进入对局前先启动 Akagi，或刷新页面 — Akagi 连不上时，
@@ -403,12 +404,15 @@ minisign -Vm akagi-<version>-<platform>.zip -p minisign.pub
   `capture.chromium.executable`。如果浏览器有启动但没
   帧流入，检查 `--remote-debugging-port` 是否被其他
   扩展拦截。
-- **userscript 模式没有出现「Userscript connected」通知。** 依次检查：
-  捕获正在运行（*设置 → 封包捕获* 显示 `userscript (127.0.0.1:23411)`）；
-  userscript 已安装，且在管理器里对游戏网站启用；Chrome / Edge 的管理器
-  已开启 **允许用户脚本**；然后刷新游戏页面。如果浏览器询问该页面能否
-  访问局域网中的设备，请允许 — 那是脚本在连接 `127.0.0.1` 上的 Akagi。
-  出现「wrong platform」通知表示该页面的游戏和 Akagi 设置的平台不同。
+- **userscript 模式没有出现「Userscript connected」通知。** 在游戏页面打开
+  浏览器 Console（F12），userscript 会打印以 `[Akagi]` 开头的状态消息。
+  完全没有 `[Akagi]` 消息说明脚本没在运行：检查它已安装并对游戏网站启用，
+  Chrome / Edge 的管理器已开启 **允许用户脚本**。出现 *cannot reach
+  Akagi* 说明连不上 `127.0.0.1:23411`：可能是捕获没在运行（*设置 → 封包捕获*
+  应显示 `userscript (127.0.0.1:23411)`），或是浏览器屏蔽了该网站
+  **访问局域网中的设备** — 这是最常见的原因，浏览器有报告时 Console 会
+  直接说明。请到地址栏左边的网站设置改回允许，再刷新。出现「wrong
+  platform」通知表示该页面的游戏和 Akagi 设置的平台不同。
 - **Bot 对局途中崩溃。** Inspector 标签页可显示 bot 死前
   看到的最后一帧；附在 bug 报告里。
 - **三麻挑了错的 bot。** 检查设置 → Bot 中的

@@ -60,10 +60,13 @@ function makePage(overrides: Record<string, unknown> = {}) {
   const Socket = makeSocketClass()
   const timers: Array<() => void> = []
   const clock = { t: 0 }
+  const logs: Array<{ level: string; msg: string }> = []
+  const record = (level: string) => (msg: string) => logs.push({ level, msg })
   const win: Record<string, unknown> = {
     WebSocket: Socket,
     location: { origin: 'https://tenhou.net', pathname: '/4/' },
     performance: { now: () => clock.t },
+    console: { info: record('info'), warn: record('warn'), error: record('error') },
     setTimeout: (fn: () => void) => {
       timers.push(fn)
       return timers.length
@@ -87,6 +90,7 @@ function makePage(overrides: Record<string, unknown> = {}) {
     PageSocket,
     timers,
     clock,
+    logs,
     run,
     akagiSockets,
     lastAkagi,
@@ -338,5 +342,75 @@ describe('ingest userscript', () => {
     game.receive('once')
     await settle()
     expect(frames(page.messages())).toEqual([{ flow: 1, dir: 'down', kind: 'text', data: 'once' }])
+  })
+
+  describe('console status', () => {
+    const lines = (page: ReturnType<typeof makePage>, level: string) =>
+      page.logs.filter((l) => l.level === level).map((l) => l.msg)
+
+    it('reports starting, watching a socket and connecting', async () => {
+      const page = makePage()
+      new page.PageSocket('wss://game.example/')
+      await settle()
+      page.lastAkagi().open()
+      const info = lines(page, 'info')
+      expect(info[0]).toMatch(/^\[Akagi\] capture userscript active/)
+      expect(info).toContain('[Akagi] watching game socket wss://game.example/')
+      expect(info).toContain('[Akagi] connected to Akagi')
+    })
+
+    it('warns once when Akagi is unreachable, not on every retry', async () => {
+      const page = makePage()
+      new page.PageSocket('wss://game.example/')
+      await settle()
+      page.lastAkagi().drop()
+      page.runLastTimer()
+      page.lastAkagi().drop()
+      const warns = lines(page, 'warn')
+      expect(warns).toHaveLength(1)
+      expect(warns[0]).toMatch(/cannot reach Akagi at ws:\/\/127\.0\.0\.1:23411\/ingest/)
+    })
+
+    // A blocked local-network permission fails the connection exactly like
+    // Akagi not running; the console has to say which it is.
+    it('names a blocked local network permission', async () => {
+      const page = makePage({
+        navigator: {
+          permissions: {
+            query: ({ name }: { name: string }) =>
+              name === 'local-network-access'
+                ? Promise.resolve({ state: 'denied' })
+                : Promise.reject(new TypeError('unknown permission')),
+          },
+        },
+      })
+      new page.PageSocket('wss://game.example/')
+      await settle()
+      page.lastAkagi().drop()
+      await settle()
+      const errors = lines(page, 'error')
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toMatch(/not allowed to access devices on your local network/)
+    })
+
+    it('stays quiet about permissions it is not denied', async () => {
+      const page = makePage({
+        navigator: { permissions: { query: () => Promise.resolve({ state: 'granted' }) } },
+      })
+      new page.PageSocket('wss://game.example/')
+      await settle()
+      page.lastAkagi().drop()
+      await settle()
+      expect(lines(page, 'error')).toEqual([])
+    })
+
+    it('explains a refusal', async () => {
+      const page = makePage()
+      new page.PageSocket('wss://game.example/')
+      await settle()
+      page.lastAkagi().open()
+      page.lastAkagi().drop(1008)
+      expect(lines(page, 'warn').at(-1)).toMatch(/Akagi turned this page away/)
+    })
   })
 })

@@ -243,8 +243,10 @@ browser window.
    your game browser is not your default browser, open
    `http://127.0.0.1:23411/` in it yourself, or use **Copy script** and
    paste it into a new script.)
-5. Finish Setup (or save), then open — or reload — the game page. Akagi
-   shows a *Userscript connected* toast.
+5. Finish Setup (or save), then open — or reload — the game page. When
+   the browser asks whether the site may **access devices on your local
+   network**, choose **Allow**: that is how the script reaches Akagi on
+   this computer. Akagi then shows a *Userscript connected* toast.
 
 The script only reads: every frame reaches the game unchanged, and
 nothing it does can break the page. Start Akagi before you enter a
@@ -415,15 +417,19 @@ Useful when debugging a bot or a bridge issue.
   "couldn't terminate the browser already using profile …" — close it
   manually and click Restart. Running two Akagi instances against the
   same profile is unsupported.
-- **No "Userscript connected" toast in userscript mode.** Check, in
-  order: capture is running (*Settings → Capture* shows `userscript
-  (127.0.0.1:23411)`); the userscript is installed and enabled for the
-  game site in your manager; on Chrome / Edge, **Allow user scripts** is
-  on for the manager; then reload the game page. If the browser asks
-  whether the page may access devices on your local network, allow it —
-  that is the script reaching Akagi on `127.0.0.1`. A "wrong platform"
-  toast means the page is for a different game than the platform set in
-  Akagi.
+- **No "Userscript connected" toast in userscript mode.** Open the
+  browser console (F12) on the game page: the userscript logs lines
+  starting with `[Akagi]` that say how far it got. No `[Akagi]` lines at
+  all means the script is not running — check it is installed and
+  enabled for the game site, and on Chrome / Edge that **Allow user
+  scripts** is on for the manager. *Cannot reach Akagi* means the
+  connection to `127.0.0.1:23411` fails: either capture is not running
+  (*Settings → Capture* should show `userscript (127.0.0.1:23411)`), or
+  the browser blocks the site from **accessing devices on your local
+  network** — the most common cause, and the console says so when the
+  browser reports it. Re-allow it in the site settings (the icon left of
+  the address bar) and reload. A "wrong platform" toast means the page is
+  for a different game than the platform set in Akagi.
 - **Tenhou reconnected in the middle of a hand.** Tenhou's rejoin message
   is a snapshot of the table, not a replay, so Akagi cannot rebuild the
   hand in progress. It shows a "rejoined mid-hand" toast and pauses

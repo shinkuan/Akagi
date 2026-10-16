@@ -929,6 +929,7 @@
     "step_manager": "Install a userscript manager (Tampermonkey or Violentmonkey) in the browser you play in.",
     "step_allow": "Chrome / Edge: open the manager's extension details and turn on “Allow user scripts”.",
     "step_install": "Install the Akagi userscript, then open (or reload) the game page.",
+    "step_permission": "When the browser asks whether the game site may access devices on your local network, choose Allow — that is how the userscript reaches Akagi on this computer. If you blocked it, re-allow it in the site settings (the icon left of the address bar) and reload.",
     "install": "Install userscript",
     "copy": "Copy script",
     "copied": "Userscript copied — paste it into a new script in your userscript manager.",

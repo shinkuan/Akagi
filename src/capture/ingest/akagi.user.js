@@ -40,6 +40,12 @@
   // script). Retrying cannot change that answer; reloading the page can.
   var CLOSE_POLICY = 1008;
   var OPEN = 1;
+  var LOG_PREFIX = '[Akagi] ';
+  // Chrome asks before a public site may reach this computer's own
+  // addresses, and a "Block" there fails the connection exactly like Akagi
+  // not running. The permission has had different names across Chrome
+  // versions, so each is asked about.
+  var LOCAL_NETWORK_PERMISSIONS = ['loopback-network', 'local-network-access', 'local-network'];
 
   var NativeWebSocket = window.WebSocket;
   if (!NativeWebSocket || window.__akagiCapture) return;
@@ -60,6 +66,46 @@
 
   function now() {
     return window.performance ? window.performance.now() : Date.now();
+  }
+
+  // Status lines for the browser console: the one place a user can see why
+  // nothing reaches Akagi. One line per state change, never per frame.
+  function log(level, msg) {
+    try {
+      var c = window.console;
+      if (c && typeof c[level] === 'function') c[level](LOG_PREFIX + msg);
+    } catch (e) {}
+  }
+
+  var warnedUnreachable = false;
+  var reportedBlocked = false;
+
+  function reportUnreachable() {
+    if (warnedUnreachable) return;
+    warnedUnreachable = true;
+    log(
+      'warn',
+      'cannot reach Akagi at ' + ENDPOINT + '. Is Akagi running with userscript capture? Retrying.'
+    );
+    var permissions = window.navigator && window.navigator.permissions;
+    if (!permissions || typeof permissions.query !== 'function') return;
+    LOCAL_NETWORK_PERMISSIONS.forEach(function (name) {
+      try {
+        permissions.query({ name: name }).then(
+          function (status) {
+            if (status.state !== 'denied' || reportedBlocked) return;
+            reportedBlocked = true;
+            log(
+              'error',
+              'this site is not allowed to access devices on your local network, so it cannot ' +
+                'reach Akagi on this computer. Allow local network access in the site settings ' +
+                '(the icon left of the address bar), then reload the page.'
+            );
+          },
+          function () {}
+        );
+      } catch (e) {}
+    });
   }
 
   // ---- connection to Akagi ------------------------------------------------
@@ -128,14 +174,19 @@
       // not be forwarded to Akagi as if it were the game's.
       sock = new NativeWebSocket(ENDPOINT);
     } catch (e) {
+      reportUnreachable();
       scheduleRetry();
       return;
     }
     akagi = sock;
+    var opened = false;
     sock.onopen = function () {
+      opened = true;
       akagiOpen = true;
       dormant = false;
+      warnedUnreachable = false;
       retryMs = RETRY_MIN_MS;
+      log('info', 'connected to Akagi');
       prune();
       var pending = held;
       held = [];
@@ -168,8 +219,15 @@
         refused = true;
         held = [];
         heldChars = 0;
+        log(
+          'warn',
+          'Akagi turned this page away (' + ((ev && ev.reason) || 'policy') + '). Fix it in ' +
+            'Akagi (platform setting, or reinstall the userscript), then reload this page.'
+        );
         return;
       }
+      if (opened) log('warn', 'lost the connection to Akagi; retrying');
+      else reportUnreachable();
       scheduleRetry();
     };
     sock.onerror = function () {
@@ -179,7 +237,10 @@
 
   function scheduleRetry() {
     if (refused || retryTimer) return;
-    if (retryMs >= RETRY_MAX_MS) dormant = true;
+    if (retryMs >= RETRY_MAX_MS && !dormant) {
+      dormant = true;
+      log('info', 'Akagi is still unreachable; pausing capture until it is back.');
+    }
     retryTimer = window.setTimeout(function () {
       retryTimer = null;
       connect();
@@ -287,6 +348,7 @@
     var url = String((readUrl ? readUrl.call(ws) : ws.url) || requestedUrl);
     flows.set(ws, state);
     liveFlows[flow] = url;
+    log('info', 'watching game socket ' + url);
     if (connected()) post(flow, { t: 'open', flow: flow, url: url });
     else connect();
   }
@@ -316,4 +378,5 @@
     NativeWebSocket.prototype.constructor = WrappedWebSocket;
   } catch (e) {}
   window.WebSocket = WrappedWebSocket;
+  log('info', 'capture userscript active; reporting to ' + ENDPOINT);
 })();

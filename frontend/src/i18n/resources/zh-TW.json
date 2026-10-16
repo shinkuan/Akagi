@@ -929,6 +929,7 @@
     "step_manager": "在你玩遊戲的瀏覽器安裝 userscript 管理器(Tampermonkey 或 Violentmonkey)。",
     "step_allow": "Chrome / Edge:打開管理器的擴充功能詳細資料，開啟「允許使用者指令碼」。",
     "step_install": "安裝 Akagi 的 userscript，然後開啟(或重新整理)遊戲頁面。",
+    "step_permission": "瀏覽器詢問遊戲網站能否「存取區域網路上的裝置」時，請選允許，userscript 才連得到這台電腦上的 Akagi。如果已經封鎖，請到網址列左邊的網站設定改回允許，再重新整理。",
     "install": "安裝 userscript",
     "copy": "複製腳本",
     "copied": "已複製 userscript，請在管理器中新增腳本並貼上。",

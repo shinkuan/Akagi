@@ -81,6 +81,7 @@ export function IngestUserscriptPanel({
         <li>{t('ingest.step_manager')}</li>
         <li>{t('ingest.step_allow')}</li>
         <li>{t('ingest.step_install')}</li>
+        <li>{t('ingest.step_permission')}</li>
       </ol>
       <code className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">{url}</code>
       <div className="flex flex-wrap gap-2">

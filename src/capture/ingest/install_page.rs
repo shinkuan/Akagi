@@ -22,6 +22,8 @@ struct Strings {
     no_manager: &'static str,
     chrome_title: &'static str,
     chrome: &'static str,
+    permission_title: &'static str,
+    permission: &'static str,
     after_title: &'static str,
     after: &'static str,
 }
@@ -35,8 +37,10 @@ const EN: Strings = Strings {
     no_manager: "Then this browser has no userscript manager yet. Install one of these, come back to this page and click the button again:",
     chrome_title: "Chrome / Edge",
     chrome: "After installing the manager, open chrome://extensions (edge://extensions on Edge), open the manager's Details and turn on “Allow user scripts”. Without it the manager cannot run any script.",
+    permission_title: "Allow local network access",
+    permission: "The first time the game page connects, the browser may ask whether the site may access devices on your local network. Choose Allow: that is how the userscript reaches Akagi on this computer. If you blocked it, re-allow it in the site settings (the icon left of the address bar) and reload the page.",
     after_title: "Then",
-    after: "Open — or reload — the game page. Akagi shows a “Userscript connected” notification.",
+    after: "Open — or reload — the game page. Akagi shows a “Userscript connected” notification. If it does not, open the browser console (F12) on the game page: lines starting with [Akagi] say what is wrong.",
 };
 
 const JA: Strings = Strings {
@@ -48,8 +52,10 @@ const JA: Strings = Strings {
     no_manager: "このブラウザにはまだユーザースクリプトマネージャーがありません。次のどちらかをインストールしてから、このページに戻ってもう一度ボタンを押してください：",
     chrome_title: "Chrome / Edge",
     chrome: "マネージャーをインストールしたら、chrome://extensions（Edge では edge://extensions）を開き、マネージャーの「詳細」で「ユーザー スクリプトを許可する」をオンにしてください。オフのままではスクリプトを実行できません。",
+    permission_title: "ローカル ネットワークへのアクセスを許可",
+    permission: "ゲームページが初めて接続するとき、ブラウザが「ローカル ネットワーク上のデバイスへのアクセス」を許可するか聞くことがあります。「許可」を選んでください。ユーザースクリプトはこれでこのパソコン上の Akagi に接続します。ブロックしてしまった場合は、アドレスバー左のサイト設定で許可に戻し、ページを再読み込みしてください。",
     after_title: "その後",
-    after: "ゲームページを開く（または再読み込みする）と、Akagi に「Userscript connected」の通知が表示されます。",
+    after: "ゲームページを開く（または再読み込みする）と、Akagi に「Userscript connected」の通知が表示されます。表示されない場合は、ゲームページでブラウザのコンソール（F12）を開いてください。[Akagi] で始まる行に原因が表示されます。",
 };
 
 const ZH_TW: Strings = Strings {
@@ -61,8 +67,10 @@ const ZH_TW: Strings = Strings {
     no_manager: "代表這個瀏覽器還沒有 userscript 管理器。請先安裝下面其中一個，再回到這一頁重新按一次按鈕：",
     chrome_title: "Chrome / Edge",
     chrome: "裝好管理器後，打開 chrome://extensions（Edge 是 edge://extensions），進入管理器的「詳細資料」，開啟「允許使用者指令碼」。沒開的話管理器無法執行任何腳本。",
+    permission_title: "允許存取區域網路",
+    permission: "遊戲頁面第一次連線時，瀏覽器可能會詢問該網站能否「存取區域網路上的裝置」。請選允許，userscript 才連得到這台電腦上的 Akagi。如果已經封鎖，請到網址列左邊的網站設定改回允許，再重新整理頁面。",
     after_title: "接著",
-    after: "開啟（或重新整理）遊戲頁面，Akagi 會跳出「Userscript connected」通知。",
+    after: "開啟（或重新整理）遊戲頁面，Akagi 會跳出「Userscript connected」通知。沒有出現的話，在遊戲頁面打開瀏覽器的 Console（F12），以 [Akagi] 開頭的訊息會說明原因。",
 };
 
 const ZH_CN: Strings = Strings {
@@ -74,8 +82,10 @@ const ZH_CN: Strings = Strings {
     no_manager: "说明这个浏览器还没有 userscript 管理器。请先安装下面其中一个，再回到这个页面重新点击按钮：",
     chrome_title: "Chrome / Edge",
     chrome: "装好管理器后，打开 chrome://extensions（Edge 是 edge://extensions），进入管理器的「详细信息」，开启「允许用户脚本」。不开启的话管理器无法运行任何脚本。",
+    permission_title: "允许访问局域网",
+    permission: "游戏页面第一次连接时，浏览器可能会询问该网站能否「访问局域网中的设备」。请选允许，userscript 才连得上这台电脑上的 Akagi。如果已经屏蔽，请到地址栏左边的网站设置改回允许，再刷新页面。",
     after_title: "然后",
-    after: "打开（或刷新）游戏页面，Akagi 会弹出「Userscript connected」通知。",
+    after: "打开（或刷新）游戏页面，Akagi 会弹出「Userscript connected」通知。没有出现的话，在游戏页面打开浏览器的 Console（F12），以 [Akagi] 开头的消息会说明原因。",
 };
 
 fn strings(lang: Option<&str>) -> &'static Strings {
@@ -120,6 +130,8 @@ pub fn render(lang: Option<&str>) -> String {
 </ul>
 <h2>{chrome_title}</h2>
 <p>{chrome}</p>
+<h2>{permission_title}</h2>
+<p>{permission}</p>
 <h2>{after_title}</h2>
 <p>{after}</p>
 </body>
@@ -134,6 +146,8 @@ pub fn render(lang: Option<&str>) -> String {
         no_manager = s.no_manager,
         chrome_title = s.chrome_title,
         chrome = s.chrome,
+        permission_title = s.permission_title,
+        permission = s.permission,
         after_title = s.after_title,
         after = s.after,
     )
@@ -151,6 +165,10 @@ mod tests {
             assert!(page.contains("https://www.tampermonkey.net/"), "{lang}");
             assert!(page.contains("https://violentmonkey.github.io/"), "{lang}");
             assert!(page.contains("chrome://extensions"), "{lang}");
+            assert!(
+                page.contains("[Akagi]"),
+                "{lang}: points at the console status"
+            );
         }
     }
 
