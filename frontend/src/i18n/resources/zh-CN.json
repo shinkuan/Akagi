@@ -918,5 +918,24 @@
   "overlay": {
     "close": "关闭悬浮窗",
     "empty": "等待 AI 建议…"
+  },
+  "ingest": {
+    "option": "自己的浏览器(userscript)",
+    "mode_title": "自己的浏览器(userscript)",
+    "mode_desc": "用你平常的浏览器、自己的配置文件和登录状态来玩。由 userscript(Tampermonkey / Violentmonkey)把游戏页面的 WebSocket 数据帧转发给 Akagi。无需系统代理，也无需 CA 证书。支持雀魂与天凤；不支持自动打牌。",
+    "config_title": "Userscript 捕获",
+    "addr_label": "监听地址",
+    "addr_hint": "只能使用 loopback(127.0.0.1 或 [::1])。userscript 会带入这个地址，修改后请重新安装。",
+    "step_manager": "在你玩游戏的浏览器安装 userscript 管理器(Tampermonkey 或 Violentmonkey)。",
+    "step_allow": "Chrome / Edge:打开管理器的扩展程序详情，开启「允许用户脚本」。",
+    "step_install": "安装 Akagi 的 userscript，然后打开(或刷新)游戏页面。",
+    "install": "安装 userscript",
+    "copy": "复制脚本",
+    "copied": "已复制 userscript，请在管理器中新建脚本并粘贴。",
+    "copy_failed": "无法复制 userscript。",
+    "install_needs_running": "「安装」会从 Akagi 本身打开脚本，所以要等 userscript 捕获启动后才能用(请先保存)。「复制脚本」随时都能用。",
+    "no_autoplay": "此模式不支持自动打牌。",
+    "finish_next": "下一步：到 设置 → 捕获 安装 userscript。",
+    "overview_title": "Userscript 捕获"
   }
 }

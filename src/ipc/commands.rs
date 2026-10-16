@@ -669,6 +669,23 @@ pub async fn get_capture_status(
     Ok(state.capture_control.lock().await.status.clone())
 }
 
+/// The ingest userscript, rendered for `addr` (the saved
+/// `capture.ingest.addr` when omitted). Lets the UI offer "copy script"
+/// even when the ingest backend is not running to serve it — during Setup
+/// the address being configured has not been saved yet.
+#[tauri::command]
+pub async fn ingest_userscript(
+    addr: Option<String>,
+    state: State<'_, AppState>,
+) -> CmdResult<String> {
+    let addr = match addr {
+        Some(a) => a,
+        None => state.config.read().await.capture.ingest.addr.clone(),
+    };
+    let addr = crate::capture::ingest::parse_loopback_addr(&addr).map_err(|e| format!("{e:#}"))?;
+    Ok(crate::capture::ingest::userscript::render(addr))
+}
+
 #[tauri::command]
 pub async fn get_log_dir(state: State<'_, AppState>) -> CmdResult<PathBuf> {
     Ok(state.log_session.dir().to_path_buf())
@@ -1794,6 +1811,7 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::native_api_subscription_result,
             $crate::ipc::commands::native_api_create_checkout,
             $crate::ipc::commands::native_api_checkout_result,
+            $crate::ipc::commands::ingest_userscript,
         ]
     };
 }

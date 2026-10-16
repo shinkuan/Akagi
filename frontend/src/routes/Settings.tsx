@@ -52,6 +52,13 @@ import {
   platformInfo,
 } from '@/lib/platforms'
 import {
+  effectiveCaptureMode,
+  withCaptureMode,
+  withChromiumPatch,
+  withIngestPatch,
+} from '@/lib/captureConfig'
+import { IngestUserscriptPanel } from '@/components/IngestUserscriptPanel'
+import {
   OVERLAY_OPACITY_MAX,
   OVERLAY_OPACITY_MIN,
   OVERLAY_TOP_N_MAX,
@@ -1123,16 +1130,18 @@ function CaptureCard({
   const { t } = useTranslation()
   const supportsChromium = platformInfo(draft.platform.kind).supportsChromium
   // Native-only platforms (no web client) are MITM-only; present MITM as the
-  // effective mode even if a stale config selected Chromium.
-  const mode: CaptureMode = supportsChromium ? (draft.capture?.mode ?? 'mitm') : 'mitm'
-  const chromium = draft.capture?.chromium ?? {
-    executable: '',
-    user_data_dir: '',
-    start_url: platformInfo(draft.platform.kind).defaultStartUrl,
-    cft_channel: 'stable',
-    force_cft: false,
-    extra_args: [],
-  }
+  // effective mode even if a stale config selected a browser mode.
+  const mode: CaptureMode = effectiveCaptureMode(draft.capture.mode, supportsChromium)
+  const chromium = draft.capture.chromium
+  const captureStatus = useCaptureStore((s) => s.status)
+  const savedIngestAddr = useConfigStore((s) => s.config?.capture.ingest.addr)
+  // "Install" fetches the script from the running backend, so it needs
+  // ingest capture live on the address being shown — not just selected in
+  // an unsaved draft.
+  const ingestLive =
+    captureStatus.state === 'running' &&
+    captureStatus.kind === 'ingest' &&
+    savedIngestAddr === draft.capture.ingest.addr
   const [detected, setDetected] = useState<DetectedBrowser[] | null>(null)
   const [detecting, setDetecting] = useState(false)
 
@@ -1157,21 +1166,11 @@ function CaptureCard({
   }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const setMode = (v: CaptureMode) =>
-    setDraft({
-      ...draft,
-      capture: {
-        mode: v,
-        chromium,
-      },
-    })
+    setDraft({ ...draft, capture: withCaptureMode(draft.capture, v) })
   const setChromium = (patch: Partial<typeof chromium>) =>
-    setDraft({
-      ...draft,
-      capture: {
-        mode,
-        chromium: { ...chromium, ...patch },
-      },
-    })
+    setDraft({ ...draft, capture: withChromiumPatch(draft.capture, patch) })
+  const setIngestAddr = (addr: string) =>
+    setDraft({ ...draft, capture: withIngestPatch(draft.capture, { addr }) })
 
   return (
     <Card>
@@ -1191,6 +1190,9 @@ function CaptureCard({
               <SelectItem value="mitm">{t('settings.capture_mitm_option')}</SelectItem>
               <SelectItem value="chromium" disabled={!supportsChromium}>
                 {t('settings.capture_chromium_option')}
+              </SelectItem>
+              <SelectItem value="ingest" disabled={!supportsChromium}>
+                {t('ingest.option')}
               </SelectItem>
             </SelectContent>
           </Select>
@@ -1280,6 +1282,19 @@ function CaptureCard({
               onChange={(v) => setChromium({ force_cft: v })}
             />
             <CftPanel chromium={chromium} setChromium={setChromium} />
+          </>
+        )}
+
+        {mode === 'ingest' && (
+          <>
+            <Field label={t('ingest.addr_label')} hint={t('ingest.addr_hint')}>
+              <Input
+                value={draft.capture.ingest.addr}
+                onChange={(e) => setIngestAddr(e.target.value)}
+                placeholder="127.0.0.1:23411"
+              />
+            </Field>
+            <IngestUserscriptPanel addr={draft.capture.ingest.addr} endpointLive={ingestLive} />
           </>
         )}
       </CardContent>

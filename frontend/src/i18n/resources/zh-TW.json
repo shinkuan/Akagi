@@ -918,5 +918,24 @@
   "overlay": {
     "close": "關閉懸浮視窗",
     "empty": "等待 AI 建議…"
+  },
+  "ingest": {
+    "option": "自己的瀏覽器(userscript)",
+    "mode_title": "自己的瀏覽器(userscript)",
+    "mode_desc": "用你平常的瀏覽器、自己的設定檔和登入狀態來玩。由 userscript(Tampermonkey / Violentmonkey)把遊戲頁面的 WebSocket 封包轉送給 Akagi。不需要系統代理，也不需要 CA 憑證。支援雀魂與天鳳；不支援自動打牌。",
+    "config_title": "Userscript 擷取",
+    "addr_label": "監聽位址",
+    "addr_hint": "只能使用 loopback(127.0.0.1 或 [::1])。userscript 會帶入這個位址，修改後請重新安裝。",
+    "step_manager": "在你玩遊戲的瀏覽器安裝 userscript 管理器(Tampermonkey 或 Violentmonkey)。",
+    "step_allow": "Chrome / Edge:打開管理器的擴充功能詳細資料，開啟「允許使用者指令碼」。",
+    "step_install": "安裝 Akagi 的 userscript，然後開啟(或重新整理)遊戲頁面。",
+    "install": "安裝 userscript",
+    "copy": "複製腳本",
+    "copied": "已複製 userscript，請在管理器中新增腳本並貼上。",
+    "copy_failed": "無法複製 userscript。",
+    "install_needs_running": "「安裝」會從 Akagi 本身開啟腳本，所以要等 userscript 擷取啟動後才能用(請先儲存)。「複製腳本」隨時都能用。",
+    "no_autoplay": "此模式不支援自動打牌。",
+    "finish_next": "下一步：到 設定 → 擷取 安裝 userscript。",
+    "overview_title": "Userscript 擷取"
   }
 }

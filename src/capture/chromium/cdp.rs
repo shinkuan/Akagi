@@ -811,15 +811,14 @@ fn record_frame(
     } else {
         FrameRaw::Binary(payload_data.to_string())
     };
-    inspector.record(InspectorEntry::WsFrame {
-        ts_ms: Local::now().timestamp_millis(),
+    crate::capture::frame::record_ws_frame(
+        inspector,
         direction,
         flow_id,
-        size: payload.len(),
         raw,
-        parsed: result.parsed.clone(),
-        emitted: result.events.len(),
-    });
+        payload.len(),
+        result,
+    );
 }
 
 #[cfg(test)]

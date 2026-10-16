@@ -918,5 +918,24 @@
   "overlay": {
     "close": "Close overlay",
     "empty": "Waiting for the bot…"
+  },
+  "ingest": {
+    "option": "Your own browser (userscript)",
+    "mode_title": "Your own browser (userscript)",
+    "mode_desc": "Play in the browser you already use, with your own profile and login. A userscript (Tampermonkey / Violentmonkey) forwards the game page's WebSocket frames to Akagi. No system proxy, no CA cert. Mahjong Soul and Tenhou; no autoplay.",
+    "config_title": "Userscript capture",
+    "addr_label": "Listen address",
+    "addr_hint": "Loopback only (127.0.0.1 or [::1]). The userscript is generated with this address, so reinstall it after changing it.",
+    "step_manager": "Install a userscript manager (Tampermonkey or Violentmonkey) in the browser you play in.",
+    "step_allow": "Chrome / Edge: open the manager's extension details and turn on “Allow user scripts”.",
+    "step_install": "Install the Akagi userscript, then open (or reload) the game page.",
+    "install": "Install userscript",
+    "copy": "Copy script",
+    "copied": "Userscript copied — paste it into a new script in your userscript manager.",
+    "copy_failed": "Couldn't copy the userscript.",
+    "install_needs_running": "Install opens the script from Akagi itself, so it works once userscript capture is running (save first). Copy script works any time.",
+    "no_autoplay": "Autoplay is not available in this mode.",
+    "finish_next": "Next: install the userscript from Settings → Capture.",
+    "overview_title": "Userscript capture"
   }
 }

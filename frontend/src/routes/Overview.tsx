@@ -9,6 +9,7 @@ import { useConfigStore } from '@/stores/configStore'
 import { useAnalysisStore } from '@/stores/analysisStore'
 import { useUiPrefsStore } from '@/stores/uiPrefsStore'
 import { fmtTime } from '@/lib/format'
+import { captureTitleKey } from '@/lib/captureConfig'
 import { AkagiWordmark } from '@/components/BrandLogo'
 import { AKAGIMS_DOWNLOAD_URL, AKAGIMS_GITHUB_URL, openExternal } from '@/lib/external'
 import akagimsScreenshot from '@/assets/akagims-fullauto.jpg'
@@ -30,7 +31,7 @@ export function Overview() {
   const logDir = useConfigStore((s) => s.logDir)
   const lastAnalysis = useAnalysisStore((s) => s.updatedAt)
 
-  const captureTitle = 'kind' in capture && capture.kind === 'chromium' ? t('overview.capture_chromium') : t('overview.capture_mitm')
+  const captureTitle = t(captureTitleKey('kind' in capture ? capture.kind : null))
   const captureDetail = 'descriptor' in capture && capture.descriptor ? capture.descriptor : '—'
 
   return (

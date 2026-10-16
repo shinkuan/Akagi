@@ -20,7 +20,10 @@ import { withInstallBlock } from '@/lib/install'
 import { checkApiBeforeSave } from '@/lib/nativeApi'
 import { mergeExternal } from '@/lib/merge'
 import { withFirstRunCaptureDefault } from '@/lib/setupDefaults'
+import { withCaptureMode, withIngestPatch } from '@/lib/captureConfig'
+import { IngestUserscriptPanel } from '@/components/IngestUserscriptPanel'
 import { useTauriBridge } from '@/hooks/useTauriBridge'
+import { useCaptureStore } from '@/stores/captureStore'
 import { useConfigStore } from '@/stores/configStore'
 import { ManifestField } from '@/components/ManifestField'
 import { GithubMark, DiscordMark } from '@/components/BrandMarks'
@@ -423,6 +426,13 @@ function ModeStep({
         description={t('setup.mode.chromium_desc')}
       />
       <ModeCard
+        title={t('ingest.mode_title')}
+        active={supportsChromium && mode === 'ingest'}
+        disabled={!supportsChromium}
+        onClick={() => setDraft({ ...draft, capture: withCaptureMode(draft.capture, 'ingest') })}
+        description={t('ingest.mode_desc')}
+      />
+      <ModeCard
         title={t('setup.mode.mitm_title')}
         active={mode === 'mitm'}
         onClick={() => setDraft({ ...draft, capture: { ...draft.capture, mode: 'mitm' } })}
@@ -516,7 +526,43 @@ function ConfigStep({
       </div>
     )
   }
+  if (draft.capture.mode === 'ingest') {
+    return <IngestConfigStep draft={draft} setDraft={setDraft} />
+  }
   return <ChromiumConfigStep draft={draft} setDraft={setDraft} />
+}
+
+function IngestConfigStep({
+  draft,
+  setDraft,
+}: {
+  draft: AppConfig
+  setDraft: (c: AppConfig) => void
+}) {
+  const { t } = useTranslation()
+  const captureStatus = useCaptureStore((s) => s.status)
+  const savedAddr = useConfigStore((s) => s.config?.capture.ingest.addr)
+  // Usually not live yet: the endpoint starts once setup is saved. A re-run
+  // from Settings with ingest already running is the exception.
+  const endpointLive =
+    captureStatus.state === 'running' &&
+    captureStatus.kind === 'ingest' &&
+    savedAddr === draft.capture.ingest.addr
+  return (
+    <div className="grid gap-3">
+      <h2 className="text-lg font-semibold">{t('ingest.config_title')}</h2>
+      <Field label={t('ingest.addr_label')} hint={t('ingest.addr_hint')}>
+        <Input
+          value={draft.capture.ingest.addr}
+          onChange={(e) =>
+            setDraft({ ...draft, capture: withIngestPatch(draft.capture, { addr: e.target.value }) })
+          }
+          placeholder="127.0.0.1:23411"
+        />
+      </Field>
+      <IngestUserscriptPanel addr={draft.capture.ingest.addr} endpointLive={endpointLive} />
+    </div>
+  )
 }
 
 function ChromiumConfigStep({
@@ -993,7 +1039,20 @@ function FinishStep({ draft }: { draft: AppConfig }) {
       <h2 className="text-lg font-semibold">{t('setup.finish.title')}</h2>
       <div className="rounded-md border border-border/50 p-3 text-sm">
         <div><b>{t('setup.finish.platform_label')}</b> {t(platformInfo(draft.platform.kind).labelKey)}</div>
-        <div><b>{t('setup.finish.mode_label')}</b> {m === 'chromium' ? t('setup.finish.mode_chromium') : t('setup.finish.mode_mitm')}</div>
+        <div>
+          <b>{t('setup.finish.mode_label')}</b>{' '}
+          {m === 'chromium'
+            ? t('setup.finish.mode_chromium')
+            : m === 'ingest'
+              ? t('ingest.mode_title')
+              : t('setup.finish.mode_mitm')}
+        </div>
+        {m === 'ingest' && (
+          <>
+            <div><b>{t('setup.finish.listen_label')}</b> {draft.capture.ingest.addr}</div>
+            <div className="text-muted-foreground">{t('ingest.finish_next')}</div>
+          </>
+        )}
         {m === 'mitm' && (
           <>
             <div><b>{t('setup.finish.listen_label')}</b> {draft.proxy.addr}</div>

@@ -132,6 +132,7 @@ pub enum BotStatus {
 pub enum CaptureKind {
     Mitm,
     Chromium,
+    Ingest,
 }
 
 /// Lifecycle of the active capture backend.

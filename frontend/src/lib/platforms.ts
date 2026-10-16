@@ -20,10 +20,11 @@ export type PlatformInfo = {
    */
   defaultStartUrl: string
   /**
-   * Whether the Chromium (CDP) capture backend can drive this platform.
+   * Whether this platform has a web client — what both browser capture
+   * modes need: the Chromium (CDP) backend and the ingest userscript.
    * `false` for native clients with no web build (e.g. Riichi City), which
    * are only reachable through the MITM proxy. The UI hides / disables the
-   * Chromium option and forces MITM for these.
+   * browser options and forces MITM for these.
    */
   supportsChromium: boolean
 }

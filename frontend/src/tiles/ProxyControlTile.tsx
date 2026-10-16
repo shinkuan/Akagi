@@ -3,6 +3,7 @@ import { TileFrame } from '@/components/TileFrame'
 import { Button } from '@/components/ui/button'
 import { useCaptureStore } from '@/stores/captureStore'
 import { invoke } from '@/lib/tauri'
+import { captureTitleKey } from '@/lib/captureConfig'
 import { Play, Square, RotateCw } from 'lucide-react'
 import type { Breakpoint } from '@/tiles/defaults'
 import { useState } from 'react'
@@ -22,7 +23,7 @@ export function ProxyControlTile({ bp }: { bp: Breakpoint }) {
   const dot = STATE_COLOR[status.state] ?? 'bg-zinc-500'
   const descriptor = 'descriptor' in status && status.descriptor ? status.descriptor : '—'
   const kind = 'kind' in status ? status.kind : null
-  const title = kind === 'chromium' ? t('overview.capture_chromium') : t('overview.capture_mitm')
+  const title = t(captureTitleKey(kind))
 
   const call = async (cmd: 'start_capture' | 'stop_capture' | 'restart_capture') => {
     setBusy(true)

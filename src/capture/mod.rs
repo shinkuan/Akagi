@@ -1,19 +1,24 @@
 //! Capture transports — the layer that supplies WebSocket frames to the
 //! [`crate::bridge::Bridge`] parser.
 //!
-//! Two backends today:
+//! Three backends today:
 //! - [`hudsucker_backend::HudsuckerBackend`] — MITM proxy (legacy, requires
 //!   system proxy + CA cert install).
 //! - [`chromium::ChromiumBackend`] — controlled Chromium browser, intercepts
 //!   WebSocket frames via CDP. No proxy/CA setup.
+//! - [`ingest::IngestBackend`] — loopback WebSocket that a userscript in the
+//!   user's own browser pushes the game's frames to. No proxy/CA setup.
 //!
-//! Both implement [`CaptureBackend`] and feed frames through [`flow::FlowBridges`]
-//! into the platform bridge, which emits mjai events on [`crate::event_bus::MjaiBus`].
+//! All implement [`CaptureBackend`] and feed frames into the platform bridge,
+//! which emits mjai events on [`crate::event_bus::MjaiBus`]. Chromium and
+//! ingest share [`flow::FlowBridges`]; the MITM handler keeps its own map.
 
 pub mod chromium;
 pub mod flow;
+pub(crate) mod frame;
 pub mod http;
 pub mod hudsucker_backend;
+pub mod ingest;
 
 use crate::autoplay::AutoplayContext;
 use crate::config::Platform;
@@ -32,6 +37,7 @@ use tokio::sync::Notify;
 pub enum CaptureKind {
     Mitm,
     Chromium,
+    Ingest,
 }
 
 impl CaptureKind {
@@ -39,6 +45,7 @@ impl CaptureKind {
         match self {
             CaptureKind::Mitm => "mitm",
             CaptureKind::Chromium => "chromium",
+            CaptureKind::Ingest => "ingest",
         }
     }
 }

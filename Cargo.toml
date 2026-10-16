@@ -37,7 +37,7 @@ toml = "1.1"
 toml_edit = "0.25"
 clap = { version = "4.6", features = ["derive"] }
 anyhow = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "signal", "fs", "process", "io-util", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "signal", "fs", "process", "io-util", "time", "net"] }
 async-trait = "0.1.89"
 which = "8.0.2"
 tracing = "0.1"
@@ -62,6 +62,10 @@ tempfile = "3"
 futures-util = "0.3"
 dirs = "6"
 chromiumoxide = "0.9.1"
+# Loopback server for the ingest capture backend: the WebSocket a userscript
+# in the user's own browser pushes game frames to, plus the route that serves
+# that userscript. See `src/capture/ingest/`.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio", "ws"] }
 ulid = { version = "1", features = ["serde"] }
 rand = "0.9"
 http = "1"

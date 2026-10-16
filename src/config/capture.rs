@@ -1,10 +1,12 @@
 //! Capture-mode configuration: which transport supplies WebSocket frames
 //! to the bridge layer.
 //!
-//! Two modes:
+//! Three modes:
 //! - `Mitm` (default): hudsucker MITM proxy — see `[proxy]`.
 //! - `Chromium`: a Chromium browser launched and controlled by Akagi via
 //!   the Chrome DevTools Protocol.
+//! - `Ingest`: a loopback WebSocket that a userscript in the user's own
+//!   browser pushes the game's frames to — see `[capture.ingest]`.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +16,28 @@ pub struct CaptureConfig {
     pub mode: CaptureMode,
     pub chromium: ChromiumConfig,
     pub http: HttpCaptureConfig,
+    pub ingest: IngestConfig,
+}
+
+/// Where the ingest backend listens for frames pushed from a browser.
+///
+/// The address must be a loopback one; the backend refuses to start on
+/// anything else. Whatever reaches this socket is fed straight into the
+/// protocol bridges, so it is not something to expose to a network. The
+/// userscript Akagi serves is rendered with this address baked in, so
+/// changing it means reinstalling the script.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IngestConfig {
+    pub addr: String,
+}
+
+impl Default for IngestConfig {
+    fn default() -> Self {
+        Self {
+            addr: "127.0.0.1:23411".to_string(),
+        }
+    }
 }
 
 /// What to record of the HTTP traffic a backend intercepts.
@@ -75,6 +99,7 @@ pub enum CaptureMode {
     #[default]
     Mitm,
     Chromium,
+    Ingest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,11 +153,41 @@ mod tests {
     fn mode_serialises_lowercase() {
         let cfg = CaptureConfig {
             mode: CaptureMode::Chromium,
-            chromium: Default::default(),
-            http: Default::default(),
+            ..Default::default()
         };
         let s = toml::to_string(&cfg).unwrap();
         assert!(s.contains("mode = \"chromium\""), "got: {s}");
+    }
+
+    #[test]
+    fn ingest_mode_round_trips_with_its_address() {
+        let original = CaptureConfig {
+            mode: CaptureMode::Ingest,
+            ingest: IngestConfig {
+                addr: "127.0.0.1:24000".into(),
+            },
+            ..Default::default()
+        };
+        let s = toml::to_string(&original).unwrap();
+        assert!(s.contains("mode = \"ingest\""), "got: {s}");
+        let back: CaptureConfig = toml::from_str(&s).unwrap();
+        assert_eq!(back, original);
+    }
+
+    /// The default stays next to the MITM proxy's `23410`, and on loopback:
+    /// the backend refuses anything else.
+    #[test]
+    fn ingest_defaults_to_loopback_23411() {
+        assert_eq!(CaptureConfig::default().ingest.addr, "127.0.0.1:23411");
+    }
+
+    /// A `[capture]` written before ingest existed still loads, and gains
+    /// the default address rather than an empty one.
+    #[test]
+    fn older_capture_sections_gain_the_ingest_default() {
+        let cfg: CaptureConfig = toml::from_str("mode = \"chromium\"").unwrap();
+        assert_eq!(cfg.mode, CaptureMode::Chromium);
+        assert_eq!(cfg.ingest, IngestConfig::default());
     }
 
     /// The default is deliberately conservative: full HTTP capture would
@@ -164,7 +219,7 @@ mod tests {
                 force_cft: true,
                 extra_args: vec!["--lang=ja".into()],
             },
-            http: Default::default(),
+            ..Default::default()
         };
         let s = toml::to_string(&original).unwrap();
         let back: CaptureConfig = toml::from_str(&s).unwrap();

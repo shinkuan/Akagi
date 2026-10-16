@@ -115,11 +115,15 @@ https://github.com/user-attachments/assets/d5bc6ff6-6560-4365-ae55-660c9a522790
 - **Live HUD** — shanten, waits, agari rate, tenpai rate, per-opponent
   deal-in risk, suggested attack/defence discard. Draggable, resizable
   UI layout.
-- **Two capture modes**
+- **Three capture modes**
   - **MITM proxy** (default) — system-wide; needs a one-time CA trust.
   - **Chromium** — Akagi launches a controlled Chromium-family browser
     and intercepts WebSocket frames via the Chrome DevTools Protocol.
     Zero proxy/CA setup; just play in the launched window.
+  - **Your own browser (userscript)** — play the web clients in the
+    browser you already use, with your own profile and login; a
+    userscript forwards the game's WebSocket frames to Akagi. Zero
+    proxy/CA setup. No autoplay in this mode.
 - **Two bot backends**
   - **Built-in bot** (default) — a pure-Rust neural net embedded in the
     binary. No Python, no download, no setup; it just plays, in both
@@ -214,6 +218,35 @@ System-wide proxy with a self-signed root CA at `./ca/`:
 > **Localhost** rule (Action: *Direct*) and drag it **above** your game
 > rule. Order matters — Proxifier takes the first rule that matches, so a
 > Localhost rule sitting below the game rule never fires.
+
+### D. Your own browser (userscript)
+
+For playing Mahjong Soul or Tenhou in your everyday browser — your own
+profile, your own login, Firefox included. Akagi listens on
+`127.0.0.1:23411`, and a small userscript running on the game page sends
+it the game's WebSocket frames. No proxy, no certificate, no extra
+browser window.
+
+1. Pick **Your own browser (userscript)** as the capture mode (Setup, or
+   *Settings → Capture*) and save.
+2. Install a userscript manager in the browser you play in:
+   [Tampermonkey](https://www.tampermonkey.net/) or
+   [Violentmonkey](https://violentmonkey.github.io/).
+3. **Chrome / Edge only:** open the manager's extension details
+   (`chrome://extensions` → *Details*) and turn on **Allow user
+   scripts**. Without it the manager cannot run any script.
+4. In *Settings → Capture*, click **Install userscript**. The manager
+   opens its install page; confirm. (If your game browser is not your
+   default browser, open `http://127.0.0.1:23411/akagi.user.js` in it
+   yourself, or use **Copy script** and paste it into a new script.)
+5. Open — or reload — the game page. Akagi shows a *Userscript
+   connected* toast.
+
+The script only reads: every frame reaches the game unchanged, and
+nothing it does can break the page. Start Akagi before you enter a
+match, or reload the page — frames sent before the script reached Akagi
+are only held for a short while. Autoplay needs a page Akagi can drive,
+so it is not available in this mode; use Chromium mode for that.
 
 ---
 
@@ -375,6 +408,15 @@ Useful when debugging a bot or a bridge issue.
   "couldn't terminate the browser already using profile …" — close it
   manually and click Restart. Running two Akagi instances against the
   same profile is unsupported.
+- **No "Userscript connected" toast in userscript mode.** Check, in
+  order: capture is running (*Settings → Capture* shows `userscript
+  (127.0.0.1:23411)`); the userscript is installed and enabled for the
+  game site in your manager; on Chrome / Edge, **Allow user scripts** is
+  on for the manager; then reload the game page. If the browser asks
+  whether the page may access devices on your local network, allow it —
+  that is the script reaching Akagi on `127.0.0.1`. A "wrong platform"
+  toast means the page is for a different game than the platform set in
+  Akagi.
 - **Tenhou reconnected in the middle of a hand.** Tenhou's rejoin message
   is a snapshot of the table, not a replay, so Akagi cannot rebuild the
   hand in progress. It shows a "rejoined mid-hand" toast and pauses
@@ -427,7 +469,7 @@ truth for channel types.
 
 ```
                 ┌────────────────────────┐
-   Game client ─│  capture (mitm | cdp)  │── CA at ./ca (mitm only)
+   Game client ─│  capture (3 backends)  │── mitm (CA at ./ca) | cdp | ingest
    WebSocket    └─────────┬──────────────┘
                           ▼
                 ┌────────────────────────┐
@@ -486,7 +528,7 @@ Tenhou, whose client protocol is plain enough to speak directly.
 │   │   ├── majsoul/   Mahjong Soul (liqi protobuf)
 │   │   ├── riichi_city/  Riichi City (MITM only)
 │   │   └── tenhou/    Tenhou (JSON tag stream, observe-only)
-│   ├── capture/       Capture backends abstraction (mitm | chromium)
+│   ├── capture/       Capture backends abstraction (mitm | chromium | ingest)
 │   ├── config/        AppConfig (TOML) sections + resolution
 │   ├── event_bus.rs   Broadcast channels between subsystems
 │   ├── game_state/    riichienv-driven mirror, snapshot, mahgen view

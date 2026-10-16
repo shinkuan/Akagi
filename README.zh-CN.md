@@ -110,11 +110,14 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 
 - **实时 HUD** — 向听、听牌、和牌率、听牌率、对各家放铳
   风险、推荐的进攻 / 防守切牌。可拖拽、可缩放的UI布局。
-- **两种抓包模式**
+- **三种抓包模式**
   - **MITM proxy**（默认） — 系统级；需一次性的 CA 信任。
   - **Chromium** — 由 Akagi 启动受控的 Chromium 系列浏览器，
     通过 Chrome DevTools Protocol 拦截 WebSocket 帧。
     无需配置 proxy 或安装证书；直接在启动的窗口中游玩即可。
+  - **自己的浏览器（userscript）** — 在你平常用的浏览器、用自己的
+    配置文件与登录状态玩网页版；由 userscript 把游戏的 WebSocket 帧
+    转发给 Akagi。无需配置 proxy 或安装证书。此模式不支持自动打牌。
 - **两种 bot 后端**
   - **内置 bot**（默认） — 嵌在可执行文件内的纯 Rust 神经网络。
     不需要 Python、不需要下载、不需要配置；四麻与三麻都能直接开打。
@@ -200,6 +203,31 @@ bot 配置，以及 CA 信任（仅 MITM 模式才需要）。没有 bot 要安�
 > **Localhost** 规则（Action: *Direct*），并把它拖到游戏规则的**上面**。
 > 顺序很重要 — Proxifier 只采用第一条命中的规则，Localhost
 > 规则排在游戏规则下面就永远不会生效。
+
+### D. 自己的浏览器（userscript）
+
+适合在平常用的浏览器玩雀魂或天凤 — 自己的配置文件、自己的登录状态，
+Firefox 也可以。Akagi 监听 `127.0.0.1:23411`，游戏页面上的一个小
+userscript 把游戏的 WebSocket 帧发过来。无需 proxy、无需证书，
+也不会多开一个浏览器窗口。
+
+1. 在 Setup 或 *设置 → 封包捕获* 选择 **自己的浏览器（userscript）**
+   并保存。
+2. 在你玩游戏的浏览器安装 userscript 管理器：
+   [Tampermonkey](https://www.tampermonkey.net/) 或
+   [Violentmonkey](https://violentmonkey.github.io/)。
+3. **仅 Chrome / Edge：** 打开管理器的扩展程序详情
+   （`chrome://extensions` → *详细信息*），开启 **允许用户脚本**。
+   没开的话管理器无法运行任何脚本。
+4. 在 *设置 → 封包捕获* 点击 **安装 userscript**，管理器会打开安装页面，
+   确认即可。（如果玩游戏的浏览器不是默认浏览器，请在该浏览器自行打开
+   `http://127.0.0.1:23411/akagi.user.js`，或用 **复制脚本** 粘贴到新脚本。）
+5. 打开（或刷新）游戏页面，Akagi 会弹出 *Userscript connected* 通知。
+
+这个脚本只读取：每个帧都原封不动送到游戏，它做的任何事都不会让页面
+出错。请在进入对局前先启动 Akagi，或刷新页面 — 脚本连上 Akagi
+之前的帧只会暂存一小段。自动打牌需要一个 Akagi 能操作的页面，
+所以此模式不支持；需要的话请用 Chromium 模式。
 
 ---
 
@@ -370,6 +398,12 @@ minisign -Vm akagi-<version>-<platform>.zip -p minisign.pub
   `capture.chromium.executable`。如果浏览器有启动但没
   帧流入，检查 `--remote-debugging-port` 是否被其他
   扩展拦截。
+- **userscript 模式没有出现「Userscript connected」通知。** 依次检查：
+  捕获正在运行（*设置 → 封包捕获* 显示 `userscript (127.0.0.1:23411)`）；
+  userscript 已安装，且在管理器里对游戏网站启用；Chrome / Edge 的管理器
+  已开启 **允许用户脚本**；然后刷新游戏页面。如果浏览器询问该页面能否
+  访问局域网中的设备，请允许 — 那是脚本在连接 `127.0.0.1` 上的 Akagi。
+  出现「wrong platform」通知表示该页面的游戏和 Akagi 设置的平台不同。
 - **Bot 对局途中崩溃。** Inspector 标签页可显示 bot 死前
   看到的最后一帧；附在 bug 报告里。
 - **三麻挑了错的 bot。** 检查设置 → Bot 中的
@@ -420,7 +454,7 @@ alpha.8 已完成：
 
 ```
                 ┌────────────────────────┐
-   游戏客户端 ─│  capture (mitm | cdp)  │── CA 位于 ./ca（仅 mitm）
+   游戏客户端 ─│  capture (3 backends)  │── mitm（CA 位于 ./ca）| cdp | ingest
    WebSocket   └─────────┬──────────────┘
                           ▼
                 ┌────────────────────────┐
@@ -478,7 +512,7 @@ Chromium 抓包 backend（CDP）执行：雀魂是在牌桌上点击，天凤的
 │   │   ├── majsoul/   雀魂（liqi protobuf）
 │   │   ├── riichi_city/  Riichi City（仅 MITM）
 │   │   └── tenhou/    天凤（JSON tag stream，仅观战）
-│   ├── capture/       抓包 backend 抽象（mitm | chromium）
+│   ├── capture/       抓包 backend 抽象（mitm | chromium | ingest）
 │   ├── config/        AppConfig（TOML）分节与解析
 │   ├── event_bus.rs   子系统间的 broadcast channel
 │   ├── game_state/    riichienv 驱动的镜像、snapshot、mahgen view

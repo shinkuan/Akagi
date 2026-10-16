@@ -43,6 +43,8 @@ function makeConfig(over: {
         force_cft: false,
         extra_args: [],
       },
+      http: { record_all: false, bodies: true, max_body_bytes: 262144, static_assets: false },
+      ingest: { addr: '127.0.0.1:23411' },
     },
     autoplay: {
       enabled: false,

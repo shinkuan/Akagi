@@ -13,7 +13,7 @@ pub use autoplay::{
     AutoplayConfig, DelayDistribution, DelayMode, DelayModelConfig, MajsoulAutoplayConfig,
 };
 pub use bot::{BotConfig, NativeApiConfig};
-pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig, HttpCaptureConfig};
+pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig, HttpCaptureConfig, IngestConfig};
 pub use general::GeneralConfig;
 pub use logging::LoggingConfig;
 pub use merge::merge_into;

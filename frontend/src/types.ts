@@ -54,7 +54,7 @@ export type BotStatus =
   | { state: 'error'; bot: string; error: string }
   | { state: 'stopped'; bot: string }
 
-export type CaptureKind = 'mitm' | 'chromium'
+export type CaptureKind = 'mitm' | 'chromium' | 'ingest'
 
 export type CaptureStatus =
   | { state: 'stopped' }
@@ -70,7 +70,7 @@ export type Notification = {
   id?: string
 }
 
-export type CaptureMode = 'mitm' | 'chromium'
+export type CaptureMode = 'mitm' | 'chromium' | 'ingest'
 
 export type ChromiumConfig = {
   executable: string
@@ -81,9 +81,26 @@ export type ChromiumConfig = {
   extra_args: string[]
 }
 
+// `[capture.http]`: what to record of intercepted HTTP. Not edited in the
+// UI, but carried through every save so it is not reset to defaults.
+export type HttpCaptureConfig = {
+  record_all: boolean
+  bodies: boolean
+  max_body_bytes: number
+  static_assets: boolean
+}
+
+// `[capture.ingest]`: where the ingest backend listens for frames pushed by
+// the userscript. Loopback only.
+export type IngestConfig = {
+  addr: string
+}
+
 export type CaptureConfig = {
   mode: CaptureMode
   chromium: ChromiumConfig
+  http: HttpCaptureConfig
+  ingest: IngestConfig
 }
 
 export type DetectedBrowser = {

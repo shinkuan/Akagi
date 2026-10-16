@@ -1,7 +1,7 @@
 //! Lifecycle supervisor for the active capture backend.
 //!
-//! One supervisor instance multiplexes the two backends
-//! (`HudsuckerBackend`, `ChromiumBackend`) — the one that runs is
+//! One supervisor instance multiplexes the three backends
+//! (`HudsuckerBackend`, `ChromiumBackend`, `IngestBackend`) — the one that runs is
 //! determined by `cfg.capture.mode`. Owns `state.capture_control`
 //! (start/stop oneshot + force-close `Notify`) and emits onto
 //! `state.capture_status_bus`.
@@ -12,8 +12,8 @@
 //! straight to `Running`.
 
 use crate::capture::{
-    chromium::ChromiumBackend, hudsucker_backend::HudsuckerBackend, CaptureBackend, CaptureCtx,
-    CaptureKind as RtCaptureKind, ShutdownToken,
+    chromium::ChromiumBackend, hudsucker_backend::HudsuckerBackend, ingest::IngestBackend,
+    CaptureBackend, CaptureCtx, CaptureKind as RtCaptureKind, ShutdownToken,
 };
 use crate::config::CaptureMode;
 use crate::ipc::state::AppState;
@@ -27,6 +27,7 @@ fn schema_kind(k: RtCaptureKind) -> CaptureKind {
     match k {
         RtCaptureKind::Mitm => CaptureKind::Mitm,
         RtCaptureKind::Chromium => CaptureKind::Chromium,
+        RtCaptureKind::Ingest => CaptureKind::Ingest,
     }
 }
 
@@ -85,13 +86,14 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
         }
     }
 
-    let (mode, proxy_cfg, chromium_cfg, http_cfg, platform) = {
+    let (mode, proxy_cfg, chromium_cfg, http_cfg, ingest_cfg, platform) = {
         let cfg = state.config.read().await;
         (
             cfg.capture.mode,
             cfg.proxy.clone(),
             cfg.capture.chromium.clone(),
             cfg.capture.http.clone(),
+            cfg.capture.ingest.clone(),
             cfg.platform.kind,
         )
     };
@@ -116,6 +118,7 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
             ))
         }
         CaptureMode::Chromium => Box::new(ChromiumBackend::new(chromium_cfg)),
+        CaptureMode::Ingest => Box::new(IngestBackend::new(ingest_cfg)),
     };
     let descriptor = backend.descriptor();
     let kind = schema_kind(descriptor.kind);
@@ -126,6 +129,7 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
     let label = match descriptor.kind {
         RtCaptureKind::Mitm => proxy_cfg.addr.clone(),
         RtCaptureKind::Chromium => format!("chromium ({})", descriptor.label),
+        RtCaptureKind::Ingest => format!("userscript ({})", descriptor.label),
     };
     let running_status = CaptureStatus::Running {
         kind,
@@ -211,5 +215,6 @@ fn kind_label(k: CaptureKind) -> &'static str {
     match k {
         CaptureKind::Mitm => "MITM",
         CaptureKind::Chromium => "Chromium",
+        CaptureKind::Ingest => "Userscript",
     }
 }
