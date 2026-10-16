@@ -400,6 +400,7 @@
     "proxy_enabled": "启用代理",
     "block_telemetry": "屏蔽游戏遥测",
     "block_telemetry_hint": "丢弃游戏发往阿里云的分析遥测数据而不转发,让登录统计、设备与账号标识符完全不离开你的电脑。许多广告拦截器本来就会屏蔽该主机,因此缺少遥测数据并不代表使用了工具。默认开启。",
+    "block_telemetry_chromium_hint": "在浏览器内屏蔽游戏发往阿里云分析服务(*.log.aliyuncs.com)的所有请求,让登录统计、设备与账号标识符完全不离开你的电脑。游戏收到的错误与广告拦截器造成的相同。默认开启。",
     "ca_dir_hint": "CA 根证书／密钥写入的目录。",
     "browser_executable": "浏览器可执行文件",
     "browser_executable_hint": "留空以自动检测。",

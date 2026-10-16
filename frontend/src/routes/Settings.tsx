@@ -1132,6 +1132,7 @@ function CaptureCard({
     cft_channel: 'stable',
     force_cft: false,
     extra_args: [],
+    block_telemetry: true,
   }
   const [detected, setDetected] = useState<DetectedBrowser[] | null>(null)
   const [detecting, setDetecting] = useState(false)
@@ -1274,6 +1275,14 @@ function CaptureCard({
                 placeholder={platformInfo(draft.platform.kind).defaultStartUrl}
               />
             </Field>
+            <Toggle
+              label={t('settings.block_telemetry')}
+              value={chromium.block_telemetry}
+              onChange={(v) => setChromium({ block_telemetry: v })}
+            />
+            <span className="text-xs text-muted-foreground">
+              {t('settings.block_telemetry_chromium_hint')}
+            </span>
             <Toggle
               label={t('settings.force_cft')}
               value={chromium.force_cft}

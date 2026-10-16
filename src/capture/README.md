@@ -94,6 +94,40 @@ full capture puts access tokens and cookies in the session file and
 nothing is redacted, so the default keeps only exchanges a recognizer
 understood. See `src/config/README.md`.
 
+## Telemetry blocking
+
+The game clients report on themselves through Aliyun SLS web-tracking
+beacons. Both backends keep them from leaving the machine, each under its
+own switch (default **on**), and both decide what counts as telemetry with
+`telemetry.rs::is_sls_host` — the `log.aliyuncs.com` service domain:
+
+- **MITM** — `[proxy] block_telemetry`. The proxy refuses the `CONNECT` to
+  the host. See `src/proxy/README.md`.
+- **Chromium** — `[capture.chromium] block_telemetry`. `cdp.rs` arms the
+  `Fetch` domain on every page with request-stage patterns for the domain
+  (one `Fetch.enable` alongside the Tenhou client rewrite, since each call
+  replaces the patterns of the last) and fails each paused request whose
+  host passes `is_sls_host` as `BlockedByClient` — the
+  `net::ERR_BLOCKED_BY_CLIENT` an ad blocker produces. Anything the globs
+  catch that is not an SLS host is continued untouched.
+
+Page-scoped interception covers more than the page's own requests: the
+CORS preflight the beacon XHR triggers (which carries the whole payload in
+its URL) and requests from the page's dedicated workers are paused too.
+Each blocked request is logged under `akagi::capture::http`, and the
+page's own requests go on the timeline with an `akagi_blocked` annotation
+next to their `sls_beacon` one. Worker requests are blocked but do not
+appear on the timeline — page-scoped `Network` events do not report them.
+
+The window it cannot cover is a tab's first second: interception is armed
+when the page poll attaches to the tab, and requests made before that go
+out. The game fires its first beacon at login, well after.
+
+`tests/chromium_telemetry_block.rs` drives the real CDP loop against a
+headless browser and asserts no beacon — preflight, image, `sendBeacon`,
+worker — reaches the wire. It needs a browser, so it is `#[ignore]`d; run it
+with `cargo test --test chromium_telemetry_block -- --ignored`.
+
 ## Path conventions
 
 For data the backend writes at runtime (Chromium profile, downloaded

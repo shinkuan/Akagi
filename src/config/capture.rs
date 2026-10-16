@@ -96,6 +96,21 @@ pub struct ChromiumConfig {
     pub force_cft: bool,
     /// Extra CLI args appended after our defaults. Advanced users only.
     pub extra_args: Vec<String>,
+    /// Fail the game's Aliyun SLS web-tracking (telemetry) beacons inside
+    /// the browser instead of letting them out.
+    ///
+    /// On by default — the chromium counterpart of `[proxy]
+    /// block_telemetry`, for the same reason: the beacons report login
+    /// stats, game status and device / account identifiers, and many ad
+    /// blockers already block the host, so a missing beacon is not
+    /// evidence of a tool. Every request to `*.log.aliyuncs.com` — CORS
+    /// preflights and worker requests included — is paused through the
+    /// DevTools `Fetch` domain and failed as `net::ERR_BLOCKED_BY_CLIENT`,
+    /// exactly what an ad blocker produces.
+    ///
+    /// Takes effect on the next capture start. See
+    /// `src/capture/chromium/cdp.rs`.
+    pub block_telemetry: bool,
 }
 
 impl Default for ChromiumConfig {
@@ -107,6 +122,7 @@ impl Default for ChromiumConfig {
             cft_channel: "stable".to_string(),
             force_cft: false,
             extra_args: vec![],
+            block_telemetry: true,
         }
     }
 }
@@ -163,6 +179,7 @@ mod tests {
                 cft_channel: "131.0.6778.85".into(),
                 force_cft: true,
                 extra_args: vec!["--lang=ja".into()],
+                block_telemetry: false,
             },
             http: Default::default(),
         };
@@ -172,6 +189,24 @@ mod tests {
         assert_eq!(back.chromium.executable, "/opt/chrome/chrome");
         assert!(back.chromium.force_cft);
         assert_eq!(back.chromium.extra_args, vec!["--lang=ja"]);
+        assert!(!back.chromium.block_telemetry);
+    }
+
+    /// Telemetry blocking is on by default in chromium mode too — it has
+    /// to protect without the user knowing the beacons exist.
+    #[test]
+    fn chromium_blocks_telemetry_by_default() {
+        assert!(ChromiumConfig::default().block_telemetry);
+    }
+
+    /// A `[capture.chromium]` written before the field existed must pick up
+    /// the default, not silently leave telemetry unblocked.
+    #[test]
+    fn older_chromium_configs_gain_telemetry_blocking() {
+        let cfg: CaptureConfig =
+            toml::from_str("mode = \"chromium\"\n[chromium]\nexecutable = \"\"\nforce_cft = false")
+                .expect("older config must still parse");
+        assert!(cfg.chromium.block_telemetry);
     }
 
     #[test]

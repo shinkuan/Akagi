@@ -79,6 +79,7 @@ export type ChromiumConfig = {
   cft_channel: string
   force_cft: boolean
   extra_args: string[]
+  block_telemetry: boolean
 }
 
 export type CaptureConfig = {
