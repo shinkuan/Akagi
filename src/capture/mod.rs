@@ -14,6 +14,7 @@ pub mod chromium;
 pub mod flow;
 pub mod http;
 pub mod hudsucker_backend;
+pub mod telemetry;
 
 use crate::autoplay::AutoplayContext;
 use crate::config::Platform;

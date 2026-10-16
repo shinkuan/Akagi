@@ -400,6 +400,7 @@
     "proxy_enabled": "Proxy enabled",
     "block_telemetry": "Block game telemetry",
     "block_telemetry_hint": "Drop the game's Aliyun analytics beacons instead of forwarding them, so login stats and device / account identifiers never leave your machine. Many ad blockers already block this host, so a missing beacon is not a sign of a tool. On by default.",
+    "block_telemetry_chromium_hint": "Block every request the game sends to Aliyun's analytics service (*.log.aliyuncs.com) inside the browser, so login stats and device / account identifiers never leave your machine. The game gets the same error an ad blocker causes. On by default.",
     "ca_dir_hint": "Where root certificate / keys are written.",
     "browser_executable": "Browser executable",
     "browser_executable_hint": "Leave blank to auto-detect.",

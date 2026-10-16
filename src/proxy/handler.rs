@@ -1,6 +1,9 @@
 use crate::{
     bridge::{self, Bridge, Direction},
-    capture::http::{self as httpcap, BodyPlan, ExchangePairing, HttpCapturePolicy},
+    capture::{
+        http::{self as httpcap, BodyPlan, ExchangePairing, HttpCapturePolicy},
+        telemetry,
+    },
     config::Platform,
     event_bus::{MjaiBus, NotifyBus},
     inspector::{
@@ -1168,15 +1171,10 @@ fn is_loopback_connect(method: &Method, uri: &Uri) -> bool {
 }
 
 /// `true` for a `CONNECT` to the Aliyun SLS web-tracking service — the
-/// telemetry vendor both Mahjong Soul and Riichi City report through. Any
-/// `<project>.<region>.log.aliyuncs.com` host serves nothing but beacons,
-/// so the whole service domain is matched, current and future projects
-/// alike.
+/// telemetry vendor both Mahjong Soul and Riichi City report through. The
+/// whole service domain is matched; see `capture::telemetry`.
 fn is_telemetry_connect(method: &Method, uri: &Uri) -> bool {
-    fn is_sls_host(host: &str) -> bool {
-        host == "log.aliyuncs.com" || host.ends_with(".log.aliyuncs.com")
-    }
-    method == Method::CONNECT && uri.host().is_some_and(is_sls_host)
+    method == Method::CONNECT && uri.host().is_some_and(telemetry::is_sls_host)
 }
 
 /// `true` for Riichi City's plain-HTTP telemetry endpoint (login /

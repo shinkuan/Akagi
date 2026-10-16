@@ -38,7 +38,8 @@ pub struct ProxyConfig {
     /// observed). Turn this off to forward the beacons — the certificate
     /// report then still gets corrected.
     ///
-    /// MITM-mode only: the chromium backend intercepts nothing to drop.
+    /// MITM-mode only: the chromium backend blocks the same host inside the
+    /// browser under its own switch, `[capture.chromium] block_telemetry`.
     /// See `src/proxy/handler.rs`.
     pub block_telemetry: bool,
 }

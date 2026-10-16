@@ -400,6 +400,7 @@
     "proxy_enabled": "啟用代理",
     "block_telemetry": "封鎖遊戲遙測",
     "block_telemetry_hint": "丟棄遊戲送往阿里雲的分析遙測封包而不轉發,讓登入統計、裝置與帳號識別碼完全不離開你的電腦。許多廣告攔截器本來就會封鎖這個主機,因此缺少遙測封包並不代表使用了工具。預設開啟。",
+    "block_telemetry_chromium_hint": "在瀏覽器內封鎖遊戲送往阿里雲分析服務(*.log.aliyuncs.com)的所有請求,讓登入統計、裝置與帳號識別碼完全不離開你的電腦。遊戲收到的錯誤與廣告攔截器造成的相同。預設開啟。",
     "ca_dir_hint": "CA 根憑證／金鑰寫入的目錄。",
     "browser_executable": "瀏覽器執行檔",
     "browser_executable_hint": "留空以自動偵測。",

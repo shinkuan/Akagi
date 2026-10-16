@@ -19,17 +19,27 @@
 //! Service-worker WebSockets are not subscribed in v1 — Majsoul uses
 //! page-scoped WS today. If real-world testing shows otherwise, expand
 //! the polling to include `browser.targets()` and filter on type.
+//!
+//! Request interception (the `Fetch` domain) is armed per page too, and
+//! does two jobs: it rewrites the Tenhou client on its way in, and — with
+//! `[capture.chromium] block_telemetry` on — fails the game's Aliyun SLS
+//! telemetry before it leaves the browser. A page-scoped `Fetch.enable`
+//! also pauses the page's CORS preflights and its dedicated workers'
+//! requests, so a beacon has no side door. A tab's requests made before
+//! it is attached (under a second, by the poll interval) are not covered;
+//! the game fires its first beacon at login, well after that.
 
 use crate::autoplay::AutoplayContext;
 use crate::bridge::Direction;
 use crate::capture::flow::{slugify, FlowBridges};
+use crate::capture::telemetry;
 use crate::config::HttpCaptureConfig;
 use crate::event_bus::{MjaiBus, NotifyBus};
 use crate::inspector::annotate::{self, RequestView};
 use crate::inspector::InspectorWriter;
 use crate::schema::{
-    CaptureSource, FrameDirection, FrameRaw, HttpBody, HttpExchange, HttpHeader, HttpPhase,
-    InspectorEntry,
+    CaptureSource, FrameDirection, FrameRaw, HttpAnnotation, HttpBody, HttpExchange, HttpHeader,
+    HttpPhase, InspectorEntry,
 };
 use anyhow::{anyhow, Context, Result};
 use base64::Engine;
@@ -146,6 +156,10 @@ fn is_autoplay_target_url(ws_url: &str) -> bool {
 /// feature is wired (`AppState.autoplay_context`). On Majsoul WS open
 /// we publish the page handle into it; autoplay reads it back to dispatch
 /// `Input.dispatchMouseEvent`. Passing `None` makes the loop bridge-only.
+///
+/// `block_telemetry` arms the telemetry block on every page attached —
+/// see [`interception_patterns`].
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     endpoint: &str,
     bridges: Arc<FlowBridges<FlowKey>>,
@@ -154,6 +168,7 @@ pub async fn run(
     autoplay: Option<Arc<AutoplayContext>>,
     http_cfg: HttpCaptureConfig,
     notify: NotifyBus,
+    block_telemetry: bool,
 ) -> Result<()> {
     info!("CDP connecting to {endpoint}");
     let (browser_owned, mut handler) = Browser::connect(endpoint)
@@ -240,6 +255,7 @@ pub async fn run(
                     autoplay.clone(),
                     http_cfg.clone(),
                     notify.clone(),
+                    block_telemetry,
                 )
                 .await
                 {
@@ -278,23 +294,120 @@ pub async fn run(
 /// the pattern matches by shape rather than by version.
 const TENHOU_CLIENT_URL_PATTERN: &str = "*tenhou.net/4/*.js";
 
-/// Ask the browser to hand us the Tenhou client script before the page runs
-/// it, so it can be rewritten to expose its handler registry.
+/// URL patterns that pause the game's telemetry: every request to the
+/// Aliyun SLS service domain, on the default port or any other.
 ///
-/// Paused at the *response* stage: we want the bytes, not just the request.
-async fn enable_script_rewrite(page: &Page) -> Result<()> {
-    use chromiumoxide::cdp::browser_protocol::fetch::{EnableParams, RequestPattern, RequestStage};
-    let pattern = RequestPattern {
-        url_pattern: Some(TENHOU_CLIENT_URL_PATTERN.to_string()),
+/// Globs, so they also catch the odd URL that merely *mentions* the domain
+/// (in a query string, or a host like `catalog.aliyuncs.com`);
+/// [`is_telemetry_url`] makes the final call on each paused request.
+const TELEMETRY_URL_PATTERNS: &[&str] = &["*log.aliyuncs.com/*", "*log.aliyuncs.com:*"];
+
+/// What `Fetch.enable` pauses on a page.
+///
+/// - The Tenhou client script, at the *response* stage — we want its
+///   bytes, to rewrite it so its handler registry is exposed.
+/// - With `block_telemetry`, the telemetry patterns at the *request*
+///   stage — the beacon must not leave at all.
+///
+/// One list, because each `Fetch.enable` replaces the patterns of the
+/// last. The stages are also what tells the paused events apart; see
+/// [`is_request_stage`].
+fn interception_patterns(
+    block_telemetry: bool,
+) -> Vec<chromiumoxide::cdp::browser_protocol::fetch::RequestPattern> {
+    use chromiumoxide::cdp::browser_protocol::fetch::{RequestPattern, RequestStage};
+    let pattern = |url: &str, stage| RequestPattern {
+        url_pattern: Some(url.to_string()),
         resource_type: None,
-        request_stage: Some(RequestStage::Response),
+        request_stage: Some(stage),
     };
+    let mut patterns = vec![pattern(TENHOU_CLIENT_URL_PATTERN, RequestStage::Response)];
+    if block_telemetry {
+        patterns.extend(
+            TELEMETRY_URL_PATTERNS
+                .iter()
+                .map(|url| pattern(url, RequestStage::Request)),
+        );
+    }
+    patterns
+}
+
+/// Arm request interception on the page. See [`interception_patterns`].
+async fn enable_interception(page: &Page, block_telemetry: bool) -> Result<()> {
+    use chromiumoxide::cdp::browser_protocol::fetch::EnableParams;
     let params = EnableParams {
-        patterns: Some(vec![pattern]),
+        patterns: Some(interception_patterns(block_telemetry)),
         handle_auth_requests: None,
     };
     page.execute(params).await.context("Fetch.enable")?;
     Ok(())
+}
+
+/// `true` when a paused request has not been sent yet. Per the protocol, a
+/// response-stage pause is the one carrying `responseStatusCode` or
+/// `responseErrorReason`; anything else is paused at the request stage.
+fn is_request_stage(ev: &chromiumoxide::cdp::browser_protocol::fetch::EventRequestPaused) -> bool {
+    ev.response_status_code.is_none() && ev.response_error_reason.is_none()
+}
+
+/// `true` for a URL whose host is the Aliyun SLS service domain — what the
+/// telemetry block fails.
+fn is_telemetry_url(url: &str) -> bool {
+    telemetry::is_sls_host(&host_of(url))
+}
+
+/// Settle a request paused at the request stage. Only the telemetry
+/// patterns pause there, so this either fails a beacon or — for a URL the
+/// globs caught whose host is not SLS — lets it through untouched.
+///
+/// Failed as `BlockedByClient`: the page sees `net::ERR_BLOCKED_BY_CLIENT`,
+/// the same error an ad blocker produces for this host.
+async fn settle_paused_request(
+    page: &Page,
+    request_id: chromiumoxide::cdp::browser_protocol::fetch::RequestId,
+    method: &str,
+    url: &str,
+    blocking: bool,
+) {
+    use chromiumoxide::cdp::browser_protocol::fetch::{ContinueRequestParams, FailRequestParams};
+    use chromiumoxide::cdp::browser_protocol::network::ErrorReason;
+
+    if blocking && is_telemetry_url(url) {
+        // The query string is the beacon's payload (device and account
+        // identifiers); keep it out of the log, which users share.
+        let shown = url.split(['?', '#']).next().unwrap_or(url);
+        match page
+            .execute(FailRequestParams::new(
+                request_id,
+                ErrorReason::BlockedByClient,
+            ))
+            .await
+        {
+            Ok(_) => info!(
+                target: "akagi::capture::http",
+                "blocked telemetry beacon: {method} {shown}",
+            ),
+            // Still paused, so still not sent; it dies with the page.
+            Err(e) => warn!("CDP: could not fail telemetry request {method} {shown}: {e:#}"),
+        }
+        return;
+    }
+    let _ = page.execute(ContinueRequestParams::new(request_id)).await;
+}
+
+/// The timeline's mark on a request the telemetry block failed. Kept
+/// alongside the beacon's own annotation, as on the MITM leg: an announced
+/// gap is not a blind spot.
+fn blocked_annotation() -> HttpAnnotation {
+    HttpAnnotation {
+        kind: "akagi_blocked".to_string(),
+        summary: "telemetry blocked in the browser — never sent".to_string(),
+        data: serde_json::json!({
+            "reason": "Aliyun SLS web-tracking request failed as net::ERR_BLOCKED_BY_CLIENT \
+                       before it left the browser; many ad blockers block this host too, \
+                       so a missing beacon is not a signal",
+        }),
+    }
 }
 
 /// Reload the page if its client script slipped past the interceptor.
@@ -460,6 +573,7 @@ async fn attach_page(
     autoplay: Option<Arc<AutoplayContext>>,
     http_cfg: HttpCaptureConfig,
     notify: NotifyBus,
+    block_telemetry: bool,
 ) -> Result<JoinHandle<()>> {
     page.execute(NetworkEnableParams::default())
         .await
@@ -473,14 +587,41 @@ async fn attach_page(
         .event_listener::<chromiumoxide::cdp::browser_protocol::fetch::EventRequestPaused>()
         .await
         .context("subscribe requestPaused")?;
-    // Instrument the Tenhou client on its way in. Scoped to that one script
-    // so nothing else on the page is paused; a failure to enable is logged
-    // and the session continues without a discard path.
-    if let Err(e) = enable_script_rewrite(&page).await {
-        warn!("CDP: client instrumentation unavailable on target {target_id}: {e:#}");
-    } else if let Err(e) = reload_if_uninstrumented(&page).await {
-        warn!("CDP: could not re-load the client for instrumentation: {e:#}");
-    }
+    // Every HTTP request the page makes, so we can pick the game's
+    // analytics beacons out of it. `Network.enable` above already turns
+    // this event on; the filtering is ours, in the select arm. Subscribed
+    // before `Fetch.enable` too: a beacon the interceptor fails still fires
+    // `requestWillBeSent`, and that event is where its block is recorded.
+    let mut on_request = page
+        .event_listener::<EventRequestWillBeSent>()
+        .await
+        .context("subscribe requestWillBeSent")?;
+    // Instrument the Tenhou client on its way in, and fail the game's
+    // telemetry before it leaves. Scoped to those patterns so nothing else
+    // on the page is paused; a failure to enable is logged and the session
+    // continues without either. `blocking` is whether telemetry really is
+    // being failed here — the timeline must not claim a block that never
+    // happened.
+    let blocking = match enable_interception(&page, block_telemetry).await {
+        Ok(()) => {
+            if let Err(e) = reload_if_uninstrumented(&page).await {
+                warn!("CDP: could not re-load the client for instrumentation: {e:#}");
+            }
+            block_telemetry
+        }
+        Err(e) => {
+            warn!(
+                "CDP: request interception unavailable on target {target_id} — no client \
+                 instrumentation{}: {e:#}",
+                if block_telemetry {
+                    ", telemetry NOT blocked"
+                } else {
+                    ""
+                },
+            );
+            false
+        }
+    };
     let mut on_created = page
         .event_listener::<EventWebSocketCreated>()
         .await
@@ -497,13 +638,6 @@ async fn attach_page(
         .event_listener::<EventWebSocketClosed>()
         .await
         .context("subscribe webSocketClosed")?;
-    // Every HTTP request the page makes, so we can pick the game's
-    // analytics beacons out of it. `Network.enable` above already turns
-    // this event on; the filtering is ours, in the select arm.
-    let mut on_request = page
-        .event_listener::<EventRequestWillBeSent>()
-        .await
-        .context("subscribe requestWillBeSent")?;
     let mut on_response = page
         .event_listener::<EventResponseReceived>()
         .await
@@ -514,7 +648,18 @@ async fn attach_page(
             tokio::select! {
                 Some(ev) = on_paused.next() => {
                     let url = ev.request.url.clone();
-                    rewrite_paused_script(&page, &notify, ev.request_id.clone(), &url).await;
+                    if is_request_stage(&ev) {
+                        settle_paused_request(
+                            &page,
+                            ev.request_id.clone(),
+                            &ev.request.method,
+                            &url,
+                            blocking,
+                        )
+                        .await;
+                    } else {
+                        rewrite_paused_script(&page, &notify, ev.request_id.clone(), &url).await;
+                    }
                 }
                 Some(ev) = on_created.next() => {
                     let key = FlowKey {
@@ -658,16 +803,26 @@ async fn attach_page(
                     // Fires for every subresource the page loads — the
                     // asymmetry with the MITM leg, where a whole session
                     // is a couple of dozen requests. Filter first, and
-                    // keep the recognizers' work off the hot path.
-                    if is_static_asset(ev.r#type.as_ref()) && !http_cfg.static_assets {
+                    // keep the recognizers' work off the hot path. A
+                    // request the telemetry block fails is never filtered
+                    // out — an `<img>` beacon is a static asset by type.
+                    if is_static_asset(ev.r#type.as_ref())
+                        && !http_cfg.static_assets
+                        && !(blocking && is_telemetry_url(&ev.request.url))
+                    {
                         continue;
                     }
                     let headers = headers_of(&ev.request.headers);
-                    let annotations = annotate::annotate_request(&RequestView::new(
+                    let mut annotations = annotate::annotate_request(&RequestView::new(
                         &ev.request.method,
                         &ev.request.url,
                         &headers,
                     ));
+                    // `settle_paused_request` fails exactly these, by the
+                    // same test, so the mark is what actually happened.
+                    if blocking && is_telemetry_url(&ev.request.url) {
+                        annotations.push(blocked_annotation());
+                    }
                     if let Some(a) = annotations.first() {
                         info!(
                             target: "akagi::capture::http",
@@ -929,6 +1084,121 @@ mod tests {
             decode_frame_payload(2, "not base64!@#"),
             FrameDecode::BadBase64
         );
+    }
+
+    /// The Tenhou rewrite is always armed; the telemetry patterns join it
+    /// only when blocking is on, and at the request stage — a beacon paused
+    /// at the response stage would already have been sent.
+    #[test]
+    fn telemetry_patterns_are_armed_at_the_request_stage_only_when_blocking() {
+        use chromiumoxide::cdp::browser_protocol::fetch::RequestStage;
+        let urls = |ps: &[chromiumoxide::cdp::browser_protocol::fetch::RequestPattern],
+                    stage: RequestStage| {
+            ps.iter()
+                .filter(|p| p.request_stage == Some(stage.clone()))
+                .filter_map(|p| p.url_pattern.clone())
+                .collect::<Vec<_>>()
+        };
+
+        let off = interception_patterns(false);
+        assert_eq!(
+            urls(&off, RequestStage::Response),
+            [TENHOU_CLIENT_URL_PATTERN]
+        );
+        assert!(urls(&off, RequestStage::Request).is_empty());
+
+        let on = interception_patterns(true);
+        assert_eq!(
+            urls(&on, RequestStage::Response),
+            [TENHOU_CLIENT_URL_PATTERN]
+        );
+        assert_eq!(urls(&on, RequestStage::Request), TELEMETRY_URL_PATTERNS);
+    }
+
+    /// `Fetch` patterns are globs where `*` spans `/`. Every SLS URL shape
+    /// must be paused by them — anything they miss is never even offered
+    /// to `is_telemetry_url` and goes out unblocked.
+    #[test]
+    fn telemetry_patterns_pause_every_sls_url_shape() {
+        let globs: Vec<globset::GlobMatcher> = TELEMETRY_URL_PATTERNS
+            .iter()
+            .map(|p| {
+                globset::GlobBuilder::new(p)
+                    .literal_separator(false)
+                    .build()
+                    .expect("valid glob")
+                    .compile_matcher()
+            })
+            .collect();
+        for url in [
+            "https://example-client.cn-hongkong.log.aliyuncs.com/logstores/client/track?log_category=login_stats",
+            "http://example-client.cn-hongkong.log.aliyuncs.com/logstores/client/track_ua.gif",
+            "https://log.aliyuncs.com/",
+            "https://example-client.cn-hongkong.log.aliyuncs.com:8443/logstores/client/track",
+        ] {
+            assert!(globs.iter().any(|g| g.is_match(url)), "not paused: {url}");
+        }
+        assert!(!globs
+            .iter()
+            .any(|g| g.is_match("https://game.maj-soul.com/1/")));
+    }
+
+    /// The final call on a paused request is the host, not the glob: a URL
+    /// that merely mentions the domain is let through.
+    #[test]
+    fn only_sls_hosts_count_as_telemetry() {
+        assert!(is_telemetry_url(
+            "https://example-client.cn-hongkong.log.aliyuncs.com/logstores/client/track?log_category=game_status"
+        ));
+        assert!(is_telemetry_url(
+            "https://example-client.cn-hongkong.log.aliyuncs.com:8443/x"
+        ));
+        // The browser leaves `{`, `}` and `|` unescaped in a query; the
+        // parse must still find the host.
+        assert!(is_telemetry_url(
+            "https://example-client.cn-hongkong.log.aliyuncs.com/logstores/client/track?content={%22a%22:|1|}"
+        ));
+
+        assert!(!is_telemetry_url(
+            "https://game.maj-soul.com/1/?next=https://x.log.aliyuncs.com/"
+        ));
+        assert!(!is_telemetry_url("https://catalog.aliyuncs.com/x"));
+        assert!(!is_telemetry_url("https://log.aliyuncs.com.example.com/"));
+        assert!(!is_telemetry_url("data:text/plain,log.aliyuncs.com/"));
+        assert!(!is_telemetry_url("not a url"));
+    }
+
+    /// A response-stage pause (the Tenhou client) must not be mistaken for
+    /// a request-stage one (telemetry), or the client would be failed and
+    /// a beacon "rewritten".
+    #[test]
+    fn paused_stage_is_read_from_the_response_fields() {
+        use chromiumoxide::cdp::browser_protocol::fetch::EventRequestPaused;
+        let paused = |extra: serde_json::Value| -> EventRequestPaused {
+            let mut ev = serde_json::json!({
+                "requestId": "interception-job-1.0",
+                "request": {
+                    "url": "https://example.test/",
+                    "method": "GET",
+                    "headers": {},
+                    "initialPriority": "High",
+                    "referrerPolicy": "strict-origin-when-cross-origin",
+                },
+                "frameId": "FRAME",
+                "resourceType": "Script",
+            });
+            ev.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            serde_json::from_value(ev).expect("valid requestPaused")
+        };
+        assert!(is_request_stage(&paused(serde_json::json!({}))));
+        assert!(!is_request_stage(&paused(
+            serde_json::json!({ "responseStatusCode": 200 })
+        )));
+        assert!(!is_request_stage(&paused(
+            serde_json::json!({ "responseErrorReason": "Failed" })
+        )));
     }
 
     #[test]

@@ -42,6 +42,7 @@ function makeConfig(over: {
         cft_channel: 'stable',
         force_cft: false,
         extra_args: [],
+        block_telemetry: true,
       },
     },
     autoplay: {

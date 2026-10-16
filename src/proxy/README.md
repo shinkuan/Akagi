@@ -145,8 +145,9 @@ blind spot.
 
 Switched by `[proxy] block_telemetry` (default **on**). Turn it off to
 forward the beacons — the certificate report is then corrected instead of
-dropped. MITM-only; the chromium backend intercepts nothing to drop.
-Covered by `tests/proxy_telemetry_block.rs`, which asserts a beacon is
+dropped. MITM-only; the chromium backend blocks the same host inside the
+browser under its own switch, `[capture.chromium] block_telemetry` — see
+`src/capture/README.md`. Covered by `tests/proxy_telemetry_block.rs`, which asserts a beacon is
 answered locally and never reaches the upstream while ordinary traffic
 still forwards.
 
