@@ -55,3 +55,12 @@ export function captureTitleKey(kind: CaptureKind | null): string {
 export function userscriptUrl(addr: string): string {
   return `http://${addr.trim()}/akagi.user.js`
 }
+
+/**
+ * The install page the Install button opens, in the UI's language. It links
+ * the script and explains what to do when the browser has no userscript
+ * manager — opening the script directly would just show a page of code.
+ */
+export function installPageUrl(addr: string, lang: string): string {
+  return `http://${addr.trim()}/?lang=${encodeURIComponent(lang)}`
+}

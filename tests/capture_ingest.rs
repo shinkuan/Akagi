@@ -131,8 +131,12 @@ async fn frames_pushed_by_a_game_page_reach_the_bridge() {
     let task = tokio::spawn(backend.run(ctx, token));
     wait_until_listening(port).await;
 
-    // ---- The server answers plain HTTP: liveness and the userscript. ----
+    // ---- The server answers plain HTTP: liveness, install page, script. ----
     assert!(http_get(port, "/ping").await.ends_with("pong"));
+    let page = http_get(port, "/?lang=ja").await;
+    assert!(page.contains("text/html"), "{page}");
+    assert!(page.contains(r#"href="/akagi.user.js""#));
+    assert!(page.contains(r#"<html lang="ja">"#));
     let script = http_get(port, "/akagi.user.js").await;
     assert!(script.contains("// ==UserScript=="));
     assert!(script.contains(&format!("'ws://127.0.0.1:{port}/ingest'")));

@@ -7,8 +7,8 @@
 //! picks userscript capture is exactly when they want to install it.
 //!
 //! So while ingest is chosen but not running, the UI asks for this preview:
-//! the same address, serving the same rendered script plus `/ping`, and
-//! nothing else — no `/ingest`, so no frame reaches any bridge before
+//! the same address, serving the same rendered script, the install page and
+//! `/ping`, and nothing else — no `/ingest`, so no frame reaches any bridge before
 //! capture actually starts. A userscript installed from it keeps retrying
 //! until the real backend comes up on that address.
 //!
@@ -67,6 +67,7 @@ pub async fn start(addr: SocketAddr) -> Result<()> {
                 async move { super::userscript_response(&script) }
             }),
         )
+        .route(userscript::INSTALL_PATH, get(super::serve_install_page))
         .route("/ping", get(|| async { "pong" }));
     let (stop, stopped) = oneshot::channel::<()>();
     let task = tokio::spawn(async move {
@@ -152,6 +153,11 @@ mod tests {
         assert!(script.starts_with("HTTP/1.1 200"), "{script}");
         assert!(script.contains(&format!("'ws://{a}/ingest'")));
         assert!(get(a, "/ping").await.ends_with("pong"));
+        // The install page the UI's button opens, in the requested language.
+        let page = get(a, "/?lang=zh-TW").await;
+        assert!(page.contains("text/html"), "{page}");
+        assert!(page.contains(r#"href="/akagi.user.js""#));
+        assert!(page.contains("安裝 userscript"));
         // No frames before capture starts.
         assert!(get(a, "/ingest").await.starts_with("HTTP/1.1 404"));
 

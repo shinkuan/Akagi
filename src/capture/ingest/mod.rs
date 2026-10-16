@@ -13,13 +13,15 @@
 //!
 //! The server also serves the userscript itself at
 //! [`userscript::USERSCRIPT_PATH`], rendered with this endpoint's address,
-//! so installing it is one click. Before the backend runs — while the mode
-//! is picked but not yet saved — [`preview`] serves the same script on the
-//! same address.
+//! so installing it is one click, and at `/` an [`install_page`] that
+//! links it and explains what to do without a userscript manager. Before
+//! the backend runs — while the mode is picked but not yet saved —
+//! [`preview`] serves both on the same address.
 //!
 //! Who may connect is decided in [`origin`]; what they send is
 //! [`protocol`].
 
+pub mod install_page;
 pub mod origin;
 pub mod preview;
 pub mod protocol;
@@ -36,7 +38,7 @@ use crate::schema::{FrameDirection, FrameRaw, Notification};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
-use axum::extract::State;
+use axum::extract::{RawQuery, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -106,6 +108,7 @@ impl CaptureBackend for IngestBackend {
         let app = Router::new()
             .route(userscript::INGEST_PATH, get(ingest_ws))
             .route(userscript::USERSCRIPT_PATH, get(serve_userscript))
+            .route(userscript::INSTALL_PATH, get(serve_install_page))
             .route("/ping", get(|| async { "pong" }))
             .with_state(shared);
 
@@ -177,6 +180,21 @@ fn userscript_response(script: &str) -> Response {
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         script.to_string(),
+    )
+        .into_response()
+}
+
+/// The install page, in the language the UI asked for with `?lang=`.
+/// Served by the backend and by [`preview`] alike.
+async fn serve_install_page(RawQuery(query): RawQuery) -> Response {
+    let lang = query.as_deref().and_then(|q| {
+        form_urlencoded::parse(q.as_bytes())
+            .find(|(k, _)| k == "lang")
+            .map(|(_, v)| v.into_owned())
+    });
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        install_page::render(lang.as_deref()),
     )
         .into_response()
 }

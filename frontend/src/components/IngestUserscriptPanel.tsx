@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { userscriptUrl } from '@/lib/captureConfig'
+import { installPageUrl } from '@/lib/captureConfig'
 import { copyText } from '@/lib/clipboard'
 import { openExternal } from '@/lib/external'
 import { invoke } from '@/lib/tauri'
@@ -14,12 +14,14 @@ const PREVIEW_DEBOUNCE_MS = 300
 // How to get the Akagi userscript into the user's own browser. Shared by
 // the Setup wizard and Settings → Capture.
 //
-// "Install" opens the script's URL in the default browser, which a
-// userscript manager intercepts. The running ingest backend serves that
-// URL — but it only runs once the configuration is saved, and the moment
+// "Install" opens Akagi's install page in the default browser: it links the
+// script (which a userscript manager intercepts) and tells a browser
+// without a manager what is missing — opening the script directly would
+// just show a page of code there. The running ingest backend serves that
+// page — but it only runs once the configuration is saved, and the moment
 // someone picks this mode (Setup, or an unsaved Settings change) is when
 // they want to install. So until the backend is live on `addr`, the panel
-// keeps a preview server there that serves only the script; the backend
+// keeps a preview server there that serves only the page and the script; the backend
 // takes the address over when it starts. "Copy script" renders the script
 // locally and always works.
 export function IngestUserscriptPanel({
@@ -30,13 +32,13 @@ export function IngestUserscriptPanel({
   /** The ingest backend is running and listening on `addr`. */
   endpointLive: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [copying, setCopying] = useState(false)
   // Which address the preview is serving, or why it could not.
   const [served, setServed] = useState<string | null>(null)
   const [failure, setFailure] = useState<{ addr: string; error: string } | null>(null)
   const target = addr.trim()
-  const url = userscriptUrl(target)
+  const url = installPageUrl(target, i18n.language)
 
   useEffect(() => {
     if (endpointLive) return

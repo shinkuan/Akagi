@@ -21,6 +21,9 @@ pub const INGEST_PATH: &str = "/ingest";
 /// Path the ingest server serves the userscript from. Ending in `.user.js`
 /// is what makes a userscript manager offer to install it.
 pub const USERSCRIPT_PATH: &str = "/akagi.user.js";
+/// Path of the install page ([`super::install_page`]), which is what the
+/// UI's Install button opens.
+pub const INSTALL_PATH: &str = "/";
 
 /// The userscript for an endpoint listening on `addr`.
 pub fn render(addr: SocketAddr) -> String {

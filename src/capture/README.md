@@ -70,20 +70,28 @@ verbatim.
 
 ## Ingest
 
-`ingest/` is a loopback server (axum) with three routes:
+`ingest/` is a loopback server (axum) with four routes:
 
 | Route | What |
 |---|---|
 | `GET /ingest` | WebSocket a source pushes frames into |
+| `GET /` | the install page (`install_page.rs`, `?lang=en\|ja\|zh-TW\|zh-CN`) |
 | `GET /akagi.user.js` | the userscript, rendered for this address |
 | `GET /ping` | `pong` |
+
+**The install page** is what the UI's Install button opens. Opening
+`/akagi.user.js` directly only works where a userscript manager
+intercepts it; anywhere else the browser shows a page of JavaScript. The
+page links the script and tells a browser without a manager what is
+missing. It is static HTML: `lang` only selects built-in strings, and
+nothing from the request is echoed back.
 
 **Install before capture runs** (`preview.rs`). The backend only starts
 once the configuration is saved, but the user wants to install the
 userscript the moment they pick this mode — in Setup, before Finish. So
 while ingest is picked and not running, the UI asks for a preview server
 on the same address (`start_userscript_preview` / `stop_userscript_preview`)
-that serves `/akagi.user.js` and `/ping` and nothing else: no `/ingest`,
+that serves `/`, `/akagi.user.js` and `/ping` and nothing else: no `/ingest`,
 so no frame reaches a bridge before capture starts. At most one preview
 runs, and `IngestBackend::run` stops it (`preview::stop_any`) before it
 binds, so the two never fight over the port.

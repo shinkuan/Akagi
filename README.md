@@ -236,10 +236,13 @@ browser window.
    (`chrome://extensions` → *Details*) and turn on **Allow user
    scripts**. Without it the manager cannot run any script.
 4. Click **Install userscript**, right there under the mode — it works
-   before you finish Setup or save, too. The manager opens its install
-   page; confirm. (If your game browser is not your default browser,
-   open `http://127.0.0.1:23411/akagi.user.js` in it yourself, or use
-   **Copy script** and paste it into a new script.)
+   before you finish Setup or save, too. Akagi's install page opens in
+   your default browser; click **Install userscript** there and confirm
+   in the manager. If that only shows a page of code, the browser has no
+   userscript manager yet — the install page says where to get one. (If
+   your game browser is not your default browser, open
+   `http://127.0.0.1:23411/` in it yourself, or use **Copy script** and
+   paste it into a new script.)
 5. Finish Setup (or save), then open — or reload — the game page. Akagi
    shows a *Userscript connected* toast.
 

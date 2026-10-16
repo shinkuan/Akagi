@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   captureTitleKey,
   effectiveCaptureMode,
+  installPageUrl,
   userscriptUrl,
   withCaptureMode,
   withChromiumPatch,
@@ -75,6 +76,10 @@ describe('capture config edits', () => {
     expect(captureTitleKey('ingest')).toBe('ingest.overview_title')
     expect(captureTitleKey('mitm')).toBe('overview.capture_mitm')
     expect(captureTitleKey(null)).toBe('overview.capture_mitm')
+  })
+
+  it('points at the install page in the UI language', () => {
+    expect(installPageUrl(' 127.0.0.1:23411 ', 'zh-TW')).toBe('http://127.0.0.1:23411/?lang=zh-TW')
   })
 
   it('points at the served userscript', () => {
