@@ -211,18 +211,19 @@ Firefox 也可以。Akagi 監聽 `127.0.0.1:23411`，遊戲頁面上的一支小
 userscript 把遊戲的 WebSocket 訊框送過來。不需 proxy、不需憑證，
 也不會多開一個瀏覽器視窗。
 
-1. 在 Setup 或 *設定 → 封包擷取* 選擇 **自己的瀏覽器（userscript）**
-   並儲存。
+1. 在 Setup 或 *設定 → 封包擷取* 選擇 **自己的瀏覽器（userscript）**。
 2. 在你玩遊戲的瀏覽器安裝 userscript 管理器：
    [Tampermonkey](https://www.tampermonkey.net/) 或
    [Violentmonkey](https://violentmonkey.github.io/)。
 3. **僅 Chrome / Edge：** 打開管理器的擴充功能詳細資料
    （`chrome://extensions` → *詳細資料*），開啟 **允許使用者指令碼**。
    沒開的話管理器無法執行任何腳本。
-4. 在 *設定 → 封包擷取* 按 **安裝 userscript**，管理器會開啟安裝頁面，
-   確認即可。（如果玩遊戲的瀏覽器不是預設瀏覽器，請在該瀏覽器自行開啟
-   `http://127.0.0.1:23411/akagi.user.js`，或用 **複製腳本** 貼到新腳本。）
-5. 開啟（或重新整理）遊戲頁面，Akagi 會跳出 *Userscript connected* 通知。
+4. 直接在模式下方按 **安裝 userscript** — 還沒完成 Setup 或還沒儲存也能按。
+   管理器會開啟安裝頁面，確認即可。（如果玩遊戲的瀏覽器不是預設瀏覽器，
+   請在該瀏覽器自行開啟 `http://127.0.0.1:23411/akagi.user.js`，或用
+   **複製腳本** 貼到新腳本。）
+5. 完成 Setup（或儲存）後，開啟（或重新整理）遊戲頁面，Akagi 會跳出
+   *Userscript connected* 通知。
 
 這支腳本只讀取：每個訊框都原封不動送到遊戲，它做的任何事都不會讓頁面
 壞掉。請在進入對局前先啟動 Akagi，或重新整理頁面 — Akagi 連不上時，

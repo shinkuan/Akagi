@@ -686,6 +686,27 @@ pub async fn ingest_userscript(
     Ok(crate::capture::ingest::userscript::render(addr))
 }
 
+/// Serve the userscript on `addr` while ingest capture is picked but not
+/// running yet, so "Install userscript" works straight from Setup or an
+/// unsaved Settings change. Serves nothing but the script; the ingest
+/// backend stops it when it starts. See `capture::ingest::preview`.
+#[tauri::command]
+pub async fn start_userscript_preview(addr: String) -> CmdResult<()> {
+    let addr = crate::capture::ingest::parse_loopback_addr(&addr).map_err(|e| format!("{e:#}"))?;
+    crate::capture::ingest::preview::start(addr)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// Stop the preview started for `addr`, if it is still the running one.
+#[tauri::command]
+pub async fn stop_userscript_preview(addr: String) -> CmdResult<()> {
+    if let Ok(addr) = crate::capture::ingest::parse_loopback_addr(&addr) {
+        crate::capture::ingest::preview::stop(addr).await;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn get_log_dir(state: State<'_, AppState>) -> CmdResult<PathBuf> {
     Ok(state.log_session.dir().to_path_buf())
@@ -1812,6 +1833,8 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::native_api_create_checkout,
             $crate::ipc::commands::native_api_checkout_result,
             $crate::ipc::commands::ingest_userscript,
+            $crate::ipc::commands::start_userscript_preview,
+            $crate::ipc::commands::stop_userscript_preview,
         ]
     };
 }

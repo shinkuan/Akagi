@@ -542,8 +542,9 @@ function IngestConfigStep({
   const { t } = useTranslation()
   const captureStatus = useCaptureStore((s) => s.status)
   const savedAddr = useConfigStore((s) => s.config?.capture.ingest.addr)
-  // Usually not live yet: the endpoint starts once setup is saved. A re-run
-  // from Settings with ingest already running is the exception.
+  // Usually not live yet — the endpoint starts once setup is saved — so the
+  // panel serves the script from a preview meanwhile. A re-run from
+  // Settings with ingest already running is the exception.
   const endpointLive =
     captureStatus.state === 'running' &&
     captureStatus.kind === 'ingest' &&
@@ -560,11 +561,7 @@ function IngestConfigStep({
           placeholder="127.0.0.1:23411"
         />
       </Field>
-      <IngestUserscriptPanel
-        addr={draft.capture.ingest.addr}
-        endpointLive={endpointLive}
-        context="setup"
-      />
+      <IngestUserscriptPanel addr={draft.capture.ingest.addr} endpointLive={endpointLive} />
     </div>
   )
 }

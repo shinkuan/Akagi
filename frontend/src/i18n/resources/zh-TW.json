@@ -933,10 +933,9 @@
     "copy": "複製腳本",
     "copied": "已複製 userscript，請在管理器中新增腳本並貼上。",
     "copy_failed": "無法複製 userscript。",
-    "install_needs_running": "「安裝」會從 Akagi 本身開啟腳本，所以要等 userscript 擷取啟動後才能用(請先儲存)。「複製腳本」隨時都能用。",
-    "install_after_setup": "完成設定後，Akagi 才會啟動 userscript 擷取；屆時到 設定 → 擷取 按「安裝 userscript」。也可以現在先「複製腳本」，到管理器新增腳本後貼上。",
+    "preview_failed": "無法在這個位址提供 userscript:{{error}}。請換一個 port，或使用「複製腳本」。",
     "no_autoplay": "此模式不支援自動打牌。",
-    "finish_next": "下一步：到 設定 → 擷取 安裝 userscript。",
+    "finish_next": "還沒安裝 userscript 的話，之後隨時可以到 設定 → 擷取 安裝。",
     "overview_title": "Userscript 擷取"
   }
 }

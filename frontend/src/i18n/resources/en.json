@@ -933,10 +933,9 @@
     "copy": "Copy script",
     "copied": "Userscript copied — paste it into a new script in your userscript manager.",
     "copy_failed": "Couldn't copy the userscript.",
-    "install_needs_running": "Install opens the script from Akagi itself, so it works once userscript capture is running (save first). Copy script works any time.",
-    "install_after_setup": "Akagi starts userscript capture when you finish setup. Then go to Settings → Capture and click “Install userscript”. Or use Copy script now and paste it into a new script in your manager.",
+    "preview_failed": "Couldn't serve the userscript on this address: {{error}}. Pick another port, or use Copy script.",
     "no_autoplay": "Autoplay is not available in this mode.",
-    "finish_next": "Next: install the userscript from Settings → Capture.",
+    "finish_next": "Haven't installed the userscript yet? You can do it any time from Settings → Capture.",
     "overview_title": "Userscript capture"
   }
 }

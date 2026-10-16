@@ -13,12 +13,15 @@
 //!
 //! The server also serves the userscript itself at
 //! [`userscript::USERSCRIPT_PATH`], rendered with this endpoint's address,
-//! so installing it is one click from Settings.
+//! so installing it is one click. Before the backend runs — while the mode
+//! is picked but not yet saved — [`preview`] serves the same script on the
+//! same address.
 //!
 //! Who may connect is decided in [`origin`]; what they send is
 //! [`protocol`].
 
 pub mod origin;
+pub mod preview;
 pub mod protocol;
 pub mod userscript;
 
@@ -88,6 +91,8 @@ impl IngestBackend {
 impl CaptureBackend for IngestBackend {
     async fn run(self: Box<Self>, ctx: CaptureCtx, shutdown: ShutdownToken) -> Result<()> {
         let addr = parse_loopback_addr(&self.cfg.addr)?;
+        // The install preview typically holds this very address until now.
+        preview::stop_any().await;
         let listener = TcpListener::bind(addr).await.with_context(|| {
             format!("binding the ingest endpoint on {addr} (is another Akagi running?)")
         })?;
@@ -164,9 +169,14 @@ impl Shared {
 }
 
 async fn serve_userscript(State(shared): State<Arc<Shared>>) -> Response {
+    userscript_response(&shared.userscript)
+}
+
+/// The userscript as served — by the backend and by [`preview`] alike.
+fn userscript_response(script: &str) -> Response {
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        shared.userscript.clone(),
+        script.to_string(),
     )
         .into_response()
 }

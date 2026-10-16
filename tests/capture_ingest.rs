@@ -7,8 +7,9 @@
 //! `ws_frame` rows on the Inspector timeline.
 //!
 //! Also pinned: a page from any other site is refused at the handshake, a
-//! game page for the wrong platform is turned away, and the server hands
-//! out the userscript it was built for.
+//! game page for the wrong platform is turned away, the server hands out
+//! the userscript it was built for, and the backend takes its address over
+//! from the install preview that served the script before capture started.
 //!
 //! One test, not several: `Session::init` installs a global tracing
 //! subscriber, which can only happen once per process.
@@ -16,7 +17,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use akagi::capture::ingest::IngestBackend;
+use akagi::capture::ingest::{preview, IngestBackend};
 use akagi::capture::{CaptureBackend, CaptureCtx, ShutdownToken};
 use akagi::config::{HttpCaptureConfig, IngestConfig, Platform};
 use akagi::event_bus::{mjai_bus, notify_bus};
@@ -104,6 +105,17 @@ async fn frames_pushed_by_a_game_page_reach_the_bridge() {
     let mut toasts = notify.subscribe();
 
     let port = free_port().await;
+
+    // ---- Before capture starts, the install preview holds the address. ----
+    // It serves the script but accepts no frames; the backend must take the
+    // port over from it.
+    preview::start(format!("127.0.0.1:{port}").parse().unwrap())
+        .await
+        .expect("preview binds");
+    let script = http_get(port, "/akagi.user.js").await;
+    assert!(script.contains(&format!("'ws://127.0.0.1:{port}/ingest'")));
+    assert!(http_get(port, "/ingest").await.starts_with("HTTP/1.1 404"));
+
     let backend = Box::new(IngestBackend::new(IngestConfig {
         addr: format!("127.0.0.1:{port}"),
     }));

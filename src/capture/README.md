@@ -78,6 +78,16 @@ verbatim.
 | `GET /akagi.user.js` | the userscript, rendered for this address |
 | `GET /ping` | `pong` |
 
+**Install before capture runs** (`preview.rs`). The backend only starts
+once the configuration is saved, but the user wants to install the
+userscript the moment they pick this mode — in Setup, before Finish. So
+while ingest is picked and not running, the UI asks for a preview server
+on the same address (`start_userscript_preview` / `stop_userscript_preview`)
+that serves `/akagi.user.js` and `/ping` and nothing else: no `/ingest`,
+so no frame reaches a bridge before capture starts. At most one preview
+runs, and `IngestBackend::run` stops it (`preview::stop_any`) before it
+binds, so the two never fight over the port.
+
 **Who may connect** (`origin.rs`). Any page in the browser can open a
 WebSocket to `127.0.0.1`, and whatever reaches the endpoint goes into the
 bridges, so the handshake's `Origin` decides: a game site from

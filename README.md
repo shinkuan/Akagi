@@ -227,20 +227,21 @@ profile, your own login, Firefox included. Akagi listens on
 it the game's WebSocket frames. No proxy, no certificate, no extra
 browser window.
 
-1. Pick **Your own browser (userscript)** as the capture mode (Setup, or
-   *Settings → Capture*) and save.
+1. Pick **Your own browser (userscript)** as the capture mode, in Setup
+   or *Settings → Capture*.
 2. Install a userscript manager in the browser you play in:
    [Tampermonkey](https://www.tampermonkey.net/) or
    [Violentmonkey](https://violentmonkey.github.io/).
 3. **Chrome / Edge only:** open the manager's extension details
    (`chrome://extensions` → *Details*) and turn on **Allow user
    scripts**. Without it the manager cannot run any script.
-4. In *Settings → Capture*, click **Install userscript**. The manager
-   opens its install page; confirm. (If your game browser is not your
-   default browser, open `http://127.0.0.1:23411/akagi.user.js` in it
-   yourself, or use **Copy script** and paste it into a new script.)
-5. Open — or reload — the game page. Akagi shows a *Userscript
-   connected* toast.
+4. Click **Install userscript**, right there under the mode — it works
+   before you finish Setup or save, too. The manager opens its install
+   page; confirm. (If your game browser is not your default browser,
+   open `http://127.0.0.1:23411/akagi.user.js` in it yourself, or use
+   **Copy script** and paste it into a new script.)
+5. Finish Setup (or save), then open — or reload — the game page. Akagi
+   shows a *Userscript connected* toast.
 
 The script only reads: every frame reaches the game unchanged, and
 nothing it does can break the page. Start Akagi before you enter a
