@@ -99,3 +99,12 @@ tokio = { version = "1", features = ["net"] }
 # The certificate-report test stands up a real TLS origin, so the proxy's
 # upstream verifier has a genuine certificate to observe and record.
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs"] }
+
+# chromiumoxide 0.9.1 auto-attaches with `waitForDebuggerOnStart: true`, then
+# resumes and detaches a paused service worker in one go. When the worker's
+# main script is still loading, the resume is lost and the worker never starts,
+# so the page's `navigator.serviceWorker.register()` hangs (Majsoul's WebGL boot
+# awaits it). The fork is 0.9.1 plus one commit that auto-attaches without
+# pausing. Drop this once a release carries the fix.
+[patch.crates-io]
+chromiumoxide = { git = "https://github.com/shinkuan/chromiumoxide", rev = "17c2e5a8b4a5832f0df7e17e291d95a12d643703" }
