@@ -342,6 +342,7 @@ impl RiichiCityBridge {
         self.status.pending_dora.clear();
         self.status.pending_reach = None;
         self.status.meld_counts = [0; 4];
+        self.status.pons = Default::default();
 
         // Opening draw: our own drawn 14th tile if we are the dealer, otherwise
         // the dealer's hidden first draw.
@@ -447,12 +448,19 @@ impl RiichiCityBridge {
                     });
                 }
                 5 => {
-                    let consumed = group_cards(action);
+                    let group = group_cards(action);
+                    let pai = field_card(action, "card");
+                    let consumed = [idx(&group, 0), idx(&group, 1)];
+                    // Remembered for a later kakan, whose broadcast names
+                    // only the added tile.
+                    if let Some(pons) = self.status.pons.get_mut(actor as usize) {
+                        pons.push([pai.clone(), consumed[0].clone(), consumed[1].clone()]);
+                    }
                     events.push(MjaiEvent::Pon {
                         actor,
                         target: self.status.last_dahai_actor.unwrap_or(actor),
-                        pai: field_card(action, "card"),
-                        consumed: [idx(&consumed, 0), idx(&consumed, 1)],
+                        pai,
+                        consumed,
                     });
                 }
                 6 => {
@@ -465,25 +473,25 @@ impl RiichiCityBridge {
                     });
                 }
                 8 => {
-                    // Concealed kan: four copies, the first marked red for 5s.
-                    let base = field_card(action, "card");
-                    let red = red_of(&base);
+                    // Concealed kan: the broadcast echoes the caller's
+                    // request, so `card` plus the three `group_cards` are the
+                    // four copies as they left the rack — a red five may be
+                    // any of them, `card` included.
+                    let pai = field_card(action, "card");
                     events.push(MjaiEvent::Ankan {
                         actor,
-                        consumed: [red, base.clone(), base.clone(), base],
+                        consumed: ankan_consumed(&pai, &group_cards(action)),
                     });
                 }
                 9 => {
-                    // Added kan: pai is the added tile; the existing pon is three
-                    // copies. If the added tile is a plain 5 the pon held the red;
-                    // if it is the red 5 the pon held three plain.
+                    // Added kan: `card` is the added tile and `group_cards`
+                    // is empty, so the pon's three tiles come from the pon
+                    // this seat called earlier.
                     let pai = field_card(action, "card");
-                    let consumed = if is_red(&pai) {
-                        let plain = pai[..2].to_string();
-                        [plain.clone(), plain.clone(), plain]
-                    } else {
-                        [red_of(&pai), pai.clone(), pai.clone()]
-                    };
+                    let consumed = self.take_pon(actor, &pai).unwrap_or_else(|| {
+                        warn!(target: LOG, "kakan without a tracked pon; inferring consumed");
+                        kakan_consumed_fallback(&pai)
+                    });
                     events.push(MjaiEvent::Kakan {
                         actor,
                         pai,
@@ -696,6 +704,14 @@ impl RiichiCityBridge {
             None => Vec::new(),
         }
     }
+
+    /// Remove and return `actor`'s pon of `pai`'s kind (red and plain fives
+    /// match), the meld a kakan upgrades.
+    fn take_pon(&mut self, actor: u8, pai: &str) -> Option<[String; 3]> {
+        let pons = self.status.pons.get_mut(actor as usize)?;
+        let i = pons.iter().position(|p| plain_of(&p[0]) == plain_of(pai))?;
+        Some(pons.remove(i))
+    }
 }
 
 impl Bridge for RiichiCityBridge {
@@ -788,12 +804,57 @@ fn is_red(pai: &str) -> bool {
     matches!(pai, "5mr" | "5pr" | "5sr")
 }
 
+/// `pai` without its red marker: `5mr` → `5m`; anything else unchanged.
+fn plain_of(pai: &str) -> &str {
+    if is_red(pai) {
+        &pai[..2]
+    } else {
+        pai
+    }
+}
+
 /// The red-five variant of a plain `5m`/`5p`/`5s`; otherwise the tile itself.
 fn red_of(pai: &str) -> String {
     match pai {
         "5m" | "5p" | "5s" => format!("{pai}r"),
         other => other.to_string(),
     }
+}
+
+/// Ankan `consumed`: `card` plus its three `group_cards`, as sent. Only when
+/// the group isn't three copies of `card`'s kind, or names more than one red
+/// (there is one per suit), is it inferred — four of the kind with one red
+/// for fives.
+fn ankan_consumed(pai: &str, group: &[String]) -> [String; 4] {
+    if let [a, b, c] = group {
+        let tiles = [pai, a, b, c];
+        if pai != "?"
+            && tiles.iter().all(|t| plain_of(t) == plain_of(pai))
+            && tiles.iter().filter(|t| is_red(t)).count() <= 1
+        {
+            return tiles.map(str::to_string);
+        }
+    }
+    warn!(target: LOG, "ankan without three matching group_cards; inferring consumed");
+    let plain = plain_of(pai);
+    [
+        red_of(plain),
+        plain.to_string(),
+        plain.to_string(),
+        plain.to_string(),
+    ]
+}
+
+/// Kakan `consumed` when the upgraded pon wasn't seen: three of the kind,
+/// one red for fives unless the added tile is the red (one red per suit).
+fn kakan_consumed_fallback(pai: &str) -> [String; 3] {
+    let plain = plain_of(pai);
+    let first = if is_red(pai) {
+        plain.to_string()
+    } else {
+        red_of(plain)
+    };
+    [first, plain.to_string(), plain.to_string()]
 }
 
 #[cfg(test)]
@@ -1402,58 +1463,252 @@ mod tests {
         }
     }
 
-    #[test]
-    fn ankan_marks_red_five() {
-        let mut b = started_4p();
-        let e = feed(
-            &mut b,
+    /// Feed one `cmd_game_action_brc` entry.
+    fn act(b: &mut RiichiCityBridge, action: Value) -> Vec<MjaiEvent> {
+        feed(
+            b,
             18,
-            json!({"cmd": "cmd_game_action_brc", "data": {"action_info": [
-                {"action": 8, "user_id": 1001, "card": 0x25}
-            ]}}),
-        );
-        match &e[0] {
-            MjaiEvent::Ankan { actor, consumed } => {
-                assert_eq!(*actor, 0);
-                assert_eq!(
-                    consumed,
-                    &[
-                        "5mr".to_string(),
-                        "5m".to_string(),
-                        "5m".to_string(),
-                        "5m".to_string()
-                    ]
-                );
-            }
-            other => panic!("expected Ankan, got {other:?}"),
+            json!({"cmd": "cmd_game_action_brc", "data": {"action_info": [action]}}),
+        )
+    }
+
+    fn ankan_of(b: &mut RiichiCityBridge, action: Value) -> Vec<String> {
+        match act(b, action).as_slice() {
+            [MjaiEvent::Ankan { consumed, .. }] => consumed.to_vec(),
+            other => panic!("expected one Ankan, got {other:?}"),
         }
     }
 
+    fn kakan_of(b: &mut RiichiCityBridge, action: Value) -> (String, Vec<String>) {
+        match act(b, action).as_slice() {
+            [MjaiEvent::Kakan { pai, consumed, .. }] => (pai.clone(), consumed.to_vec()),
+            other => panic!("expected one Kakan, got {other:?}"),
+        }
+    }
+
+    /// The client lists the four copies in rack-scan order with the red
+    /// five first, so the red can arrive as `card` itself; it used to be
+    /// repeated into all four slots.
     #[test]
-    fn kakan_with_red_added_tile_yields_plain_consumed() {
+    fn ankan_keeps_a_red_five_sent_as_card() {
         let mut b = started_4p();
-        let e = feed(
+        let consumed = ankan_of(
+            &mut b,
+            json!({"action": 8, "user_id": 1001, "card": 0x105,
+                   "group_cards": [0x05, 0x05, 0x05], "move_cards_pos": [5, 6, 7, 14]}),
+        );
+        assert_eq!(consumed, ["5pr", "5p", "5p", "5p"]);
+    }
+
+    #[test]
+    fn ankan_keeps_a_red_five_sent_in_group_cards() {
+        let mut b = started_4p();
+        let consumed = ankan_of(
+            &mut b,
+            json!({"action": 8, "user_id": 1001, "card": 0x25,
+                   "group_cards": [0x125, 0x25, 0x25], "move_cards_pos": [3, 4, 5, 6]}),
+        );
+        assert_eq!(consumed, ["5m", "5mr", "5m", "5m"]);
+    }
+
+    /// Four plain fives on the wire (a table without red fives) stay plain.
+    #[test]
+    fn ankan_without_a_red_five_stays_plain() {
+        let mut b = started_4p();
+        let fives = ankan_of(
+            &mut b,
+            json!({"action": 8, "user_id": 1001, "card": 0x15, "group_cards": [0x15, 0x15, 0x15]}),
+        );
+        assert_eq!(fives, ["5s", "5s", "5s", "5s"]);
+        let honors = ankan_of(
+            &mut b,
+            json!({"action": 8, "user_id": 1002, "card": 0x41, "group_cards": [0x41, 0x41, 0x41]}),
+        );
+        assert_eq!(honors, ["S", "S", "S", "S"]);
+    }
+
+    /// Missing or mismatched `group_cards` (or two reds) falls back to one
+    /// red per suit, whichever form `card` is in.
+    #[test]
+    fn ankan_without_group_cards_infers_one_red() {
+        let mut b = started_4p();
+        let plain = ankan_of(&mut b, json!({"action": 8, "user_id": 1001, "card": 0x25}));
+        assert_eq!(plain, ["5mr", "5m", "5m", "5m"]);
+        let red = ankan_of(&mut b, json!({"action": 8, "user_id": 1002, "card": 0x105}));
+        assert_eq!(red, ["5pr", "5p", "5p", "5p"]);
+        let mismatched = ankan_of(
+            &mut b,
+            json!({"action": 8, "user_id": 1003, "card": 0x15, "group_cards": [0x15, 0x16, 0x15]}),
+        );
+        assert_eq!(mismatched, ["5sr", "5s", "5s", "5s"]);
+        let two_reds = ankan_of(
+            &mut b,
+            json!({"action": 8, "user_id": 1004, "card": 0x125, "group_cards": [0x125, 0x25, 0x25]}),
+        );
+        assert_eq!(two_reds, ["5mr", "5m", "5m", "5m"]);
+    }
+
+    /// Chi, pon and daiminkan read the called tile from `card` and the
+    /// hand tiles from `group_cards`, so a red five keeps its place in
+    /// either. The pon shapes are from captured broadcasts; chi and
+    /// daiminkan use the same two fields.
+    #[test]
+    fn calls_keep_red_fives_as_sent() {
+        let mut b = started_4p();
+        act(
+            &mut b,
+            json!({"action": 11, "user_id": 1004, "card": 0x105, "move_cards_pos": [14], "is_li_zhi": false}),
+        );
+        match act(
+            &mut b,
+            json!({"action": 3, "user_id": 1001, "card": 0x105, "group_cards": [0x04, 0x06]}),
+        )
+        .as_slice()
+        {
+            [MjaiEvent::Chi { pai, consumed, .. }] => {
+                assert_eq!(pai, "5pr");
+                assert_eq!(consumed, &["4p", "6p"]);
+            }
+            other => panic!("expected Chi, got {other:?}"),
+        }
+        match act(
+            &mut b,
+            json!({"action": 2, "user_id": 1002, "card": 0x14, "group_cards": [0x115, 0x16]}),
+        )
+        .as_slice()
+        {
+            [MjaiEvent::Chi { pai, consumed, .. }] => {
+                assert_eq!(pai, "4s");
+                assert_eq!(consumed, &["5sr", "6s"]);
+            }
+            other => panic!("expected Chi, got {other:?}"),
+        }
+        match act(
+            &mut b,
+            json!({"action": 5, "user_id": 1003, "card": 0x105, "group_cards": [0x05, 0x05]}),
+        )
+        .as_slice()
+        {
+            [MjaiEvent::Pon { pai, consumed, .. }] => {
+                assert_eq!(pai, "5pr");
+                assert_eq!(consumed, &["5p", "5p"]);
+            }
+            other => panic!("expected Pon, got {other:?}"),
+        }
+        match act(
+            &mut b,
+            json!({"action": 5, "user_id": 1004, "card": 0x15, "group_cards": [0x115, 0x15]}),
+        )
+        .as_slice()
+        {
+            [MjaiEvent::Pon { pai, consumed, .. }] => {
+                assert_eq!(pai, "5s");
+                assert_eq!(consumed, &["5sr", "5s"]);
+            }
+            other => panic!("expected Pon, got {other:?}"),
+        }
+        match act(
+            &mut b,
+            json!({"action": 6, "user_id": 1001, "card": 0x25, "group_cards": [0x125, 0x25, 0x25]}),
+        )
+        .as_slice()
+        {
+            [MjaiEvent::Daiminkan { pai, consumed, .. }] => {
+                assert_eq!(pai, "5m");
+                assert_eq!(consumed, &["5mr", "5m", "5m"]);
+            }
+            other => panic!("expected Daiminkan, got {other:?}"),
+        }
+        match act(
+            &mut b,
+            json!({"action": 6, "user_id": 1002, "card": 0x125, "group_cards": [0x25, 0x25, 0x25]}),
+        )
+        .as_slice()
+        {
+            [MjaiEvent::Daiminkan { pai, consumed, .. }] => {
+                assert_eq!(pai, "5mr");
+                assert_eq!(consumed, &["5m", "5m", "5m"]);
+            }
+            other => panic!("expected Daiminkan, got {other:?}"),
+        }
+    }
+
+    /// A kakan broadcast carries no `group_cards`; `consumed` is the pon
+    /// the seat called, red five and all.
+    #[test]
+    fn kakan_takes_consumed_from_the_pon() {
+        let mut b = started_4p();
+        act(
+            &mut b,
+            json!({"action": 5, "user_id": 1001, "card": 0x05, "group_cards": [0x105, 0x05]}),
+        );
+        let (pai, consumed) = kakan_of(
+            &mut b,
+            json!({"action": 9, "user_id": 1001, "card": 0x05, "group_cards": [], "move_cards_pos": [11]}),
+        );
+        assert_eq!(pai, "5p");
+        assert_eq!(consumed, ["5p", "5pr", "5p"]);
+
+        // A pon of three plain fives stays plain under either added tile.
+        act(
+            &mut b,
+            json!({"action": 5, "user_id": 1002, "card": 0x15, "group_cards": [0x15, 0x15]}),
+        );
+        let (pai, consumed) = kakan_of(&mut b, json!({"action": 9, "user_id": 1002, "card": 0x15}));
+        assert_eq!(pai, "5s");
+        assert_eq!(consumed, ["5s", "5s", "5s"]);
+
+        // The pon is matched by seat and kind: seat 3 holds two, and the
+        // red added tile finds the plain-five pon.
+        act(
+            &mut b,
+            json!({"action": 5, "user_id": 1003, "card": 0x41, "group_cards": [0x41, 0x41]}),
+        );
+        act(
+            &mut b,
+            json!({"action": 5, "user_id": 1003, "card": 0x25, "group_cards": [0x25, 0x25]}),
+        );
+        let (pai, consumed) =
+            kakan_of(&mut b, json!({"action": 9, "user_id": 1003, "card": 0x125}));
+        assert_eq!(pai, "5mr");
+        assert_eq!(consumed, ["5m", "5m", "5m"]);
+        let (_, consumed) = kakan_of(&mut b, json!({"action": 9, "user_id": 1003, "card": 0x41}));
+        assert_eq!(consumed, ["S", "S", "S"]);
+    }
+
+    /// With no pon seen (e.g. joined mid-kyoku) the pon is inferred as one
+    /// red per suit.
+    #[test]
+    fn kakan_without_a_tracked_pon_infers_consumed() {
+        let mut b = started_4p();
+        let (pai, consumed) =
+            kakan_of(&mut b, json!({"action": 9, "user_id": 1001, "card": 0x125}));
+        assert_eq!(pai, "5mr");
+        assert_eq!(consumed, ["5m", "5m", "5m"]);
+        let (pai, consumed) = kakan_of(&mut b, json!({"action": 9, "user_id": 1002, "card": 0x25}));
+        assert_eq!(pai, "5m");
+        assert_eq!(consumed, ["5mr", "5m", "5m"]);
+    }
+
+    /// Pons don't carry into the next kyoku.
+    #[test]
+    fn tracked_pons_reset_at_the_next_kyoku() {
+        let mut b = started_4p();
+        act(
+            &mut b,
+            json!({"action": 5, "user_id": 1001, "card": 0x15, "group_cards": [0x15, 0x15]}),
+        );
+        feed(
             &mut b,
             18,
-            json!({"cmd": "cmd_game_action_brc", "data": {"action_info": [
-                {"action": 9, "user_id": 1001, "card": 0x125}
-            ]}}),
+            json!({"cmd": "cmd_game_start", "data": {
+                "quan_feng": 0x31, "bao_pai_card": 0x21, "dealer_pos": 1,
+                "ben_chang_num": 0, "li_zhi_bang_num": 0,
+                "hand_cards": [0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,0x29,0x01,0x02,0x03,0x04]
+            }}),
         );
-        match &e[0] {
-            MjaiEvent::Kakan {
-                actor,
-                pai,
-                consumed,
-            } => {
-                assert_eq!(*actor, 0);
-                assert_eq!(pai, "5mr");
-                assert_eq!(
-                    consumed,
-                    &["5m".to_string(), "5m".to_string(), "5m".to_string()]
-                );
-            }
-            other => panic!("expected Kakan, got {other:?}"),
-        }
+        let (_, consumed) = kakan_of(&mut b, json!({"action": 9, "user_id": 1001, "card": 0x15}));
+        assert_eq!(consumed, ["5sr", "5s", "5s"]);
     }
 
     #[test]

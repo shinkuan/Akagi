@@ -54,14 +54,33 @@ downlink). Client request frames don't match any server `cmd_*` and are ignored.
 | `cmd_game_action_brc` action 2/3/4 | `chi` |
 | … action 5 | `pon` |
 | … action 6 | `daiminkan` |
-| … action 8 | `ankan` (first slot red for 5s) |
-| … action 9 | `kakan` |
+| … action 8 | `ankan` (`card` + `group_cards`) |
+| … action 9 | `kakan` (`consumed` from the seat's earlier pon) |
 | … action 11 | `reach`? + `dahai` (+ deferred `reach_accepted`, kan-dora flush) |
 | … action 13 | `kita` (nukidora) |
 | … action 7 / 10 / 12 | — (end flagged here; settled by `cmd_game_end`) |
 | `cmd_gang_bao_brc` | — (defers a kan-dora marker) |
 | `cmd_game_end` | `hora` (per winner) or `ryukyoku`, then `end_kyoku` |
 | `cmd_room_end` | `end_game` |
+
+## Call tiles and red fives
+
+Every call broadcast names its tiles with red fives as their own codes
+(`0x105`/`0x115`/`0x125`), so `consumed` is read off the wire rather than
+inferred:
+
+- **chi / pon / daiminkan**: `card` is the called tile, `group_cards` the
+  tiles from the hand.
+- **ankan**: the broadcast echoes the caller's request — `card` is the first
+  of the four copies in rack order and `group_cards` the other three. The red
+  five can be `card` itself.
+- **kakan**: `card` is the added tile and `group_cards` is empty, so the pon's
+  three tiles are taken from that seat's earlier `pon` (tracked per kyoku in
+  `GameStatus::pons`).
+
+Only an ankan whose `group_cards` is missing, mismatched or names a second
+red, or a kakan without a tracked pon, falls back to inference (one red per
+suit), with a warning.
 
 ## Sanma (3-player)
 

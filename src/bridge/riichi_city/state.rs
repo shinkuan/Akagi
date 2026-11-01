@@ -56,6 +56,10 @@ pub struct GameStatus {
     /// tiles, and that last slot is the `move_cards_pos` index the
     /// client sends for a tsumogiri.
     pub meld_counts: [u8; 4],
+    /// Each seat's pons this kyoku as their three tiles (`pai` + `consumed`,
+    /// red fives as called). A kakan broadcast names only the added tile,
+    /// so its `consumed` is taken from here.
+    pub pons: [Vec<[String; 3]>; 4],
     /// Deferred `reach_accepted`, emitted just before the next action so a
     /// chi/pon/kan on the riichi discard is ordered correctly.
     pub pending_reach: Option<MjaiEvent>,
@@ -82,6 +86,7 @@ impl Default for GameStatus {
             last_dahai_actor: None,
             drawn_by: None,
             meld_counts: [0; 4],
+            pons: Default::default(),
             pending_reach: None,
             pending_dora: Vec::new(),
             game_start: false,
