@@ -553,6 +553,7 @@ mod tests {
                 vec!["?".into(); 13],
             ],
             num_players: 4,
+            catch_up: 0,
         })
         .unwrap();
 

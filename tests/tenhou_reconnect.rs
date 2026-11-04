@@ -8,7 +8,8 @@
 //! seat. Every opponent draw that mapped onto our seat arrived as a `?`,
 //! which the riichi engine stores as tile 0 — a 1m — and the next `<INIT/>`
 //! only repeated the mistake. This drives the bridge → tracker pipeline
-//! through that exact sequence from a non-East seat.
+//! through that exact sequence from a non-East seat, and checks that the
+//! hand in progress is rebuilt from the snapshot and play carries on in it.
 
 use akagi::bridge::tenhou::TenhouBridge;
 use akagi::bridge::{Bridge, Direction};
@@ -91,33 +92,7 @@ fn tenhou_rejoin_without_taikyoku_keeps_our_seat_and_hand_intact() {
     let reinit = format!(
         r#"{{"tag":"REINIT","seed":"0,0,0,1,2,4","ten":"250,250,250,250","oya":"2","hai":"{HAND_E1}","kawa0":"20","kawa1":"33","kawa2":"5","kawa3":"9"}}"#
     );
-    assert!(feed(&mut flow2, &mut tracker, &reinit).is_empty());
-
-    // The rest of this hand is withheld from the tracker entirely.
-    for frame in [
-        r#"{"tag":"V"}"#,
-        r#"{"tag":"F40"}"#,
-        r#"{"tag":"W"}"#,
-        r#"{"tag":"G44"}"#,
-        r#"{"tag":"T24"}"#,
-        r#"{"tag":"D24"}"#,
-        r#"{"tag":"U"}"#,
-        r#"{"tag":"E48"}"#,
-        r#"{"tag":"AGARI","who":"2","fromWho":"2","sc":"250,-10,250,-10,250,30,250,-10","ba":"0,0"}"#,
-    ] {
-        assert!(
-            feed(&mut flow2, &mut tracker, frame).is_empty(),
-            "{frame} must not reach the tracker"
-        );
-    }
-    assert_eq!(tracker.events_seen, seen_before_drop);
-    assert_eq!(our_tehai(&tracker), sorted_mjai(HAND_E1));
-
-    // ---- Next kyoku: E2, dealer wire-abs 1 (rel 3 from seat 2). ----
-    let init = format!(
-        r#"{{"tag":"INIT","seed":"1,0,0,1,2,8","ten":"240,240,280,240","oya":"3","hai":"{HAND_E2}"}}"#
-    );
-    let events = feed(&mut flow2, &mut tracker, &init);
+    let events = feed(&mut flow2, &mut tracker, &reinit);
     assert!(
         matches!(
             &events[0],
@@ -129,14 +104,70 @@ fn tenhou_rejoin_without_taikyoku_keeps_our_seat_and_hand_intact() {
         ),
         "the rejoined flow reopens the game on our real seat: {events:?}"
     );
+    assert!(tracker.events_seen > seen_before_drop);
+
+    // The hand is rebuilt as it stands: our hand, and one discard per seat.
+    let snap = tracker.snapshot().unwrap();
+    assert_eq!(snap.our_seat, Some(2));
+    assert_eq!(snap.kyoku, 1);
+    assert_eq!(snap.oya, 0);
+    assert_eq!(our_tehai(&tracker), sorted_mjai(HAND_E1));
+    for (seat, river) in [(0, "2m"), (1, "3m"), (2, "6m"), (3, "9m")] {
+        let discards: Vec<&str> = snap.players[seat]
+            .river
+            .iter()
+            .map(|d| d.tile.as_str())
+            .collect();
+        assert_eq!(discards, [river], "seat {seat}");
+    }
+
+    // Live play goes on in that hand, on the right seats: opponent draws
+    // stay hidden and never leak into our hand as 1m; our own draw lands.
+    for frame in [
+        r#"{"tag":"V"}"#,
+        r#"{"tag":"F40"}"#,
+        r#"{"tag":"W"}"#,
+        r#"{"tag":"G44"}"#,
+    ] {
+        assert!(!feed(&mut flow2, &mut tracker, frame).is_empty(), "{frame}");
+    }
+    assert_eq!(our_tehai(&tracker), sorted_mjai(HAND_E1));
+    let events = feed(&mut flow2, &mut tracker, r#"{"tag":"T24"}"#);
+    assert!(matches!(&events[0], MjaiEvent::Tsumo { actor: 2, pai } if pai == "7m"));
+    let mut expected = sorted_mjai(HAND_E1);
+    expected.push("7m".into());
+    expected.sort();
+    assert_eq!(our_tehai(&tracker), expected);
+    for frame in [
+        r#"{"tag":"D24"}"#,
+        r#"{"tag":"U"}"#,
+        r#"{"tag":"E48"}"#,
+        r#"{"tag":"AGARI","who":"2","fromWho":"2","sc":"250,-10,250,-10,250,30,250,-10","ba":"0,0"}"#,
+    ] {
+        assert!(!feed(&mut flow2, &mut tracker, frame).is_empty(), "{frame}");
+    }
+    let snap = tracker.snapshot().unwrap();
+    assert!(
+        !snap.players[2].tehai.iter().any(|t| t == "1m"),
+        "no phantom 1m: {:?}",
+        snap.players[2].tehai
+    );
+
+    // ---- Next kyoku: E2, dealer wire-abs 1 (rel 3 from seat 2). ----
+    let init = format!(
+        r#"{{"tag":"INIT","seed":"1,0,0,1,2,8","ten":"240,240,280,240","oya":"3","hai":"{HAND_E2}"}}"#
+    );
+    let events = feed(&mut flow2, &mut tracker, &init);
+    assert!(
+        matches!(&events[..], [MjaiEvent::StartKyoku { .. }]),
+        "the game is already open: {events:?}"
+    );
     let snap = tracker.snapshot().unwrap();
     assert_eq!(snap.our_seat, Some(2));
     assert_eq!(snap.kyoku, 2);
     assert_eq!(snap.oya, 1);
     assert_eq!(our_tehai(&tracker), sorted_mjai(HAND_E2));
 
-    // Live play resumes on the right seats: opponent draws stay hidden and
-    // never leak into our hand as 1m; our own draw lands in it.
     feed(&mut flow2, &mut tracker, r#"{"tag":"W"}"#);
     assert_eq!(our_tehai(&tracker), sorted_mjai(HAND_E2));
     feed(&mut flow2, &mut tracker, r#"{"tag":"G12"}"#);

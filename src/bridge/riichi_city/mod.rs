@@ -337,6 +337,7 @@ impl RiichiCityBridge {
             scores,
             tehais,
             num_players: self.status.num_players,
+            catch_up: 0,
         });
 
         self.status.pending_dora.clear();

@@ -436,6 +436,7 @@ mod tests {
             scores,
             tehais: vec![vec![]; 4],
             num_players: 4,
+            catch_up: 0,
         }
     }
 
@@ -635,6 +636,7 @@ mod tests {
                 scores: vec![35000, 35000, 35000],
                 tehais: vec![vec![]; 3],
                 num_players: 3,
+                catch_up: 0,
             },
             MjaiEvent::confirmed_game(Some(vec![63000, 43500, -1500]), Some(vec![1, 2, 3])),
         ];
@@ -720,6 +722,7 @@ mod tests {
                 scores: vec![35000, 35000, 35000],
                 tehais: vec![vec![]; 3],
                 num_players: 3,
+                catch_up: 0,
             },
             MjaiEvent::Hora {
                 actor: 0,

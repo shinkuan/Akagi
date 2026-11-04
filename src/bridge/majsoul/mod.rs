@@ -1145,6 +1145,7 @@ impl MajsoulBridge {
                 scores,
                 tehais,
                 num_players: self.num_players,
+                catch_up: 0,
             },
             tsumo_event,
         ])
@@ -2291,6 +2292,7 @@ mod tests {
                 scores,
                 tehais,
                 num_players,
+                ..
             } => {
                 assert_eq!(bakaze, "E");
                 assert_eq!(dora_marker, "4s");
@@ -2450,6 +2452,7 @@ mod tests {
                 scores,
                 tehais,
                 num_players,
+                ..
             } => {
                 assert_eq!(bakaze, "E");
                 assert_eq!(dora_marker, "N");

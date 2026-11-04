@@ -91,6 +91,10 @@ pub struct BotManager {
     /// a lost declaration (whose echo never arrives) can't leak the flag
     /// into the next hand.
     drop_next_own_reach: bool,
+    /// Events still to come that restate a rebuilt hand's history (see
+    /// `MjaiEvent::StartKyoku::catch_up`). They are buffered, never asked
+    /// about, and reach the bot in the next batch.
+    catch_up: usize,
     out_tx: BotResponseBus,
     status_tx: BotStatusBus,
     notify_tx: NotifyBus,
@@ -126,6 +130,7 @@ impl BotManager {
             pending: Vec::new(),
             actor_id: None,
             drop_next_own_reach: false,
+            catch_up: 0,
             out_tx,
             status_tx,
             notify_tx,
@@ -262,6 +267,26 @@ impl BotManager {
         }
 
         self.pending.push(event.clone());
+
+        // A hand rebuilt after a reconnect arrives as its whole history at
+        // once. Those turns are over: asking the bot about each would cost a
+        // round-trip (a paid one on the cloud path) per turn, and every
+        // answer would be a stale action looking for a window to press into.
+        // So the history rides along to the next real decision as one batch.
+        // A hand boundary ends it whatever the count says.
+        match &event {
+            MjaiEvent::StartKyoku { catch_up, .. } => self.catch_up = *catch_up,
+            MjaiEvent::StartGame { .. }
+            | MjaiEvent::Hora { .. }
+            | MjaiEvent::Ryukyoku { .. }
+            | MjaiEvent::EndKyoku
+            | MjaiEvent::EndGame { .. } => self.catch_up = 0,
+            _ if self.catch_up > 0 => {
+                self.catch_up -= 1;
+                return Ok(());
+            }
+            _ => {}
+        }
 
         if !self.is_decision_point(&event, can_act) {
             return Ok(());
@@ -1068,6 +1093,78 @@ mod tests {
         assert_eq!(calls.len(), 1);
         // Both events flushed in the batch.
         assert_eq!(calls[0].len(), 2);
+    }
+
+    fn start_kyoku(catch_up: usize) -> MjaiEvent {
+        MjaiEvent::StartKyoku {
+            bakaze: "E".into(),
+            dora_marker: "1m".into(),
+            kyoku: 1,
+            honba: 0,
+            kyotaku: 0,
+            oya: 0,
+            scores: vec![25_000; 4],
+            tehais: vec![vec!["?".to_string(); 13]; 4],
+            num_players: 4,
+            catch_up,
+        }
+    }
+
+    /// A rebuilt hand's history is fed as one batch with the next real
+    /// decision, never asked about turn by turn.
+    #[tokio::test]
+    async fn a_rebuilt_hand_reaches_the_bot_as_one_batch() {
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
+        mgr.handle(start_kyoku(4)).await.unwrap();
+        // Each of these would flush in a live hand.
+        mgr.handle(dahai(0)).await.unwrap();
+        mgr.handle(MjaiEvent::Tsumo {
+            actor: 2,
+            pai: "5m".into(),
+        })
+        .await
+        .unwrap();
+        mgr.handle(dahai(2)).await.unwrap();
+        mgr.handle(dahai(3)).await.unwrap();
+        assert!(calls.lock().await.is_empty(), "history is not asked about");
+
+        // Live play: the next opponent discard is a real claim window.
+        mgr.handle(dahai(0)).await.unwrap();
+        let calls = calls.lock().await;
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].len(),
+            6,
+            "start_kyoku + history + the live discard"
+        );
+    }
+
+    /// When the history ends on our own draw — the decision the server is
+    /// waiting on — that last event is left out of the count and asks.
+    #[tokio::test]
+    async fn a_rebuilt_hand_ending_on_our_draw_asks_at_once() {
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
+        mgr.handle(start_kyoku(1)).await.unwrap();
+        mgr.handle(dahai(1)).await.unwrap();
+        assert!(calls.lock().await.is_empty());
+        mgr.handle(MjaiEvent::Tsumo {
+            actor: 2,
+            pai: "5m".into(),
+        })
+        .await
+        .unwrap();
+        assert_eq!(calls.lock().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_hand_boundary_ends_a_catch_up() {
+        let (mut mgr, calls, _, _, _) = manager_with_mock(vec![]);
+        mgr.handle(start_kyoku(10)).await.unwrap();
+        mgr.handle(MjaiEvent::EndKyoku).await.unwrap();
+        assert_eq!(calls.lock().await.len(), 1, "end_kyoku still flushes");
+        mgr.handle(start_kyoku(0)).await.unwrap();
+        mgr.handle(dahai(0)).await.unwrap();
+        assert_eq!(calls.lock().await.len(), 2, "a live hand asks as usual");
     }
 
     #[tokio::test]

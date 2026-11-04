@@ -16,7 +16,9 @@
 //! [`meld`]; per-flow state in [`state`].
 
 pub mod encode;
+pub mod journal;
 pub mod meld;
+pub mod rebuild;
 pub mod state;
 pub mod tile;
 
@@ -55,6 +57,9 @@ pub struct TenhouBridge {
     /// Frontend toast channel, for states the user has to know about but no
     /// mjai event can carry (a mid-hand reconnect). `None` in tests.
     notify: Option<NotifyBus>,
+    /// The hand in progress as the capture run's flows have emitted it,
+    /// shared with the flow a reconnect opens next (see [`journal`]).
+    journal: Option<journal::SharedJournal>,
 }
 
 impl TenhouBridge {
@@ -66,7 +71,14 @@ impl TenhouBridge {
             mjai_log: None,
             shared: None,
             notify: None,
+            journal: None,
         }
+    }
+
+    /// Attach the capture run's record of the hand in progress.
+    pub fn with_journal(mut self, journal: Option<journal::SharedJournal>) -> Self {
+        self.journal = journal;
+        self
     }
 
     /// Attach the frontend notification bus.
@@ -163,14 +175,25 @@ impl TenhouBridge {
             _ => {}
         }
 
-        let mut events = self.dispatch_tag(tag, msg);
+        let mut events = match self.resume_rebuilt(tag, msg) {
+            Resumed::Prefix(mut prefix) => {
+                prefix.extend(self.dispatch_tag(tag, msg));
+                prefix
+            }
+            Resumed::Repeat => {
+                // Handled for the window it may offer; its event is already
+                // the last of the rebuilt history.
+                self.dispatch_tag(tag, msg);
+                Vec::new()
+            }
+        };
 
-        // A flow that attached mid-kyoku (`<REINIT/>`) has no history for the
-        // hand in progress, so its events would land on whatever the tracker
-        // last saw — a hand it may be several turns behind on, or none at
-        // all. The handler still ran (autoplay needs the hand and window it
-        // maintains); only the stream is withheld until `on_init` lifts the
-        // suspension at the next kyoku.
+        // A flow that attached mid-kyoku (`<REINIT/>`) and could not rebuild
+        // the hand in progress has no history for it, so its events would
+        // land on whatever the tracker last saw — a hand it may be several
+        // turns behind on, or none at all. The handler still ran (autoplay
+        // needs the hand and window it maintains); only the stream is
+        // withheld until `on_init` lifts the suspension at the next kyoku.
         // The one exception is the game's end: the tracker has to close the
         // game, the bot manager stop its runner, History reset — so
         // `end_game` alone passes, and as terminated (see `end_game_event`).
@@ -387,6 +410,40 @@ impl TenhouBridge {
         names
     }
 
+    /// The `start_game` this flow owes, if it owes one (see
+    /// `State::pending_start_game`).
+    fn take_start_game(&mut self) -> Option<MjaiEvent> {
+        if !self.state.pending_start_game {
+            return None;
+        }
+        self.state.pending_start_game = false;
+        let names = self.build_start_names();
+        // Read non-destructively: a reconnect can replay TAIKYOKU+INIT
+        // without a fresh <GO/>, and the re-emitted start_game must keep the
+        // room bitfield. A *new* game always sends its own <GO/> (and every
+        // TAIKYOKU reassigns log_id), so staleness across games isn't a
+        // concern. Names ARE consumed (in `build_start_names`): a stale
+        // roster is worse than a missing one, and reconnects resend the full
+        // <UN/>.
+        let match_info = MatchInfo::Tenhou {
+            log_id: self.state.log_id.clone(),
+            go_type: self.state.go_type,
+            lobby: self.state.lobby,
+        };
+        Some(MjaiEvent::StartGame {
+            names,
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(self.state.seat as Actor),
+            num_players: self.state.num_players,
+            game_meta: Some(GameMeta {
+                game_id: None,
+                match_mode: None,
+                match_info: Some(match_info),
+            }),
+        })
+    }
+
     /// `<INIT seed="..." ten="..." oya="..." hai0="..."/>` — start of kyoku.
     fn on_init(&mut self, msg: &JsonValue) -> Vec<MjaiEvent> {
         let seed = parse_csv_i32(msg, "seed");
@@ -475,34 +532,7 @@ impl TenhouBridge {
         }
 
         let mut events = Vec::with_capacity(2);
-        if self.state.pending_start_game {
-            self.state.pending_start_game = false;
-            let names = self.build_start_names();
-            // Read non-destructively: a reconnect can replay TAIKYOKU+INIT
-            // without a fresh <GO/>, and the re-emitted start_game must
-            // keep the room bitfield. A *new* game always sends its own
-            // <GO/> (and every TAIKYOKU reassigns log_id), so staleness
-            // across games isn't a concern. Names ARE consumed (in
-            // `build_start_names`): a stale roster is worse than a missing
-            // one, and reconnects resend the full <UN/>.
-            let match_info = MatchInfo::Tenhou {
-                log_id: self.state.log_id.clone(),
-                go_type: self.state.go_type,
-                lobby: self.state.lobby,
-            };
-            events.push(MjaiEvent::StartGame {
-                names,
-                kyoku_first: None,
-                aka_flag: None,
-                id: Some(self.state.seat as Actor),
-                num_players: self.state.num_players,
-                game_meta: Some(GameMeta {
-                    game_id: None,
-                    match_mode: None,
-                    match_info: Some(match_info),
-                }),
-            });
-        }
+        events.extend(self.take_start_game());
         events.push(MjaiEvent::StartKyoku {
             bakaze: bakaze.to_string(),
             dora_marker,
@@ -513,6 +543,7 @@ impl TenhouBridge {
             scores,
             tehais,
             num_players: self.state.num_players,
+            catch_up: 0,
         });
         events
     }
@@ -522,22 +553,24 @@ impl TenhouBridge {
     /// of `<INIT/>` when the client rejoins a game.
     ///
     /// It is a snapshot, not a log: each seat's river and calls are listed,
-    /// but nothing says *when* a call happened relative to the discards, so
-    /// the mjai stream for the hand cannot be rebuilt (Majsoul's
-    /// `GameRestore` can — it is an ordered action log). We therefore emit
-    /// nothing, rebuild only what this flow itself needs — our seat, the
-    /// player count, and the hand / calls / riichi state autoplay and
-    /// `build` read — and suspend the stream until the next `<INIT/>`,
-    /// which re-opens the game with a fresh `start_game`. Feeding the live
-    /// events into the tracker instead would apply them to a hand it last
-    /// saw several turns ago (or, with a fresh seat-0 bridge, to the wrong
-    /// seats altogether), and every `?` draw that lands on our seat renders
-    /// as a 1m.
+    /// but not how they interleave. [`rebuild`] finds a history that ends in
+    /// exactly this snapshot, and that history goes out as the hand's events
+    /// — `start_game` too when this flow owes one — so the tracker and the
+    /// bot pick the hand up where it stands. Its `start_kyoku` carries
+    /// `catch_up`, so the bot reads the history as one batch rather than
+    /// answering turns that are long over. The first live action is checked
+    /// against where the history ended (`resume_rebuilt`).
+    ///
+    /// When no history fits, the old fallback applies: emit nothing, rebuild
+    /// only what this flow itself needs — our seat, the player count, and the
+    /// hand / calls / riichi state autoplay and `build` read — and suspend
+    /// the stream until the next `<INIT/>`, which reopens the game with a
+    /// fresh `start_game`.
     ///
     /// Field layout mirrors `<INIT/>` (`seed` / `ten` / `oya` / `hai`, all
     /// wire-relative) plus per-seat `m<rel>` (comma-separated `<N m=…/>`
-    /// bitfields) and `kawa<rel>` (tile indices; `255` marks the riichi
-    /// declaration).
+    /// bitfields, newest first) and `kawa<rel>` (tile indices; `255` marks
+    /// the riichi declaration).
     fn on_reinit(&mut self, msg: &JsonValue) -> Vec<MjaiEvent> {
         let seed = parse_csv_i32(msg, "seed");
         let ten = parse_csv_i32(msg, "ten");
@@ -589,43 +622,333 @@ impl TenhouBridge {
         // tracked (as in `on_meld`); nukidora is not a meld, but each one
         // took a tile out of the hand.
         self.state.reset_for_kyoku();
-        self.state.hand = hai;
-        let m0 = parse_csv_u32(msg, "m0");
-        let nukidora = m0.iter().filter(|m| (*m & 0x3F) == 0x20).count();
-        self.state.melds = m0
+        self.state.hand = hai.clone();
+        self.state.melds = parse_csv_u32(msg, "m0")
             .into_iter()
             .filter(|m| (m & 0x3F) != 0x20)
             .map(Meld::parse)
             .collect();
         self.state.in_riichi = parse_csv_u32(msg, "kawa0").contains(&REINIT_RIICHI_MARK);
-        // 13 tiles (+ a 14th while a draw is in hand), less 3 per call and
-        // 1 per nukidora.
-        self.state.is_tsumo =
-            (self.state.hand.len() + 3 * self.state.melds.len() + nukidora) % 3 == 2;
+        // 13 tiles (+ a 14th while a draw is in hand), less 3 per call. A
+        // nukidora is followed by a replacement draw, so it leaves the
+        // count alone.
+        self.state.is_tsumo = (self.state.hand.len() + 3 * self.state.melds.len()) % 3 == 2;
         // Every discard followed a draw or a call; close enough for a
-        // counter nothing downstream reads precisely.
+        // counter nothing downstream reads precisely. A rebuilt history
+        // replaces it with its own count of draws.
         let discarded: u32 = (0..4).map(|rel| kawa(rel).len() as u32).sum();
         self.state.live_wall = 70u32.saturating_sub(discarded + u32::from(self.state.is_tsumo));
-
-        self.state.suspended = true;
         self.state.rejoined_mid_game = true;
-        self.state.pending_start_game = true;
         self.ensure_mjai_log();
-        warn!(
-            target: "akagi::bridge::tenhou",
-            "REINIT: rejoined seed={} as seat {} with {} tiles, {} call(s){}; analysis paused until the next INIT",
-            seed[0],
-            self.state.seat,
-            self.state.hand.len(),
-            self.state.melds.len(),
-            if self.state.in_riichi { ", in riichi" } else { "" }
+
+        // What an earlier flow of this capture run saw of the same hand, if
+        // one did: the rebuild then only infers what happened after it.
+        let rebuilt = self
+            .reinit_snapshot(msg, &seed, &ten, oya_rel, &hai)
+            .and_then(|snap| {
+                let record = self.journal.as_ref().and_then(|slot| {
+                    journal::of_hand(
+                        slot,
+                        snap.seat,
+                        snap.num_players,
+                        &snap.bakaze,
+                        snap.kyoku,
+                        snap.honba,
+                        snap.oya,
+                    )
+                });
+                rebuild::rebuild(&snap, record.as_deref())
+            });
+        match rebuilt {
+            Ok(rebuilt) => self.resume_from(rebuilt, seed[0]),
+            Err(e) => {
+                self.state.suspended = true;
+                self.state.pending_start_game = true;
+                warn!(
+                    target: "akagi::bridge::tenhou",
+                    "REINIT: rejoined seed={} as seat {} with {} tiles, {} call(s){}, but could not rebuild the hand ({e:#}); analysis paused until the next INIT",
+                    seed[0],
+                    self.state.seat,
+                    self.state.hand.len(),
+                    self.state.melds.len(),
+                    if self.state.in_riichi { ", in riichi" } else { "" }
+                );
+                self.notify(
+                    Notification::warn("Tenhou: rejoined mid-hand")
+                        .body("The hand in progress can't be reconstructed, so analysis is paused until the next hand starts.")
+                        .id("tenhou-reinit"),
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// The `<REINIT/>` frame in the shape [`rebuild`] takes: mjai-absolute
+    /// seats, the riichi mark as a position, the sanma ghost left out.
+    fn reinit_snapshot(
+        &self,
+        msg: &JsonValue,
+        seed: &[i32],
+        ten: &[i32],
+        oya_rel: u8,
+        hai: &[u32],
+    ) -> anyhow::Result<rebuild::Snapshot> {
+        use anyhow::ensure;
+        ensure!(seed.len() >= 6, "seed has {} fields", seed.len());
+        ensure!(ten.len() >= 4, "ten has {} fields", ten.len());
+        ensure!(
+            seed[..6].iter().all(|v| *v >= 0) && seed[0] < 16,
+            "seed {seed:?}"
         );
+        let n = self.state.num_players as usize;
+        let mut seats = vec![rebuild::SeatSnapshot::default(); n];
+        let mut scores = vec![0; n];
+        for rel in 0..4u8 {
+            let abs = self.state.rel_to_abs(rel);
+            let kawa = parse_csv_u32(msg, &format!("kawa{rel}"));
+            let melds = parse_csv_u32(msg, &format!("m{rel}"));
+            if self.state.is_ghost_abs(abs) {
+                ensure!(
+                    kawa.is_empty() && melds.is_empty(),
+                    "the empty seat has played"
+                );
+                continue;
+            }
+            let seat = &mut seats[abs as usize];
+            for t in kawa {
+                match t {
+                    REINIT_RIICHI_MARK => seat.riichi_at = Some(seat.river.len()),
+                    // Seen elsewhere in this list with no settled meaning;
+                    // it names no tile.
+                    254 => {}
+                    0..=135 => seat.river.push(t),
+                    _ => anyhow::bail!("river tile {t}"),
+                }
+            }
+            for m in melds {
+                let meld = if (m & 0x3F) == 0x20 {
+                    let t = m >> 8;
+                    ensure!(t / 4 == 30, "kita of tile {t}");
+                    rebuild::SnapMeld::Kita(t)
+                } else {
+                    let meld = Meld::parse(m);
+                    ensure!(meld.tiles.iter().all(|t| *t < 136), "meld {m}");
+                    rebuild::SnapMeld::Call(meld)
+                };
+                seat.melds.push(meld);
+            }
+            scores[abs as usize] = ten[rel as usize] * 100;
+        }
+        let dora_markers: Vec<u32> = seed[5..].iter().map(|t| *t as u32).collect();
+        ensure!(
+            dora_markers.iter().all(|t| *t < 136),
+            "dora {dora_markers:?}"
+        );
+        ensure!(hai.iter().all(|t| *t < 136), "hand {hai:?}");
+        let oya = self.state.rel_to_abs(oya_rel);
+        ensure!(!self.state.is_ghost_abs(oya), "the empty seat deals");
+        Ok(rebuild::Snapshot {
+            num_players: self.state.num_players,
+            seat: self.state.seat,
+            oya,
+            bakaze: BAKAZE[(seed[0] / 4) as usize].to_string(),
+            kyoku: (seed[0] % 4 + 1) as u8,
+            honba: seed[1].min(255) as u8,
+            kyotaku: seed[2].min(255) as u8,
+            scores,
+            dora_markers,
+            hand: hai.to_vec(),
+            seats,
+        })
+    }
+
+    /// Emit a rebuilt hand and arm the check on the first live action.
+    fn resume_from(&mut self, rebuilt: rebuild::Rebuilt, kyoku_index: i32) -> Vec<MjaiEvent> {
+        let rebuild::Rebuilt {
+            mut events,
+            next,
+            approximate,
+            recorded,
+            last_discard,
+            drawn,
+        } = rebuilt;
+        let ours = next == rebuild::Next::Discard(self.state.seat);
+        if ours {
+            // A kan indicator recorded after our replacement draw goes in
+            // front of it, so the history still ends on the decision the
+            // server is waiting on.
+            let doras = events
+                .iter()
+                .rev()
+                .take_while(|e| matches!(e, MjaiEvent::Dora { .. }))
+                .count();
+            if doras > 0 && events.len() > doras + 1 {
+                let from = events.len() - doras - 1;
+                events[from..].rotate_left(1);
+            }
+        }
+        // Our hand as the history leaves it: holding the draw it names (at
+        // the tail, where `on_dahai` and `encode` look for it), or fresh from
+        // a call with nothing drawn.
+        self.state.is_tsumo = drawn.is_some();
+        if let Some(t) = drawn {
+            if let Some(pos) = self.state.hand.iter().position(|&h| h == t) {
+                let t = self.state.hand.remove(pos);
+                self.state.hand.push(t);
+            }
+        }
+        for e in &events {
+            if let MjaiEvent::ReachAccepted { actor } = e {
+                self.state.riichi_accepted |= 1 << actor;
+            }
+        }
+        // The history is the bot's to read, not to answer — except our own
+        // draw or call at its very end, which is the decision the server is
+        // waiting on now.
+        let history = events.len() - 1;
+        if let Some(MjaiEvent::StartKyoku { catch_up, .. }) = events.first_mut() {
+            *catch_up = if ours { history - 1 } else { history };
+        }
+        let draws = events
+            .iter()
+            .filter(|e| matches!(e, MjaiEvent::Tsumo { .. }))
+            .count() as u32;
+        self.state.live_wall = 70u32.saturating_sub(draws);
+        if let Some((seat, pai)) = last_discard {
+            self.state.last_kawa_tile = pai;
+            self.state.last_revealed_tile_actor = Some(seat);
+        }
+        if ours {
+            self.state.open_window(0);
+        }
+        self.state.suspended = false;
+        self.state.resume = Some(next);
+
+        info!(
+            target: "akagi::bridge::tenhou",
+            "REINIT: rejoined seed={kyoku_index} as seat {}; rebuilt the hand in progress as {history} event(s), {recorded} of them as recorded before the rejoin{}, next {next:?}",
+            self.state.seat,
+            if approximate { "; call timing estimated" } else { "" }
+        );
+        let body = match (recorded > 0, approximate) {
+            (true, false) => "The hand in progress was restored from what was recorded before the disconnect and the server's snapshot.",
+            (true, true) => "The hand in progress was restored from what was recorded before the disconnect and the server's snapshot. When each call made during the disconnect happened is estimated.",
+            (false, false) => "The hand in progress was rebuilt from the server's snapshot.",
+            (false, true) => "The hand in progress was rebuilt from the server's snapshot. When each call was made is estimated.",
+        };
         self.notify(
-            Notification::warn("Tenhou: rejoined mid-hand")
-                .body("The hand in progress can't be reconstructed, so analysis is paused until the next hand starts.")
+            Notification::info("Tenhou: rejoined mid-hand")
+                .body(body)
                 .id("tenhou-reinit"),
         );
-        Vec::new()
+
+        let mut out = Vec::with_capacity(events.len() + 1);
+        out.extend(self.take_start_game());
+        out.append(&mut events);
+        out
+    }
+
+    /// Check the first live action after a rebuilt hand against where the
+    /// rebuilt history ended, before it is handled. A draw the snapshot
+    /// could not show (another seat had drawn when we rejoined) is filled
+    /// in; any other disagreement means the history went wrong somewhere,
+    /// and the stream is suspended until the next hand, as when no history
+    /// fits at all.
+    fn resume_rebuilt(&mut self, tag: &str, msg: &JsonValue) -> Resumed {
+        use rebuild::Next;
+        let Some(next) = self.state.resume else {
+            return Resumed::Prefix(Vec::new());
+        };
+        let us = self.state.seat;
+        let who = || parse_u8(msg, "who").map(|rel| self.state.rel_to_abs(rel));
+        enum Live {
+            Draw(u8),
+            Discard(u8),
+            /// A kan, kita or riichi: needs a draw in hand.
+            OwnTurn(u8),
+            /// A call on the last discard.
+            Claim,
+            End,
+        }
+        let live = if let Some(rel) = tsumo_actor(tag) {
+            Live::Draw(self.state.rel_to_abs(rel))
+        } else if let Some((rel, _)) = dahai_actor(tag) {
+            let actor = self.state.rel_to_abs(rel);
+            // The discard the history ended on, sent again (a rejoin during
+            // its claim window would plausibly do this).
+            let repeat = matches!(next, Next::Draw(_))
+                && self.state.last_revealed_tile_actor == Some(actor)
+                && parse_tail_u32(tag, 1).map(tenhou_to_mjai_one).as_deref()
+                    == Some(self.state.last_kawa_tile.as_str());
+            if repeat {
+                return Resumed::Repeat;
+            }
+            Live::Discard(actor)
+        } else if tag == "N" {
+            let Some(actor) = who() else {
+                return Resumed::Prefix(Vec::new());
+            };
+            let m = parse_u32(msg, "m").unwrap_or(0);
+            let own_turn = (m & 0x3F) == 0x20
+                || matches!(Meld::parse(m).kind, MeldKind::Ankan | MeldKind::Kakan);
+            if own_turn {
+                Live::OwnTurn(actor)
+            } else {
+                Live::Claim
+            }
+        } else if tag == "REACH" && reach_step(msg) == Some(1) {
+            let Some(actor) = who() else {
+                return Resumed::Prefix(Vec::new());
+            };
+            Live::OwnTurn(actor)
+        } else if tag == "AGARI" && parse_u8(msg, "who") == parse_u8(msg, "fromWho") {
+            // A tsumo win needs the winner's draw.
+            let Some(actor) = who() else {
+                return Resumed::Prefix(Vec::new());
+            };
+            Live::OwnTurn(actor)
+        } else if matches!(tag, "AGARI" | "RYUUKYOKU" | "INIT" | "REINIT" | "TAIKYOKU") {
+            Live::End
+        } else {
+            // DORA, a riichi acceptance, anything that moves no turn.
+            return Resumed::Prefix(Vec::new());
+        };
+
+        let mut inject = Vec::new();
+        let fits = match (next, live) {
+            (_, Live::End) => true,
+            (Next::Draw(x), Live::Draw(a)) => a == x,
+            (Next::Draw(x), Live::Discard(a) | Live::OwnTurn(a)) if a == x && a != us => {
+                self.state.live_wall = self.state.live_wall.saturating_sub(1);
+                inject.push(MjaiEvent::Tsumo {
+                    actor: x,
+                    pai: "?".to_string(),
+                });
+                true
+            }
+            (Next::Draw(_), Live::Claim) => true,
+            (Next::Discard(x), Live::Discard(a) | Live::OwnTurn(a)) => a == x,
+            // The server repeating the draw we already hold (see `on_tsumo`):
+            // still waiting on our discard.
+            (Next::Discard(x), Live::Draw(a)) if a == x && a == us && self.state.is_tsumo => {
+                return Resumed::Prefix(Vec::new());
+            }
+            _ => false,
+        };
+        self.state.resume = None;
+        if !fits {
+            warn!(
+                target: "akagi::bridge::tenhou",
+                "REINIT: <{tag}/> does not follow the rebuilt hand (expected {next:?}); analysis paused until the next INIT"
+            );
+            self.state.suspended = true;
+            self.notify(
+                Notification::warn("Tenhou: rejoined mid-hand")
+                    .body("Live play did not match the rebuilt hand, so analysis is paused until the next hand starts.")
+                    .id("tenhou-reinit"),
+            );
+        }
+        Resumed::Prefix(inject)
     }
 
     /// `<T0/>`, `<U7/>`, `<V12/>`, `<W3/>` — tsumo.
@@ -638,6 +961,21 @@ impl TenhouBridge {
             // Tenhou shouldn't emit tsumo from a ghost seat; drop defensively.
             warn!(target: "akagi::bridge::tenhou", "tsumo from sanma ghost slot rel={actor_rel}, dropped");
             return Vec::new();
+        }
+        if actor == self.state.seat && self.state.is_tsumo {
+            if let Some(idx) = parse_tail_u32(tag, 1) {
+                if let Some(pos) = self.state.hand.iter().position(|&h| h == idx) {
+                    // A draw we already hold: the server repeating it after
+                    // a rejoin whose snapshot had it in our hand. Nothing
+                    // new happened but the window it offers — and now we
+                    // know which tile is the draw (the snapshot's hand is
+                    // sorted), so it goes to the tail where the draw lives.
+                    let drawn = self.state.hand.remove(pos);
+                    self.state.hand.push(drawn);
+                    self.state.open_window(parse_u32(msg, "t").unwrap_or(0));
+                    return Vec::new();
+                }
+            }
         }
         self.state.live_wall = self.state.live_wall.saturating_sub(1);
         let mut pai = "?".to_string();
@@ -872,13 +1210,7 @@ impl TenhouBridge {
             warn!(target: "akagi::bridge::tenhou", "reach from sanma ghost slot rel={actor_rel}, dropped");
             return Vec::new();
         }
-        // step arrives as a string in the Python reference (`message['step'] == '1'`).
-        let step = msg.get("step").and_then(|v| {
-            v.as_str()
-                .and_then(|s| s.parse::<u8>().ok())
-                .or(v.as_u64().map(|n| n as u8))
-        });
-        match step {
+        match reach_step(msg) {
             Some(1) => {
                 // Step 1 acknowledges the declaration; the riichi tile is
                 // still owed as a separate discard frame, so our window
@@ -889,6 +1221,12 @@ impl TenhouBridge {
                 vec![MjaiEvent::Reach { actor, pai: None }]
             }
             Some(2) => {
+                if self.state.riichi_accepted & (1 << actor) != 0 {
+                    // Already accepted: a rebuilt hand restated it, and the
+                    // rejoin landed between the riichi tile and this.
+                    return Vec::new();
+                }
+                self.state.riichi_accepted |= 1 << actor;
                 if actor == self.state.seat {
                     self.state.in_riichi = true;
                 }
@@ -981,6 +1319,15 @@ impl TenhouBridge {
     }
 }
 
+/// What the first live frame after a rebuilt hand means (see
+/// `TenhouBridge::resume_rebuilt`).
+enum Resumed {
+    /// Carry on: these events go in front of the frame's own.
+    Prefix(Vec<MjaiEvent>),
+    /// The history's last discard again: handle the frame, emit nothing.
+    Repeat,
+}
+
 impl Bridge for TenhouBridge {
     fn parse(&mut self, direction: Direction, content: &[u8]) -> ParseResult {
         use crate::schema::ParsedFrame;
@@ -1025,6 +1372,9 @@ impl Bridge for TenhouBridge {
         });
         let events = self.dispatch(&msg);
         self.write_mjai(&events);
+        if let Some(slot) = &self.journal {
+            journal::record(slot, self.state.seat, self.state.num_players, &events);
+        }
         // Mirror the freshly-applied hand + window to autoplay. Done for every
         // dispatched frame, not just the ones that produced mjai events: a
         // frame that only closes the decision window still has to be seen.
@@ -1095,6 +1445,16 @@ fn dahai_actor(tag: &str) -> Option<(u8, bool)> {
 }
 
 /// Parse `tag[skip..]` as a `u32`. Returns `None` if there is no digit suffix.
+/// `<REACH step=…/>`: 1 declares, 2 is the acceptance. It arrives as a
+/// string in the Python reference (`message['step'] == '1'`).
+fn reach_step(msg: &JsonValue) -> Option<u8> {
+    msg.get("step").and_then(|v| {
+        v.as_str()
+            .and_then(|s| s.parse::<u8>().ok())
+            .or(v.as_u64().map(|n| n as u8))
+    })
+}
+
 fn parse_tail_u32(tag: &str, skip: usize) -> Option<u32> {
     if tag.len() <= skip {
         return None;
@@ -1374,6 +1734,7 @@ mod tests {
                 scores,
                 tehais,
                 num_players,
+                ..
             } => {
                 assert_eq!(bakaze, "E");
                 assert_eq!(*kyoku, 1);
@@ -2143,9 +2504,10 @@ mod tests {
 
     /// The reconnect sequence as the bridge sees it on a fresh WebSocket:
     /// no `<TAIKYOKU/>`, a `<REINIT/>` snapshot of the hand in progress, then
-    /// live play. The seat comes from the kyoku frame, the rest of the hand
-    /// is withheld, and the next `<INIT/>` reopens the game on the right
-    /// seat with a fresh `start_game`.
+    /// live play — here a snapshot no order of play fits (we have discarded
+    /// twice, the dealer once). The seat comes from the kyoku frame, the
+    /// rest of the hand is withheld, and the next `<INIT/>` reopens the game
+    /// on the right seat with a fresh `start_game`.
     #[test]
     fn reinit_on_a_fresh_flow_resolves_seat_and_suspends_until_next_init() {
         let mut b = TenhouBridge::new(None, None);
@@ -2313,7 +2675,8 @@ mod tests {
 
     /// REINIT on a flow that did see TAIKYOKU (same-socket re-auth, or a
     /// server that replays it): the seat is already right, and the rest of
-    /// the reconnect handling is identical.
+    /// the reconnect handling is identical (this snapshot, too, fits no
+    /// order of play, so the hand is withheld).
     #[test]
     fn reinit_after_taikyoku_keeps_the_taikyoku_seat() {
         let mut b = TenhouBridge::new(None, None);
@@ -2333,6 +2696,254 @@ mod tests {
             MjaiEvent::StartGame { id: Some(2), .. }
         ));
         assert!(matches!(&events[1], MjaiEvent::StartKyoku { oya: 1, .. }));
+    }
+
+    /// REINIT for E1 with us dealing: we and the next seat have discarded
+    /// once each, so seat 2 draws next.
+    fn rebuilt_reinit() -> String {
+        format!(
+            r#"{{"tag":"REINIT","seed":"0,0,0,1,2,130","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}","kawa0":"0","kawa1":"1"}}"#
+        )
+    }
+
+    /// Rejoining while another seat holds a draw: its discard is the first
+    /// thing seen, so the draw the snapshot could not show is filled in.
+    #[test]
+    fn a_draw_the_snapshot_could_not_show_is_filled_in() {
+        let mut b = TenhouBridge::new(None, None);
+        let events = parse_one(&mut b, &rebuilt_reinit());
+        assert!(matches!(
+            &events[0],
+            MjaiEvent::StartGame { id: Some(0), .. }
+        ));
+        assert_eq!(b.state.resume, Some(rebuild::Next::Draw(2)));
+        let events = parse_one(&mut b, r#"{"tag":"F2"}"#);
+        assert!(
+            matches!(
+                &events[..],
+                [MjaiEvent::Tsumo { actor: 2, pai }, MjaiEvent::Dahai { actor: 2, .. }] if pai == "?"
+            ),
+            "{events:?}"
+        );
+        assert_eq!(b.state.resume, None);
+        assert!(!b.state.suspended);
+    }
+
+    /// Live play that contradicts the rebuilt hand falls back to waiting
+    /// for the next hand.
+    #[test]
+    fn live_play_that_contradicts_the_rebuilt_hand_suspends_it() {
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(&mut b, &rebuilt_reinit());
+        // Seat 3 cannot discard before seat 2 has.
+        assert!(parse_one(&mut b, r#"{"tag":"G3"}"#).is_empty());
+        assert!(b.state.suspended);
+        assert!(parse_one(&mut b, r#"{"tag":"F2"}"#).is_empty());
+    }
+
+    /// A snapshot holding our draw ends on our own turn: that draw is the
+    /// decision the server waits on, so it is left out of `catch_up` and
+    /// the window is open. A repeat of that draw changes nothing.
+    #[test]
+    fn a_rejoin_on_our_own_turn_asks_for_our_discard() {
+        let mut b = TenhouBridge::new(None, None);
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"0,0,0,1,2,130","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M},124","kawa0":"0","kawa1":"1","kawa2":"2","kawa3":"3"}}"#
+        );
+        let events = parse_one(&mut b, &reinit);
+        assert!(
+            matches!(events.last(), Some(MjaiEvent::Tsumo { actor: 0, pai }) if pai == "P"),
+            "{events:?}"
+        );
+        match &events[1] {
+            MjaiEvent::StartKyoku { catch_up, .. } => assert_eq!(*catch_up, events.len() - 3),
+            other => panic!("expected StartKyoku, got {other:?}"),
+        }
+        assert!(b.state.is_tsumo);
+        assert!(b.state.window.is_some());
+        assert_eq!(b.state.resume, Some(rebuild::Next::Discard(0)));
+
+        assert!(parse_one(&mut b, r#"{"tag":"T124","t":"0"}"#).is_empty());
+        assert_eq!(b.state.hand.len(), 14);
+        let events = parse_one(&mut b, r#"{"tag":"D124"}"#);
+        assert!(
+            matches!(&events[..], [MjaiEvent::Dahai { actor: 0, pai, tsumogiri: true }] if pai == "P"),
+            "{events:?}"
+        );
+        assert_eq!(b.state.resume, None);
+    }
+
+    /// In riichi the draw is the tile outside the ready hand, which in the
+    /// frame's sorted hand need not be the last. The bridge moves it to the
+    /// tail, where the tsumogiri check and the encoder look for it.
+    #[test]
+    fn in_riichi_the_rebuilt_draw_goes_to_the_tail_of_the_hand() {
+        let mut b = TenhouBridge::new(None, None);
+        // 123456789m 11p 34p (waiting on 2p / 5p) plus a drawn 2m (5);
+        // riichi on our first discard.
+        let reinit = r#"{"tag":"REINIT","seed":"0,0,1,1,2,130","ten":"240,250,250,250","oya":"0","hai":"0,4,5,8,12,17,20,24,28,32,36,37,44,48","kawa0":"255,108","kawa1":"112","kawa2":"116","kawa3":"120"}"#;
+        let events = parse_one(&mut b, reinit);
+        assert!(
+            matches!(events.last(), Some(MjaiEvent::Tsumo { actor: 0, pai }) if pai == "2m"),
+            "{events:?}"
+        );
+        assert_eq!(b.state.hand.last(), Some(&5));
+        assert!(b.state.is_tsumo);
+        assert!(b.state.in_riichi);
+        // Our riichi was restated; the server's acceptance arriving now
+        // (the rejoin landed between tile and acceptance) is not repeated.
+        assert!(parse_one(&mut b, r#"{"tag":"REACH","who":"0","step":"2"}"#).is_empty());
+        let events = parse_one(&mut b, r#"{"tag":"D5"}"#);
+        assert!(
+            matches!(&events[..], [MjaiEvent::Dahai { actor: 0, pai, tsumogiri: true }] if pai == "2m"),
+            "{events:?}"
+        );
+    }
+
+    /// A history that ends on our pon holds no draw: our discard is owed,
+    /// but it is not a tsumogiri.
+    #[test]
+    fn a_rejoin_right_after_our_pon_owes_a_discard_with_nothing_drawn() {
+        let mut b = TenhouBridge::new(None, None);
+        // Pon of P (124 called, 125/126 ours) from the left (rel 3).
+        let pon = (93u32 << 9) | (3 << 5) | 0x8 | 3;
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"0,0,0,1,2,130","ten":"250,250,250,250","oya":"0","hai":"4,8,12,36,40,44,72,76,80,108,112","m0":"{pon}","kawa0":"0","kawa1":"1","kawa2":"2"}}"#
+        );
+        let events = parse_one(&mut b, &reinit);
+        assert!(
+            matches!(
+                events.last(),
+                Some(MjaiEvent::Pon {
+                    actor: 0,
+                    target: 3,
+                    ..
+                })
+            ),
+            "{events:?}"
+        );
+        match &events[1] {
+            MjaiEvent::StartKyoku { catch_up, .. } => assert_eq!(*catch_up, events.len() - 3),
+            other => panic!("expected StartKyoku, got {other:?}"),
+        }
+        assert!(!b.state.is_tsumo);
+        assert!(b.state.window.is_some());
+        let events = parse_one(&mut b, r#"{"tag":"D112"}"#);
+        assert!(
+            matches!(
+                &events[..],
+                [MjaiEvent::Dahai {
+                    actor: 0,
+                    tsumogiri: false,
+                    ..
+                }]
+            ),
+            "{events:?}"
+        );
+    }
+
+    /// The history's last discard sent again (a rejoin inside its claim
+    /// window) is not played twice, and the hand carries on.
+    #[test]
+    fn the_last_discard_sent_again_is_not_played_twice() {
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(&mut b, &rebuilt_reinit());
+        assert!(parse_one(&mut b, r#"{"tag":"E1","t":"1"}"#).is_empty());
+        assert!(!b.state.suspended);
+        assert_eq!(b.state.resume, Some(rebuild::Next::Draw(2)));
+        assert!(
+            b.state.window.is_some(),
+            "the claim it offers is still seen"
+        );
+        let events = parse_one(&mut b, r#"{"tag":"F2"}"#);
+        assert!(matches!(&events[0], MjaiEvent::Tsumo { actor: 2, .. }));
+    }
+
+    /// A tsumo win as the first live frame needs the winner's draw first.
+    #[test]
+    fn a_tsumo_win_right_after_the_rejoin_gets_its_draw() {
+        let mut b = TenhouBridge::new(None, None);
+        parse_one(&mut b, &rebuilt_reinit());
+        let events = parse_one(
+            &mut b,
+            r#"{"tag":"AGARI","who":"2","fromWho":"2","sc":"250,-10,250,-10,250,30,250,-10","ba":"0,0"}"#,
+        );
+        assert!(
+            matches!(
+                &events[..],
+                [
+                    MjaiEvent::Tsumo { actor: 2, .. },
+                    MjaiEvent::Hora {
+                        actor: 2,
+                        target: 2,
+                        ..
+                    },
+                    MjaiEvent::EndKyoku
+                ]
+            ),
+            "{events:?}"
+        );
+    }
+
+    /// A rejoin within one capture run carries on from what the dropped
+    /// flow saw: the pon happened on our first discard, which the snapshot
+    /// alone cannot tell (it would put the pon as late as possible). Only
+    /// what happened while no flow watched — our automatic discard and the
+    /// next seat's turn — is inferred.
+    #[test]
+    fn a_rejoin_carries_on_from_what_the_dropped_flow_saw() {
+        let slot = journal::new_shared();
+        let mut flow1 = TenhouBridge::new(None, None).with_journal(Some(slot.clone()));
+        let init = format!(
+            r#"{{"tag":"INIT","seed":"0,0,0,1,2,130","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}"}}"#
+        );
+        // Pon of P (124 called, 125/126 its own) from the left (rel 3).
+        let pon = (93u32 << 9) | (3 << 5) | 0x8 | 3;
+        let mut seen = Vec::new();
+        for frame in [
+            init,
+            r#"{"tag":"T124"}"#.to_string(),
+            r#"{"tag":"D124"}"#.to_string(),
+            format!(r#"{{"tag":"N","who":"1","m":"{pon}"}}"#),
+            r#"{"tag":"E37"}"#.to_string(),
+            r#"{"tag":"V"}"#.to_string(),
+            r#"{"tag":"F41"}"#.to_string(),
+            r#"{"tag":"W"}"#.to_string(),
+            r#"{"tag":"G45"}"#.to_string(),
+        ] {
+            seen.extend(parse_one(&mut flow1, &frame));
+        }
+        let kyoku = &seen[1..]; // after start_game
+
+        // The flow drops; the server discards our draw for us and the next
+        // seat plays a turn before the client is back.
+        let mut flow2 = TenhouBridge::new(None, None).with_journal(Some(slot));
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"0,0,0,1,2,130","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}","m1":"{pon}","kawa0":"0","kawa1":"37,49","kawa2":"41","kawa3":"45"}}"#
+        );
+        let events = parse_one(&mut flow2, &reinit);
+        assert!(matches!(&events[0], MjaiEvent::StartGame { .. }));
+        // Emitted as recorded; only `start_kyoku`'s catch-up count is new.
+        let mut replayed = events[1..=kyoku.len()].to_vec();
+        if let MjaiEvent::StartKyoku { catch_up, .. } = &mut replayed[0] {
+            assert_eq!(*catch_up, events.len() - 2, "the whole history");
+            *catch_up = 0;
+        }
+        assert_eq!(replayed, kyoku, "the dropped flow's hand, as it saw it");
+        let rest: Vec<String> = events[kyoku.len() + 1..]
+            .iter()
+            .map(|e| serde_json::to_string(e).unwrap())
+            .collect();
+        assert_eq!(
+            rest,
+            [
+                r#"{"type":"tsumo","actor":0,"pai":"1m"}"#,
+                r#"{"type":"dahai","actor":0,"pai":"1m","tsumogiri":true}"#,
+                r#"{"type":"tsumo","actor":1,"pai":"?"}"#,
+                r#"{"type":"dahai","actor":1,"pai":"4p","tsumogiri":false}"#,
+            ]
+        );
+        assert_eq!(flow2.state.resume, Some(rebuild::Next::Draw(2)));
     }
 
     /// The hand, our calls and the draw-in-hand flag come back from REINIT
@@ -2501,12 +3112,13 @@ mod tests {
 
     /// Suspension is per hand: a new game's TAIKYOKU lifts it as well, and
     /// a game rejoined mid-way ends terminated while the next, seen whole,
-    /// ends confirmed.
+    /// ends confirmed. (The snapshot fits no order of play: a seat has
+    /// discarded before the dealer, us, has.)
     #[test]
     fn new_game_after_a_suspended_hand_resumes_normally() {
         let mut b = TenhouBridge::new(None, None);
         let reinit = format!(
-            r#"{{"tag":"REINIT","seed":"7,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}"}}"#
+            r#"{{"tag":"REINIT","seed":"7,0,0,1,2,4","ten":"250,250,250,250","oya":"0","hai":"{HAND_NO_1M}","kawa1":"33"}}"#
         );
         parse_one(&mut b, &reinit);
         assert!(b.state.suspended);
@@ -2555,15 +3167,21 @@ mod tests {
     #[test]
     fn rejoined_game_ends_terminated_even_after_resuming() {
         let mut b = TenhouBridge::new(None, None);
+        // Rejoined before the dealer's first draw: the hand is rebuilt (as
+        // nothing yet) and the game opens here.
         let reinit = format!(
             r#"{{"tag":"REINIT","seed":"6,0,0,1,2,4","ten":"250,250,250,250","oya":"2","hai":"{HAND_NO_1M}"}}"#
         );
-        parse_one(&mut b, &reinit);
+        let events = parse_one(&mut b, &reinit);
+        assert!(matches!(
+            &events[..],
+            [MjaiEvent::StartGame { .. }, MjaiEvent::StartKyoku { .. }]
+        ));
         let init = format!(
             r#"{{"tag":"INIT","seed":"7,0,0,1,2,4","ten":"250,250,250,250","oya":"3","hai":"{HAND_NO_1M}"}}"#
         );
         let events = parse_one(&mut b, &init);
-        assert_eq!(events.len(), 2);
+        assert!(matches!(&events[..], [MjaiEvent::StartKyoku { .. }]));
         assert!(b.state.rejoined_mid_game);
         let events = parse_one(
             &mut b,
@@ -2618,20 +3236,26 @@ mod tests {
         ));
     }
 
-    /// Nukidora took tiles out of the hand without adding a meld; the
-    /// draw-in-hand judgement has to count them.
+    /// A nukidora is followed by a replacement draw, so it leaves the
+    /// hand's size alone: the draw-in-hand judgement must not count it.
     #[test]
-    fn reinit_counts_nukidora_when_judging_the_draw_in_hand() {
+    fn reinit_does_not_count_nukidora_when_judging_the_draw_in_hand() {
         let mut b = TenhouBridge::new(None, None);
-        // Sanma table (35000 × 3), two kita declared (`m` low bits 0x20).
-        let reinit = r#"{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"0,32,36,40,44,72,76,80,112,116,120","m0":"32,32","kawa0":"36"}"#;
-        parse_one(&mut b, reinit);
+        // Sanma table (35000 × 3), two kita declared (north tiles 120 and
+        // 121, `m` low bits 0x20).
+        let kita = format!("{},{}", (120 << 8) | 0x20, (121 << 8) | 0x20);
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"0,32,40,44,72,76,80,108,109,112,116,124,128","m0":"{kita}","kawa0":"36"}}"#
+        );
+        parse_one(&mut b, &reinit);
         assert!(b.state.is_3p);
         assert!(b.state.melds.is_empty(), "kita is not a meld");
-        assert!(!b.state.is_tsumo, "11 tiles + 2 kita = 13, nothing drawn");
-        let reinit = r#"{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"0,32,36,40,44,72,76,80,112,116,120,124","m0":"32,32","kawa0":"36"}"#;
-        parse_one(&mut b, reinit);
-        assert!(b.state.is_tsumo, "12 tiles + 2 kita = 14, draw in hand");
+        assert!(!b.state.is_tsumo, "13 tiles after two kita: nothing drawn");
+        let reinit = format!(
+            r#"{{"tag":"REINIT","seed":"1,0,0,1,2,8","ten":"350,300,400,0","oya":"1","hai":"0,32,40,44,72,76,80,108,109,112,116,124,128,132","m0":"{kita}","kawa0":"36"}}"#
+        );
+        parse_one(&mut b, &reinit);
+        assert!(b.state.is_tsumo, "14 tiles: a draw in hand");
     }
 
     /// A flow that joined mid-game with neither GO nor UN reads the player
@@ -2665,6 +3289,7 @@ mod tests {
     /// socket: `HELO`, `GO`, `UN` (full roster), `SAIKAI`, `REINIT`, then
     /// live play — no `TAIKYOKU`. Our riichi is the `255` in `kawa0`; the
     /// only call on the table is another seat's (`m3`), so we track none.
+    /// The hand is rebuilt from the snapshot and play goes on from it.
     #[test]
     fn rejoin_sequence_as_captured_from_the_web_client() {
         let mut b = TenhouBridge::new(None, None);
@@ -2682,38 +3307,20 @@ mod tests {
         )
         .is_empty());
         let reinit = r#"{"tag":"REINIT","seed":"0,0,1,3,0,23","ten":"240,250,250,250","oya":"2","hai":"14,18,22,36,37,48,52,57,58,61,89,93,96","m3":"48203","kawa0":"1,106,74,8,255,40","kawa1":"79,122,3,6,41","kawa2":"72,100,9,21,98","kawa3":"107,78,67,43,113,73"}"#;
-        assert!(parse_one(&mut b, reinit).is_empty());
+        let events = parse_one(&mut b, reinit);
         assert_eq!(b.state.seat, 2, "E1 dealer at rel 2 → we sit at wire-abs 2");
         assert!(b.state.seat_resolved);
-        assert!(b.state.suspended);
+        assert!(!b.state.suspended, "the hand was rebuilt");
         assert!(b.state.in_riichi);
         assert!(b.state.melds.is_empty());
         assert_eq!(b.state.hand.len(), 13);
         assert!(!b.state.is_tsumo);
         assert!(!b.state.is_3p);
         assert_eq!(b.state.num_players, 4);
+        assert_eq!(b.state.resume, Some(rebuild::Next::Draw(2)));
 
-        // Our draw right after the rejoin: tracked for autoplay, not emitted.
-        assert!(parse_one(&mut b, r#"{"tag":"T120"}"#).is_empty());
-        assert!(b.state.is_tsumo);
-        assert_eq!(b.state.hand.len(), 14);
-        assert!(b.state.window.is_some());
-        assert!(parse_one(&mut b, r#"{"tag":"D120"}"#).is_empty());
-        assert_eq!(b.state.hand.len(), 13);
-        assert!(parse_one(&mut b, r#"{"tag":"U"}"#).is_empty());
-
-        // The hand ends (our ron) and E2 begins: the game reopens on seat 2
-        // with the roster from the rejoin's <UN/>.
-        assert!(parse_one(
-            &mut b,
-            r#"{"tag":"AGARI","who":"0","fromWho":"1","sc":"240,77,250,-77,250,0,250,0","ba":"0,1"}"#
-        )
-        .is_empty());
-        let events = parse_one(
-            &mut b,
-            r#"{"tag":"INIT","seed":"1,0,0,2,0,55","ten":"317,173,250,250","oya":"3","hai":"36,4,124,72,84,50,60,128,32,40,62,44,63"}"#,
-        );
-        assert_eq!(events.len(), 2, "{events:?}");
+        // The game opens on our seat with the rejoin's roster, then the hand
+        // as it stands: 22 discards, our riichi and the pon on the left.
         match &events[0] {
             MjaiEvent::StartGame {
                 id,
@@ -2728,6 +3335,74 @@ mod tests {
             other => panic!("expected StartGame, got {other:?}"),
         }
         match &events[1] {
+            MjaiEvent::StartKyoku {
+                oya,
+                scores,
+                kyotaku,
+                tehais,
+                catch_up,
+                ..
+            } => {
+                assert_eq!(*oya, 0);
+                assert_eq!(scores, &vec![25_000; 4], "our riichi stick handed back");
+                assert_eq!(*kyotaku, 0);
+                assert_eq!(tehais[2].len(), 13);
+                assert_eq!(*catch_up, events.len() - 2, "the whole history");
+            }
+            other => panic!("expected StartKyoku, got {other:?}"),
+        }
+        let count = |f: fn(&MjaiEvent) -> bool| events.iter().filter(|e| f(e)).count();
+        assert_eq!(count(|e| matches!(e, MjaiEvent::Dahai { .. })), 22);
+        assert_eq!(count(|e| matches!(e, MjaiEvent::Reach { actor: 2, .. })), 1);
+        assert!(events.iter().any(|e| matches!(
+            e,
+            MjaiEvent::Pon { actor: 1, target: 0, pai, .. } if pai == "P"
+        )));
+        assert!(matches!(
+            events.last(),
+            Some(MjaiEvent::Dahai { actor: 1, .. })
+        ));
+
+        // Live play carries straight on: our draw and discard, then the next
+        // seat's draw.
+        let events = parse_one(&mut b, r#"{"tag":"T120"}"#);
+        assert!(matches!(&events[..], [MjaiEvent::Tsumo { actor: 2, pai }] if pai == "N"));
+        assert_eq!(b.state.resume, None);
+        assert!(b.state.is_tsumo);
+        assert_eq!(b.state.hand.len(), 14);
+        assert!(b.state.window.is_some());
+        let events = parse_one(&mut b, r#"{"tag":"D120"}"#);
+        assert!(matches!(
+            &events[..],
+            [MjaiEvent::Dahai { actor: 2, pai, tsumogiri: true }] if pai == "N"
+        ));
+        assert_eq!(b.state.hand.len(), 13);
+        let events = parse_one(&mut b, r#"{"tag":"U"}"#);
+        assert!(matches!(&events[..], [MjaiEvent::Tsumo { actor: 3, .. }]));
+
+        // The hand ends (our ron) and E2 begins on the same game: no second
+        // start_game.
+        let events = parse_one(
+            &mut b,
+            r#"{"tag":"AGARI","who":"0","fromWho":"1","sc":"240,77,250,-77,250,0,250,0","ba":"0,1"}"#,
+        );
+        assert!(matches!(
+            &events[..],
+            [
+                MjaiEvent::Hora {
+                    actor: 2,
+                    target: 3,
+                    ..
+                },
+                MjaiEvent::EndKyoku
+            ]
+        ));
+        let events = parse_one(
+            &mut b,
+            r#"{"tag":"INIT","seed":"1,0,0,2,0,55","ten":"317,173,250,250","oya":"3","hai":"36,4,124,72,84,50,60,128,32,40,62,44,63"}"#,
+        );
+        assert_eq!(events.len(), 1, "{events:?}");
+        match &events[0] {
             MjaiEvent::StartKyoku {
                 kyoku,
                 oya,

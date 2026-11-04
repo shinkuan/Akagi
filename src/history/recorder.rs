@@ -295,6 +295,7 @@ mod tests {
             scores: vec![25000, 25000, 25000, 25000],
             tehais: vec![vec![]; 4],
             num_players: 4,
+            catch_up: 0,
         }
     }
 
@@ -309,6 +310,7 @@ mod tests {
             scores,
             tehais: vec![vec![]; 4],
             num_players: 4,
+            catch_up: 0,
         }
     }
 

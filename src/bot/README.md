@@ -142,6 +142,13 @@ on its own candidate set: a legal set that is empty, or that holds nothing
 but `Pass`, is not a decision (riichienv hands a `Pass` to every seat while
 it is in its response phase, including the seats with nothing to claim).
 
+A hand rebuilt after a reconnect (the Tenhou bridge's `<REINIT/>` handling)
+arrives as its whole history in one burst. Those turns are over, so its
+`start_kyoku` carries `catch_up`: the number of events after it that restate
+history. The manager buffers that many without asking and hands them to the
+bot with the next real decision as one batch. A hand boundary ends a
+catch-up early.
+
 ## The `meta.show` card (built-in bot)
 
 The built-in bot attaches a `meta.show` card — the ranked candidates with their
