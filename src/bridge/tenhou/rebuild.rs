@@ -33,8 +33,14 @@
 //! snapshot allows (kans likewise). Besides turn order it holds to three
 //! rules: a seat in riichi makes no call; the discard after a chi or pon is
 //! never a swap-call (kuikae) tile; and while we are in riichi no other seat
-//! discards a tile we wait on — we would have won on it. The last rule is
-//! dropped if no history satisfies it.
+//! discards a tile we wait on — we would have won on it. The last rule does
+//! not apply when we are furiten, and is dropped if no history satisfies it.
+//!
+//! A history can stop on our turn (holding a draw or a fresh call), after
+//! another seat's chi or pon, with another seat holding a replacement draw
+//! (its kan or kita shows, the draw does not), after a discard, or before
+//! the dealer's first draw. Another seat's ordinary draw leaves no trace in
+//! the snapshot, so a snapshot taken after one ends before it.
 //!
 //! ## What is made up
 //!
@@ -121,6 +127,11 @@ pub struct Rebuilt {
     pub approximate: bool,
     /// The most recent discard: seat and tile.
     pub last_discard: Option<(u8, u32)>,
+    /// The tile we hold as this turn's draw, when the history ends on our
+    /// draw (`None` after our chi/pon, or on another seat's turn). The frame
+    /// lists our hand sorted, so outside riichi which tile it is cannot be
+    /// known; the bridge makes its own hand agree with this one.
+    pub drawn: Option<u32>,
 }
 
 /// Find a history for `snap` and emit it.
@@ -148,15 +159,17 @@ pub fn rebuild(snap: &Snapshot) -> Result<Rebuilt> {
         snap.scores.len()
     );
     ensure!(!snap.dora_markers.is_empty(), "no dora indicator");
+    ensure!(!snap.hand.is_empty(), "no hand");
 
     let us = snap.seat as usize;
     let our_steps = steps_of(snap.seat, n, &snap.seats[us].melds, false)?;
+    // A kita is followed by a replacement draw, so it leaves the hand's
+    // size alone; every other call or kan sets three tiles aside.
     let sets = our_steps
         .iter()
         .filter(|s| !matches!(s, Step::Kita(_)))
         .count();
-    let kitas = our_steps.len() - sets;
-    let our_turn = (snap.hand.len() + 3 * sets + kitas) % 3 == 2;
+    let our_turn = (snap.hand.len() + 3 * sets) % 3 == 2;
     let riichi = snap.seats[us].riichi_at.is_some();
     let drawn = our_turn.then(|| drawn_tile(&snap.hand, riichi));
     let waits = if riichi {
@@ -166,10 +179,21 @@ pub fn rebuild(snap: &Snapshot) -> Result<Rebuilt> {
             .copied()
             .filter(|t| Some(*t) != drawn)
             .collect();
-        waits_of(&closed)
+        waits_of(&closed).filter(|waits| !furiten(snap, waits))
     } else {
         None
     };
+
+    // Rejoined before anyone has done anything: the dealer is yet to make
+    // its first draw. (Our own deal ends on our turn and is searched.)
+    let untouched = snap
+        .seats
+        .iter()
+        .all(|s| s.river.is_empty() && s.melds.is_empty());
+    if untouched && !our_turn {
+        let no_steps = vec![Vec::new(); n as usize];
+        return synthesize(snap, &no_steps, &[], Next::Draw(snap.oya), None);
+    }
 
     let reorderable = snap.seats.iter().any(|s| s.melds.len() > 1);
     let orders: &[bool] = if reorderable { &[true, false] } else { &[true] };
@@ -333,6 +357,29 @@ fn waits_of(closed: &[u32]) -> Option<[bool; 34]> {
     waits.iter().any(|&w| w).then_some(waits)
 }
 
+/// Whether we are furiten on `waits`: one of our own discards, including
+/// one another seat called, completes the hand. Then others' tiles we wait
+/// on could pass after our riichi without a win.
+fn furiten(snap: &Snapshot, waits: &[bool; 34]) -> bool {
+    let us = snap.seat;
+    let ours = snap.seats[us as usize].river.iter().copied();
+    let called = snap.seats.iter().enumerate().flat_map(|(seat, s)| {
+        s.melds.iter().filter_map(move |m| match m {
+            SnapMeld::Call(m)
+                if m.kind != MeldKind::Ankan && (seat as u8 + m.target_rel) % 4 == us =>
+            {
+                Some(if m.kind == MeldKind::Kakan {
+                    m.tiles[1]
+                } else {
+                    m.tiles[0]
+                })
+            }
+            _ => None,
+        })
+    });
+    ours.chain(called).any(|t| waits[(t / 4) as usize])
+}
+
 /// How a seat came to hold the turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Entry {
@@ -430,7 +477,7 @@ impl Search<'_> {
         if drew {
             self.trace.push(Act::Draw { seat: pos.cur });
         }
-        if self.act(pos, drew) {
+        if self.act(pos, drew, pos.entry == Entry::AfterKan) {
             return true;
         }
         self.trace.truncate(mark);
@@ -439,13 +486,25 @@ impl Search<'_> {
     }
 
     /// `pos.cur` holds the turn: the snapshot ends here, it discards, or —
-    /// with a drawn tile — it kans or sets aside kita first.
-    fn act(&mut self, pos: Pos, drew: bool) -> bool {
+    /// with a drawn tile — it kans or sets aside kita first. `rinshan`: the
+    /// tile it holds is a replacement draw.
+    fn act(&mut self, pos: Pos, drew: bool, rinshan: bool) -> bool {
         let s = pos.cur;
         let si = s as usize;
-        if s == self.us && self.our_turn && self.done(&pos) {
-            self.next = Some(Next::Discard(s));
-            return true;
+        if self.done(&pos) {
+            // On our turn the snapshot holds our draw or call. Another seat
+            // can be caught holding a replacement draw: its kan or kita is
+            // on the table, the draw that followed is not. (Its ordinary
+            // draw leaves no trace; that snapshot ends before it.)
+            let ends_here = if s == self.us {
+                self.our_turn
+            } else {
+                !self.our_turn && rinshan
+            };
+            if ends_here {
+                self.next = Some(Next::Discard(s));
+                return true;
+            }
         }
         if self.discard(pos) {
             return true;
@@ -465,7 +524,7 @@ impl Search<'_> {
             next.steps[si] += 1;
             self.trace.push(own);
             self.trace.push(Act::Draw { seat: s });
-            if self.act(next, true) {
+            if self.act(next, true, true) {
                 return true;
             }
             self.trace.truncate(mark);
@@ -481,7 +540,7 @@ impl Search<'_> {
                 next.upgraded[si] |= 1 << i;
                 self.trace.push(Act::Kakan { seat: s, step: i });
                 self.trace.push(Act::Draw { seat: s });
-                if self.act(next, true) {
+                if self.act(next, true, true) {
                     return true;
                 }
                 self.trace.truncate(mark);
@@ -730,7 +789,10 @@ fn synthesize(
         catch_up: 0,
     }];
     let mut markers = snap.dora_markers[1..].iter();
-    let mut owed_dora = [0u8; 4];
+    // Open and added kans whose indicator is still owed: where their kan
+    // event sits, so a snapshot that already shows the indicator can put it
+    // there.
+    let mut owed_dora: [Vec<usize>; 4] = Default::default();
     let mut in_riichi = [false; 4];
     let mut last_discard = None;
     for (i, act) in trace.iter().enumerate() {
@@ -769,7 +831,7 @@ fn synthesize(
                     in_riichi[seat as usize] = true;
                 }
                 // An open or added kan turns its indicator after the discard.
-                for _ in 0..std::mem::take(&mut owed_dora[seat as usize]) {
+                for _ in std::mem::take(&mut owed_dora[seat as usize]) {
                     if let Some(&m) = markers.next() {
                         events.push(MjaiEvent::Dora { dora_marker: mj(m) });
                     }
@@ -802,7 +864,7 @@ fn synthesize(
                         consumed: [mj(own[0]), mj(own[1])],
                     },
                     CallKind::Daiminkan => {
-                        owed_dora[seat as usize] += 1;
+                        owed_dora[seat as usize].push(events.len());
                         MjaiEvent::Daiminkan {
                             actor,
                             target,
@@ -835,7 +897,7 @@ fn synthesize(
                 else {
                     bail!("kakan step {step} of seat {seat} is not an added kan");
                 };
-                owed_dora[seat as usize] += 1;
+                owed_dora[seat as usize].push(events.len());
                 events.push(MjaiEvent::Kakan {
                     actor: seat,
                     pai: mj(*added),
@@ -849,18 +911,23 @@ fn synthesize(
         }
     }
     // An indicator the snapshot already shows for a kan whose discard is
-    // still to come.
-    for m in markers {
-        events.push(MjaiEvent::Dora {
-            dora_marker: mj(*m),
-        });
+    // still to come goes right after that kan, so the history still ends on
+    // the turn's last draw or call. Inserted from the back so the earlier
+    // positions hold.
+    let mut late: Vec<usize> = owed_dora.into_iter().flatten().collect();
+    late.sort_unstable();
+    let late: Vec<(usize, u32)> = late.into_iter().zip(markers.copied()).collect();
+    for &(at, m) in late.iter().rev() {
+        events.insert(at + 1, MjaiEvent::Dora { dora_marker: mj(m) });
     }
 
+    let ends_on_our_draw = matches!(trace.last(), Some(Act::Draw { seat }) if *seat == us);
     Ok(Rebuilt {
         events,
         next,
         approximate: steps.iter().any(|s| !s.is_empty()),
         last_discard,
+        drawn: if ends_on_our_draw { drawn } else { None },
     })
 }
 
@@ -1258,6 +1325,13 @@ mod tests {
         open.kyotaku = 0;
         let t = tokens(&rebuild(&open).unwrap());
         assert_eq!(&t[t.len() - 3..], ["D1:2p", "P3<1:2p", "D3:W"]);
+
+        // Nor when we are furiten: with a 5p of our own in the river, a 2p
+        // could pass after our riichi without ending the hand.
+        let mut furiten = snap.clone();
+        furiten.seats[0].river[0] = tile("5p", 1);
+        let t = tokens(&rebuild(&furiten).unwrap());
+        assert_eq!(&t[t.len() - 3..], ["D1:2p", "P3<1:2p", "D3:W"]);
     }
 
     #[test]
@@ -1436,6 +1510,134 @@ mod tests {
             r.events.last()
         );
         assert_eq!(&tokens(&r)[..4], ["T0", "R0", "D0:E*", "RA0"]);
+    }
+
+    /// A kita is followed by a replacement draw: it leaves the hand's size
+    /// alone, so 13 tiles after one kita is not our turn and 14 is.
+    #[test]
+    fn our_kita_leaves_the_hand_size_alone() {
+        let seats = || {
+            vec![
+                seat(&[tile("E", 0)], None, vec![SnapMeld::Kita(tile("N", 0))]),
+                seat(&[tile("S", 0)], None, vec![]),
+                seat(&[tile("W", 0)], None, vec![]),
+            ]
+        };
+        let r = rebuild(&snapshot(0, 0, plain_hand(2), seats())).unwrap();
+        assert_eq!(
+            tokens(&r),
+            ["T0", "N0", "T0", "D0:E*", "T1", "D1:S", "T2", "D2:W"]
+        );
+        assert_eq!(r.next, Next::Draw(0));
+        assert_eq!(r.drawn, None);
+        let (tehais, ..) = start(&r);
+        assert_eq!(tehais[0], sorted_mjai(&plain_hand(2)));
+
+        let mut hand = plain_hand(2);
+        hand.push(tile("9p", 2));
+        let r = rebuild(&snapshot(0, 0, hand, seats())).unwrap();
+        assert_eq!(r.next, Next::Discard(0));
+        assert_eq!(r.drawn, Some(tile("9p", 2)));
+    }
+
+    /// Another seat can be caught holding its replacement draw: its kan is
+    /// on the table, the discard after it is not.
+    #[test]
+    fn another_seat_may_hold_its_replacement_draw() {
+        let mut snap = snapshot(
+            0,
+            0,
+            plain_hand(2),
+            vec![
+                seat(&[tile("E", 0)], None, vec![]),
+                seat(&[tile("S", 0)], None, vec![]),
+                seat(&[tile("W", 0)], None, vec![]),
+                seat(&[], None, vec![ankan("9p")]),
+            ],
+        );
+        snap.dora_markers.push(tile("C", 2));
+        let r = rebuild(&snap).unwrap();
+        assert_eq!(
+            tokens(&r),
+            ["T0", "D0:E*", "T1", "D1:S", "T2", "D2:W", "T3", "AK3", "dora:C", "T3"]
+        );
+        assert_eq!(r.next, Next::Discard(3));
+    }
+
+    #[test]
+    fn a_rejoin_before_the_first_draw_waits_for_the_dealer() {
+        let empty = || seat(&[], None, vec![]);
+        let r = rebuild(&snapshot(
+            0,
+            2,
+            plain_hand(2),
+            vec![empty(), empty(), empty(), empty()],
+        ))
+        .unwrap();
+        assert_eq!(r.events.len(), 1, "start_kyoku alone");
+        assert_eq!(r.next, Next::Draw(2));
+    }
+
+    /// We added to our pon and hold the replacement draw, and the frame
+    /// already shows the new indicator. It goes right after the kan, so the
+    /// history still ends on our draw.
+    #[test]
+    fn an_indicator_already_shown_goes_after_its_kan() {
+        let hand: Vec<u32> = plain_hand(2)[..11].to_vec();
+        let mut snap = snapshot(
+            2,
+            0,
+            hand.clone(),
+            vec![
+                seat(&[tile("E", 0), tile("S", 0)], None, vec![]),
+                seat(&[tile("W", 0)], None, vec![]),
+                seat(&[tile("N", 0)], None, vec![kakan("P", 3, 0, 3)]),
+                seat(&[tile("F", 0)], None, vec![]),
+            ],
+        );
+        snap.dora_markers.push(tile("C", 2));
+        let r = rebuild(&snap).unwrap();
+        assert_eq!(
+            tokens(&r),
+            [
+                "T0", "D0:E", "T1", "D1:P", "P2<1:P", "D2:N", "T3", "D3:F", "T0", "D0:S", "T1",
+                "D1:W", "T2", "KK2", "dora:C", "T2"
+            ]
+        );
+        assert_eq!(r.next, Next::Discard(2));
+        assert_eq!(r.drawn, Some(hand[10]));
+    }
+
+    /// A history that ends on our pon holds no draw.
+    #[test]
+    fn a_history_ending_on_our_call_holds_no_draw() {
+        let hand: Vec<u32> = plain_hand(2)[..11].to_vec();
+        let snap = snapshot(
+            1,
+            0,
+            hand,
+            vec![
+                seat(&[tile("1s", 1), tile("2s", 1)], None, vec![]),
+                seat(
+                    &[tile("7s", 1), tile("8s", 1)],
+                    None,
+                    vec![pon("P", 3, 0, 3)],
+                ),
+                seat(&[tile("E", 1), tile("S", 1)], None, vec![]),
+                seat(&[tile("W", 1), tile("N", 1)], None, vec![]),
+            ],
+        );
+        let r = rebuild(&snap).unwrap();
+        assert_eq!(tokens(&r).last().map(String::as_str), Some("P1<0:P"));
+        assert_eq!(r.next, Next::Discard(1));
+        assert_eq!(r.drawn, None);
+    }
+
+    #[test]
+    fn an_empty_hand_is_refused_not_a_panic() {
+        let empty = || seat(&[], None, vec![]);
+        let snap = snapshot(0, 0, Vec::new(), vec![empty(), empty(), empty()]);
+        assert!(rebuild(&snap).is_err());
     }
 
     #[test]

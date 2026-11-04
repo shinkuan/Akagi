@@ -64,6 +64,9 @@ pub struct State {
     /// Set by a `<REINIT/>` whose hand was rebuilt (see [`super::rebuild`]):
     /// who the first live action should come from. Cleared by that action.
     pub resume: Option<super::rebuild::Next>,
+    /// Bit `s`: seat `s`'s riichi has been accepted this kyoku. Drops a
+    /// second acceptance (a rebuilt hand already restated it).
+    pub riichi_accepted: u8,
     /// True from a `<REINIT/>` until the next game starts: this flow never
     /// saw the hands before the rejoin, so the game's record is incomplete
     /// and its `end_game` goes out as terminated (History drops it rather
@@ -106,6 +109,7 @@ impl Default for State {
             pending_start_game: true,
             suspended: false,
             resume: None,
+            riichi_accepted: 0,
             rejoined_mid_game: false,
             go_type: None,
             lobby: None,
@@ -216,6 +220,7 @@ impl State {
         self.last_revealed_tile_actor = None;
         self.window = None;
         self.resume = None;
+        self.riichi_accepted = 0;
     }
 
     /// Open a decision window for our seat with the server's `t` bitmask.

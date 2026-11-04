@@ -169,9 +169,16 @@ or open kan from across or from the right skips seats, and when it happened
 can have more than one answer. The search prefers each seat's next river
 tile over a called one, so an open call lands as late as the snapshot
 allows, and holds to: no call from a seat in riichi, no swap-call (kuikae)
-tile right after a chi/pon, and — while we are in riichi — no other seat
-discarding a tile we wait on (we would have won on it; dropped if nothing
-fits otherwise). The `m<rel>` lists are read newest-first, then as listed.
+tile right after a chi/pon, and — while we are in riichi and not furiten — no
+other seat discarding a tile we wait on (we would have won on it; dropped if
+nothing fits otherwise). The `m<rel>` lists are read newest-first, then as
+listed. A snapshot can end on our draw or call, on another seat's chi/pon,
+on another seat holding a replacement draw (its kan or kita is shown, the
+draw is not), after a discard, or before the dealer's first draw.
+
+`hai` is sorted, so which tile is our draw is unknown; in riichi it is the
+one outside the ready hand. A kita is followed by a replacement draw, so it
+does not change the hand's size.
 
 What it cannot know it makes up, all documented in `rebuild.rs`: our own
 draws (each turn draws the tile it discards; the opening hand is whatever
@@ -185,7 +192,9 @@ The bridge then:
    rest of the game is attributed correctly even though `<TAIKYOKU/>` was
    never seen on this flow;
 2. sets up our hand, calls, riichi and draw-in-hand flag for autoplay and
-   `Bridge::build`, and opens a decision window if the snapshot ends on our
+   `Bridge::build` — the draw the history chose goes to the tail of the
+   hand, where `on_dahai` and the encoder look for it; after our own call
+   there is none — and opens a decision window if the snapshot ends on our
    turn;
 3. emits `start_game` (when this flow owes one), `start_kyoku` and the
    history. `start_kyoku.catch_up` counts the history events — all of them,
@@ -195,10 +204,14 @@ The bridge then:
    for a window);
 4. checks the first live action against where the history ended
    (`resume_rebuilt`). Another seat discarding (or kanning, or declaring)
-   without a draw on this flow had drawn before the rejoin, so a hidden
-   `tsumo` is put in front of it; our own draw repeated after a snapshot
-   that already held it is dropped (`on_tsumo`). Anything else that
-   disagrees means the history went wrong;
+   (or winning by tsumo) without a draw on this flow had drawn before the
+   rejoin, so a hidden `tsumo` is put in front of it. Our own draw repeated
+   after a snapshot that already held it is dropped, and moves to the tail
+   of the hand (`on_tsumo`); the history's last discard sent again is
+   handled for its window but not played twice; a riichi acceptance the
+   history already restated is not repeated (`on_reach`). Anything else that
+   disagrees means the history went wrong. The history's last discard is
+   never asked about: if it was ours to claim, that claim is lost;
 5. posts an info toast that the hand was rebuilt (and whether call timing
    was estimated).
 
