@@ -6,7 +6,7 @@
 //! - One long-lived `tokio::select!` loop over `BotResponseBus` and
 //!   `MjaiBus`. Bot responses drive clicks; mjai events update local
 //!   per-game tracking state (`last_kawa_tile`, `last_self_tsumo`,
-//!   `self_riichi_accepted`).
+//!   `self_riichi_accepted`) and feed the advisor (`autoplay::advisor`).
 //!
 //! Failure modes are silent-by-design: if the page handle is missing
 //! (chromium backend not running) or the canvas-rect query fails, the
@@ -15,6 +15,7 @@
 
 use crate::autoplay::cdp_input::{dispatch_click_shaped, evaluate_canvas_rect};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
+use crate::autoplay::delay::Reading;
 use crate::autoplay::inject::InjectFrame;
 use crate::autoplay::majsoul::MajsoulAutoplay;
 use crate::autoplay::platform::{ActionContext, PlatformAutoplay, Step};
@@ -24,6 +25,7 @@ use crate::autoplay::verify::InputTicket;
 use crate::bot::BotResponse;
 use crate::config::AppConfig;
 use crate::event_bus::{BotResponseBus, MjaiBus, NotifyBus};
+use crate::game_state::snapshot::GameStateSnapshot;
 use crate::game_state::tracker::GameTracker;
 use crate::schema::MjaiEvent;
 use chromiumoxide::page::Page;
@@ -61,6 +63,10 @@ pub struct AutoplayManager {
     /// Directory holding the loaded config file; the script lives at
     /// `<config_dir>/delay.lua`.
     config_dir: std::path::PathBuf,
+    /// The built-in bot following the same game, for how obvious each
+    /// decision would be to a person (see `autoplay::advisor`). Pacing only,
+    /// on every platform.
+    advisor: crate::autoplay::advisor::Advisor,
 }
 
 #[derive(Default)]
@@ -105,6 +111,7 @@ impl AutoplayManager {
             state: ManagerState::default(),
             delay_script: crate::autoplay::delay::ScriptHost::default(),
             config_dir,
+            advisor: crate::autoplay::advisor::Advisor::default(),
         }
     }
 
@@ -142,7 +149,13 @@ impl AutoplayManager {
                     Ok(ev) => {
                         self.handle_mjai_event(&ev);
                     }
-                    Err(RecvError::Lagged(n)) => warn!("autoplay: mjai bus lagged {n}"),
+                    Err(RecvError::Lagged(n)) => {
+                        warn!("autoplay: mjai bus lagged {n}");
+                        // The second opinion missed those events: its engine
+                        // no longer holds this game's position, so it stops
+                        // following until the next game starts.
+                        self.advisor = crate::autoplay::advisor::Advisor::default();
+                    }
                     Err(RecvError::Closed) => {
                         info!("autoplay: mjai bus closed; exiting");
                         return Ok(());
@@ -177,11 +190,6 @@ impl AutoplayManager {
         // model — neither can alter the chosen action. `opened_at` is kept
         // as the window's identity for the post-sleep staleness check.
         let planned_budget = self.ctx.time_budget.read().ok().and_then(|g| *g);
-        let budget = planned_budget.map(|b| crate::autoplay::delay::BudgetSnapshot {
-            fixed_ms: b.fixed_ms,
-            add_ms: b.add_ms,
-            elapsed_ms: b.elapsed_ms(),
-        });
         let probs = crate::autoplay::delay::probs::normalize_meta(resp.meta.as_ref());
 
         // The delay script lives at a fixed path next to the config file.
@@ -224,6 +232,37 @@ impl AutoplayManager {
             (our_seat, legal_actions, snapshot, num_players)
         };
 
+        // Every reply that gets here is one the engine asked for: the bot
+        // manager only reacts where our seat can act (`bot::manager`), so a
+        // `None` means a decline and not "nothing to say". Belt and braces
+        // all the same — one window is answered once. A second reply for it
+        // is at best a wasted press and at worst one aimed at whatever
+        // replaced it.
+        if let Some(w) = planned_window {
+            if self.state.acted_window == Some(w.opened_at) {
+                debug!("autoplay: already acted on this window; ignoring extra bot reply");
+                return;
+            }
+        }
+
+        // What the table and the built-in bot say about this decision, for
+        // the delay script. Read from the tracked game state, so every
+        // platform gets the same fields.
+        let reading = Reading {
+            human: self.advisor.view(&resp.action),
+            ..table_reading(&resp, &snapshot, our_seat)
+        };
+        // One line a decision, for measuring a delay script against afterwards.
+        info!(action = ?resp.action, ?probs, ?reading, "autoplay: decision read");
+
+        // Elapsed is read after the second opinion, so the model step it
+        // took counts against the window like the bot's own inference.
+        let budget = planned_budget.map(|b| crate::autoplay::delay::BudgetSnapshot {
+            fixed_ms: b.fixed_ms,
+            add_ms: b.add_ms,
+            elapsed_ms: b.elapsed_ms(),
+        });
+
         let action_ctx = ActionContext {
             action: &resp.action,
             snapshot: &snapshot,
@@ -237,6 +276,7 @@ impl AutoplayManager {
             delay_cfg,
             budget,
             probs,
+            reading,
             delay_script: self.delay_script.script(),
             tenhou: tenhou_state.as_ref(),
         };
@@ -246,18 +286,6 @@ impl AutoplayManager {
             crate::config::Platform::RiichiCity => &self.riichi,
             _ => &self.majsoul,
         };
-        // Every reply that gets here is one the engine asked for: the bot
-        // manager only reacts where our seat can act (`bot::manager`), so a
-        // `None` means a decline and not "nothing to say". Belt and braces
-        // all the same — one window is answered once. A second reply for it
-        // is at best a wasted press and at worst one aimed at whatever
-        // replaced it.
-        if let Some(w) = planned_window {
-            if self.state.acted_window == Some(w.opened_at) {
-                debug!("autoplay: already acted on this window; ignoring extra bot reply");
-                return;
-            }
-        }
 
         let plan = platform.plan(&action_ctx);
         if plan.steps.is_empty() {
@@ -859,6 +887,7 @@ impl AutoplayManager {
     }
 
     fn handle_mjai_event(&mut self, ev: &MjaiEvent) {
+        self.advisor.note(ev);
         match ev {
             MjaiEvent::StartGame { id, .. } => {
                 // Capture our seat directly from the StartGame event rather
@@ -957,6 +986,38 @@ impl AutoplayManager {
                 None
             }
         }
+    }
+}
+
+/// What the table says about this decision (`autoplay::table`): whether the
+/// discarded tile, and the bot's runner-up discard, are loose in our hand, and
+/// whether the tile is safe against every riichi. Discards only; the second
+/// opinion (`human`) is the advisor's and left empty here.
+///
+/// Built from the tracked game state alone — our concealed hand (the drawn
+/// tile included) and the rivers of the opponents in riichi — so it reads the
+/// same on every platform.
+fn table_reading(resp: &BotResponse, snapshot: &GameStateSnapshot, our_seat: u8) -> Reading {
+    let MjaiEvent::Dahai { pai, .. } = &resp.action else {
+        return Reading::default();
+    };
+    let hand = snapshot
+        .players
+        .get(our_seat as usize)
+        .map_or(&[][..], |p| p.tehai.as_slice());
+    let candidates = crate::autoplay::delay::probs::candidates(resp.meta.as_ref());
+    let riichi_rivers: Vec<Vec<&str>> = snapshot
+        .players
+        .iter()
+        .filter(|p| p.seat != our_seat && p.riichi_declared)
+        .map(|p| p.river.iter().map(|d| d.tile.as_str()).collect())
+        .collect();
+    Reading {
+        loose: Some(crate::autoplay::table::is_loose(pai, hand)),
+        runner_up_loose: crate::autoplay::delay::probs::runner_up(&candidates, pai)
+            .map(|other| crate::autoplay::table::is_loose(other, hand)),
+        safe: crate::autoplay::table::is_safe(pai, &riichi_rivers),
+        human: None,
     }
 }
 
@@ -1180,6 +1241,155 @@ mod tests {
     use crate::autoplay::context::AutoplayContext;
     use crate::event_bus::mjai_bus;
     use crate::game_state::tracker;
+
+    /// A four-seat snapshot: `hand` is ours (seat 0); `riichi_river` is the
+    /// discards of seat 2, which has declared riichi when it is `Some`.
+    fn reading_snapshot(hand: &[&str], riichi_river: Option<&[&str]>) -> GameStateSnapshot {
+        use crate::game_state::snapshot::{DiscardEntry, Phase, PlayerSnapshot};
+        let players = (0..4u8)
+            .map(|i| PlayerSnapshot {
+                seat: i,
+                tehai: if i == 0 {
+                    hand.iter().map(|s| s.to_string()).collect()
+                } else {
+                    Vec::new()
+                },
+                melds: Vec::new(),
+                river: match (i, riichi_river) {
+                    (2, Some(river)) => river
+                        .iter()
+                        .map(|t| DiscardEntry {
+                            tile: t.to_string(),
+                            tedashi: true,
+                            is_riichi: false,
+                            called: false,
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                },
+                score: 25000,
+                riichi_declared: i == 2 && riichi_river.is_some(),
+                riichi_stage: false,
+                double_riichi: false,
+                riichi_declaration_index: None,
+                kita_tiles: Vec::new(),
+                drawn_tile: None,
+            })
+            .collect();
+        GameStateSnapshot {
+            bakaze: "E".into(),
+            kyoku: 1,
+            honba: 0,
+            kyotaku: 0,
+            oya: 0,
+            current_player: 0,
+            turn_count: 0,
+            phase: Phase::WaitAct,
+            is_done: false,
+            num_players: 4,
+            players,
+            dora_markers: Vec::new(),
+            our_seat: Some(0),
+        }
+    }
+
+    fn discard_with_runner_up(pai: &str, runner_up: &str) -> BotResponse {
+        BotResponse {
+            action: MjaiEvent::Dahai {
+                actor: 0,
+                pai: pai.into(),
+                tsumogiri: false,
+            },
+            meta: Some(serde_json::json!({ "show": { "items": [
+                { "label": "Discard", "type": "dahai", "pais": [pai], "prob": 0.5 },
+                { "label": "Discard", "type": "dahai", "pais": [runner_up], "prob": 0.4 },
+            ] } })),
+        }
+    }
+
+    #[test]
+    fn table_reading_reads_loose_tiles_and_the_runner_up() {
+        let hand = ["1m", "2m", "3m", "8m", "4p", "5p", "9s", "E", "N", "N"];
+        let snap = reading_snapshot(&hand, None);
+        let r = table_reading(&discard_with_runner_up("8m", "E"), &snap, 0);
+        assert_eq!(r.loose, Some(true));
+        assert_eq!(r.runner_up_loose, Some(true));
+        assert_eq!(r.safe, None, "nobody is in riichi: nothing to be safe from");
+        assert_eq!(r.human, None, "the second opinion is not the table's");
+        let r = table_reading(&discard_with_runner_up("8m", "4p"), &snap, 0);
+        assert_eq!(r.runner_up_loose, Some(false));
+    }
+
+    #[test]
+    fn table_reading_is_safe_only_against_a_riichi_that_threw_the_tile() {
+        let hand = ["1m", "2m", "3m", "8m", "9s"];
+        let snap = reading_snapshot(&hand, Some(&["8m", "W"]));
+        assert_eq!(
+            table_reading(&discard_with_runner_up("8m", "9s"), &snap, 0).safe,
+            Some(true)
+        );
+        assert_eq!(
+            table_reading(&discard_with_runner_up("9s", "8m"), &snap, 0).safe,
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn table_reading_is_empty_for_anything_but_a_discard() {
+        let snap = reading_snapshot(&["1m"], Some(&["1m"]));
+        let pass = BotResponse {
+            action: MjaiEvent::None,
+            meta: None,
+        };
+        assert_eq!(table_reading(&pass, &snap, 0), Reading::default());
+    }
+
+    /// The advisor follows the game through the manager's own mjai handler,
+    /// which every platform's events pass through.
+    #[test]
+    fn the_advisor_is_fed_from_the_mjai_handler() {
+        let mut m = make_manager();
+        let hand: Vec<String> = [
+            "1m", "1m", "3m", "5m", "7m", "9m", "2p", "4p", "6p", "8p", "1s", "3s", "5s",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let hidden = vec!["?".to_string(); 13];
+        for ev in [
+            MjaiEvent::StartGame {
+                names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+                kyoku_first: None,
+                aka_flag: None,
+                id: Some(0),
+                num_players: 4,
+                game_meta: None,
+            },
+            MjaiEvent::StartKyoku {
+                bakaze: "E".into(),
+                dora_marker: "2m".into(),
+                kyoku: 1,
+                honba: 0,
+                kyotaku: 0,
+                oya: 0,
+                scores: vec![25000; 4],
+                tehais: vec![hand, hidden.clone(), hidden.clone(), hidden],
+                num_players: 4,
+            },
+            MjaiEvent::Tsumo {
+                actor: 0,
+                pai: "E".into(),
+            },
+        ] {
+            m.handle_mjai_event(&ev);
+        }
+        let action = MjaiEvent::Dahai {
+            actor: 0,
+            pai: "E".into(),
+            tsumogiri: true,
+        };
+        assert!(m.advisor.view(&action).is_some());
+    }
 
     /// Build a minimal `AutoplayManager` suitable for unit-testing
     /// `handle_mjai_event`. No CDP page, no config — just enough to

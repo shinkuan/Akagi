@@ -75,6 +75,10 @@ const SUPERSEDED_DEFAULT_SCRIPTS: &[&str] = &[
         env!("CARGO_MANIFEST_DIR"),
         "/assets/delay_default_superseded/2e5d892.lua"
     )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/delay_default_superseded/b881105.lua"
+    )),
 ];
 
 /// Is `content` an unmodified copy of an earlier bundled default? Line
@@ -286,6 +290,23 @@ impl DelayScript {
         }
         ctx.set("junme", input.junme)?;
         ctx.set("legal_count", input.legal_action_count)?;
+        let reading = &input.reading;
+        if let Some(loose) = reading.loose {
+            ctx.set("loose", loose)?;
+        }
+        if let Some(loose) = reading.runner_up_loose {
+            ctx.set("runner_up_loose", loose)?;
+        }
+        if let Some(safe) = reading.safe {
+            ctx.set("safe", safe)?;
+        }
+        if let Some(human) = reading.human {
+            ctx.set("human_top", human.top)?;
+            ctx.set("human_chosen", human.chosen)?;
+            if let Some(second) = human.second {
+                ctx.set("human_second", second)?;
+            }
+        }
         if let Some(p) = input.probs {
             ctx.set("top_prob", p.top)?;
             if let Some(second) = p.second {
@@ -294,6 +315,7 @@ impl DelayScript {
             if let Some(margin) = p.margin() {
                 ctx.set("margin", margin)?;
             }
+            ctx.set("entropy", p.entropy)?;
         }
         if let Some(b) = input.budget {
             let budget = lua.create_table()?;
@@ -504,6 +526,7 @@ mod tests {
             junme: 0,
             legal_action_count: 1,
             probs: None,
+            reading: Default::default(),
             budget: None,
             click_overhead_ms: 0,
             cfg,
@@ -556,6 +579,54 @@ mod tests {
         let dec = s.try_decide(&i).unwrap();
         assert_eq!(dec.total_target_ms, 1250);
         assert!(dec.allow_bank);
+    }
+
+    /// The table facts, the second opinion and the entropy reach the script
+    /// when read, and are nil when not — "not read" is never "no".
+    #[test]
+    fn script_sees_the_reading_and_nil_when_unread() {
+        let s = DelayScript::compile(
+            r#"
+            function decide_delay(ctx)
+              if ctx.human_chosen == nil then
+                assert(ctx.loose == nil and ctx.safe == nil and ctx.runner_up_loose == nil)
+                assert(ctx.human_top == nil and ctx.human_second == nil)
+                assert(ctx.entropy == nil)
+                return { delay_ms = 1111 }
+              end
+              assert(ctx.loose == true)
+              assert(ctx.runner_up_loose == false)
+              assert(ctx.safe == false)
+              assert(math.abs(ctx.human_top - 0.6) < 1e-9)
+              assert(math.abs(ctx.human_second - 0.3) < 1e-9)
+              assert(math.abs(ctx.human_chosen - 0.3) < 1e-9)
+              assert(math.abs(ctx.entropy - 0.5) < 1e-9)
+              return { delay_ms = 2222 }
+            end
+            "#,
+            "test",
+        )
+        .unwrap();
+        let cfg = MajsoulAutoplayConfig::default();
+        let d = DelayModelConfig::default();
+        let mut i = base_input(&cfg, &d);
+        assert_eq!(s.try_decide(&i).unwrap().total_target_ms, 1111);
+        i.reading = crate::autoplay::delay::Reading {
+            loose: Some(true),
+            runner_up_loose: Some(false),
+            safe: Some(false),
+            human: Some(crate::autoplay::delay::HumanView {
+                top: 0.6,
+                second: Some(0.3),
+                chosen: 0.3,
+            }),
+        };
+        i.probs = Some(crate::autoplay::delay::DecisionProbs {
+            top: 0.7,
+            second: Some(0.2),
+            entropy: 0.5,
+        });
+        assert_eq!(s.try_decide(&i).unwrap().total_target_ms, 2222);
     }
 
     #[test]
@@ -853,6 +924,7 @@ mod tests {
                 i.probs = Some(crate::autoplay::delay::DecisionProbs {
                     top: 0.40,
                     second: Some(0.399),
+                    entropy: 0.0,
                 });
                 s.try_decide(&i).unwrap().total_target_ms
             })
@@ -893,8 +965,10 @@ mod tests {
         // Tsumogiri honor: the bucket with the largest routine weight
         // (0.15). With the collapse rule that dropped to 0.045, pushing
         // the fast (≤1.2s) fraction from ~30% down to ~24%.
+        // 10k draws: the bundled script lands near 0.29 here, and at 3k the
+        // sampling spread alone came within two standard errors of 0.27.
         let fast_fraction = |probs: Option<crate::autoplay::delay::DecisionProbs>| {
-            let n = 3000;
+            let n = 10_000;
             let fast = (0..n)
                 .filter(|_| {
                     let mut i = base_input(&cfg, &d);
@@ -912,11 +986,110 @@ mod tests {
         let flat = fast_fraction(Some(crate::autoplay::delay::DecisionProbs {
             top: 0.11,
             second: Some(0.105),
+            entropy: 0.0,
         }));
         assert!(
             flat > 0.27,
             "flat-prob fast fraction {flat:.3} — routine collapse is back"
         );
+    }
+
+    /// Median total target of the bundled script over `n` draws of `tweak`ed
+    /// input, with the UI floors off so only the script's own shape shows.
+    fn bundled_median(tweak: impl Fn(&mut DelayInput)) -> u32 {
+        let s = DelayScript::compile(DEFAULT_SCRIPT, "delay_default.lua").unwrap();
+        let cfg = MajsoulAutoplayConfig::default();
+        let d = DelayModelConfig {
+            min_delay_ms: 0,
+            min_button_delay_ms: 0,
+            ..DelayModelConfig::default()
+        };
+        let mut samples: Vec<u32> = (0..2000)
+            .map(|_| {
+                let mut i = base_input(&cfg, &d);
+                tweak(&mut i);
+                s.try_decide(&i).unwrap().total_target_ms
+            })
+            .collect();
+        samples.sort_unstable();
+        samples[samples.len() / 2]
+    }
+
+    fn human(chosen: f64) -> crate::autoplay::delay::Reading {
+        crate::autoplay::delay::Reading {
+            human: Some(crate::autoplay::delay::HumanView {
+                top: chosen.max(0.5),
+                second: None,
+                chosen,
+            }),
+            ..Default::default()
+        }
+    }
+
+    /// The bundled policy thinks longer over a move few people would make
+    /// than over one nearly everyone makes.
+    #[test]
+    fn bundled_default_thinks_longer_where_people_split() {
+        let obvious = bundled_median(|i| i.reading = human(0.97));
+        let rare = bundled_median(|i| i.reading = human(0.10));
+        assert!(
+            rare as f64 > obvious as f64 * 1.4,
+            "rare move median {rare} vs obvious {obvious}"
+        );
+    }
+
+    /// Clearing loose tiles with nobody in riichi is not a question.
+    #[test]
+    fn bundled_default_clears_loose_tiles_quickly() {
+        let contested = bundled_median(|i| {
+            i.reading = crate::autoplay::delay::Reading {
+                loose: Some(false),
+                ..Default::default()
+            }
+        });
+        let clearing = bundled_median(|i| {
+            i.reading = crate::autoplay::delay::Reading {
+                loose: Some(true),
+                runner_up_loose: Some(true),
+                ..Default::default()
+            }
+        });
+        assert!(
+            (clearing as f64) < contested as f64 * 0.85,
+            "clearing median {clearing} vs contested {contested}"
+        );
+    }
+
+    /// Against a riichi a live tile takes longer than a safe one.
+    #[test]
+    fn bundled_default_takes_longer_over_a_live_tile() {
+        let reading = |safe| crate::autoplay::delay::Reading {
+            loose: Some(false),
+            safe: Some(safe),
+            ..Default::default()
+        };
+        let safe = bundled_median(|i| {
+            i.opponent_riichi = true;
+            i.reading = reading(true);
+        });
+        let live = bundled_median(|i| {
+            i.opponent_riichi = true;
+            i.reading = reading(false);
+        });
+        assert!(
+            live as f64 > safe as f64 * 1.1,
+            "live median {live} vs safe {safe}"
+        );
+    }
+
+    /// The dealer's opening thinks after the deal is laid out, not under it.
+    #[test]
+    fn bundled_default_thinks_after_the_deal() {
+        let opening = bundled_median(|i| {
+            i.opening_animation = true;
+            i.first_action_of_kyoku = true;
+        });
+        assert!(opening >= 4000, "opening median {opening}");
     }
 
     /// `ensure_default` generates the bundled script once and never

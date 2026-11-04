@@ -172,6 +172,14 @@ advice on screen, reading as live advice for a decision that was already over. T
 cloud-inference path had it right. Both now share the `PASS_LABEL` row, so the card
 reads the same whichever one answered.
 
+Two fields on each row are for machines, not the card, and the frontend ignores
+them: `prob` (the raw probability; `value` is only a whole-percent string) and
+`type` (the mjai event the row stands for — `dahai`, `reach`, `pon`, `none`, …;
+omitted for `Kan`, which names no single kan kind on the API path). Autoplay's
+delay inputs read both (`autoplay::delay::probs`): `type` is what tells a
+runner-up *discard* from a button. Every row goes through `make_show_item`, so
+a new label needs a `show_type` entry too.
+
 ## Adding a new bot
 
 Drop a folder under `mjai_bot/`:

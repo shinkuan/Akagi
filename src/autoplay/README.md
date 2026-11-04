@@ -30,6 +30,8 @@ bot answers is the most obvious tell there is.
 | `tenhou_state.rs` | `TenhouState` — the hand at Tenhou tile-index resolution plus the current decision window (the server's `t` bitmask). Written by the Tenhou bridge, read here. Without it an mjai tile *string* cannot be resolved to the physical copy Tenhou wants. |
 | `budget.rs` | `TimeBudget` — the server's per-decision-window time grant (`OptionalOperationList.time_fixed/time_add`, ms). Written by the Majsoul bridge, read here. Never locally accounted; always the server's own value. |
 | `delay/` | The pre-click "thinking time" model. See below. |
+| `advisor.rs` | A second opinion for delay scripts: the built-in bot (`native_bot`, which imitates people) follows the game on the same events and says what share of players would make the active bot's move. 4p and 3p (its sanma model). Never consulted for the action; any failure turns it off for the game. |
+| `table.rs` | Two facts read off the table for a discard, for delay scripts: whether the tile is *loose* in the hand (no second copy, nothing of its suit within two — by its place, not its kind) and whether it is *safe* against every riichi (each has discarded it). |
 | `context.rs` | `AutoplayContext` — shared slots between the capture backend, the bridge and the manager (`page`, `canvas_rect`, `time_budget`, `input_watch`, `tenhou_state`). |
 | `cdp_input.rs` | chromiumoxide wrappers: hover → press → hold → release click sequence (optionally with a mid-press cursor jiggle for retries), canvas rect query, and the Tenhou route's DOM helpers — action-button selectors, the readiness probe, and the call into the injected discard handler. |
 | `verify.rs` | Majsoul only. `InputWatch` — counts the client's own uplink input commands (`inputOperation` / `inputChiPengGang`, bumped by the Majsoul bridge). The manager takes a ticket before pressing; if the count never moves, the click was swallowed and the plan is pressed again (bounded by `click_retries`, gated on the decision window still being live). Repeated dead decisions trigger a page reload (`reload_after_failures`), which reconnects into the hand via the bridge's `GameRestore` path. |
@@ -196,15 +198,19 @@ Layers, in order:
    The default log-normal parameters are **calibrated against real
    ranked-game records** (think times measured on the server-side
    action clock of decoded game records); change them only with new
-   measurements. Both default policies deliberately **ignore the bot's
-   probability distribution**: measured bot policies can be nearly flat
-   (top ~0.11 on most decisions), which turned every confidence-based
-   rule into a permanent bias instead of a signal. Normalized probs
+   measurements. Both default policies deliberately **ignore the playing
+   bot's probability distribution**: measured bot policies can be nearly
+   flat (top ~0.11 on most decisions), which turned every confidence-based
+   rule into a permanent bias instead of a signal. Which decisions get the
+   long thinks is read instead from what people would do and from the
+   table (see "What a script can read" below). Normalized probs
    (`delay/probs.rs`: native-bot `show.items[].prob` raw, Mortal-style
    `q_values` softmaxed — never feed raw Q values to a probability
    threshold) are still exposed to user Lua scripts as
-   `ctx.top_prob`/`ctx.second_prob`/`ctx.margin` for custom rules tuned
-   to a specific bot.
+   `ctx.top_prob`/`ctx.second_prob`/`ctx.margin`/`ctx.entropy` for
+   custom rules tuned to a specific bot. `entropy` is over the candidates
+   the bot listed, with whatever they leave short of 1 counted as one
+   more: a floor on the true figure.
 2. **Budget caps** (`budget_cap`) — `soft = time_fixed - safety_margin -
    click_overhead`; `hard = soft + bounded bank spend`, bank only when
    the policy returned `allow_bank`. Unconditional: overrunning the
@@ -221,10 +227,57 @@ snapshot) and the upcoming click sequence's own duration (hover + hold +
 candidate clicks), then re-applies the functional floor so the first
 click still lands after the UI is ready.
 
+### What a script can read besides the bot's numbers (`delay::Reading`)
+
+A bot's probabilities say how the bot weighs its options, which is not how
+hard the position is for a person: a policy can be flat because nothing
+matters, or sharp where players agonise. Two more sources are passed to
+scripts, each optional (`nil` is "not read"), neither able to alter the
+action. The manager reads both from the tracked game state and hands them to
+the planner as `ActionContext.reading`, so Mahjong Soul, Tenhou and Riichi
+City scripts see the same fields.
+
+| ctx field | Source | Meaning |
+|---|---|---|
+| `ctx.loose` | `table.rs` | The discarded tile is loose in our hand. Discards only. |
+| `ctx.runner_up_loose` | `table.rs` + `probs::runner_up` | The bot's runner-up discard is loose. `nil` unless its two likeliest candidates are discards of different tiles. |
+| `ctx.safe` | `table.rs` | Every opponent in riichi has discarded the tile (called tiles count). `nil` with no riichi on the table. |
+| `ctx.human_top` / `ctx.human_second` | `advisor.rs` | The built-in bot's shares for its two likeliest moves. |
+| `ctx.human_chosen` | `advisor.rs` | Its share for the move actually being made. |
+| `ctx.entropy` | `probs.rs` | Spread of the *playing* bot's listed candidates, in nats (see above). |
+
+- **The table** (`table.rs`). Two loose tiles at even odds are an order to
+  throw them in, not a question; a live tile against a riichi is one however
+  sure the bot was. The runner-up needs `show.items[].type`, which the native
+  bot path writes for every row whose label names one mjai event (see
+  `src/bot/README.md`); a bot that lists no types gets no runner-up.
+- **A second opinion** (`advisor.rs`): the built-in bot's policy, read as
+  the share of players making each move. Where players split, a person takes
+  time. A move outside its listed candidates gets half of the most it could
+  have. Calls are matched by kind (a chi is a chi, whichever tiles it takes).
+  It follows yonma with the 4p model and sanma with the 3p one; a game that
+  does not name our seat is not followed. The advisor is fed in
+  `handle_mjai_event` and asked in `handle_bot_response`; the two arrive on
+  different buses, so a view of the wrong kind of decision (a discard where
+  the action answers a call) is discarded as stale, and a lagged mjai bus
+  stops it until the next game. It costs one native-model step per paced
+  decision, taken before the window's elapsed time is read.
+
+The bundled script turns the second opinion into the decision's place among
+decisions by difficulty (`PLACE_HUMAN` knots) and draws the think time at
+that place of the calibrated log-normal, with noise; clearing loose tiles
+is placed low, a live tile against riichi is stretched. Without a second
+opinion the place is uniform at random. Its dealer-opening deal wait applies
+where `ctx.dealer_opening` is set, which is Mahjong Soul only. Each paced
+decision logs one `autoplay: decision read` line with the action, the
+probabilities and the reading — what to measure a script's tables from.
+
 ### Adding a new delay input
 
-1. Add the field to `DelayInput` (`delay/mod.rs`) and derive it in
-   `majsoul::push_pre_delay` (or the manager, if it needs async state).
+1. Add the field to `DelayInput` (`delay/mod.rs`) and derive it in each
+   platform's `push_pre_delay` / `pre_delay` — or, if it does not depend on
+   the platform or needs the manager's state, in the manager, passed down
+   through `ActionContext` the way `reading` is.
 2. Consume it in `decide`. Default parameter values must be backed by
    calibration data (record measurements); a knob without data defaults
    to off/no-op.
@@ -274,5 +327,7 @@ simply `None` there and the static `no_budget_cap_ms` applies.
 - Use synthetic payloads for bridge tests, never pasted real captures
   with account ids.
 - `assets/delay_default.lua` is compiled and exercised by
-  `script::tests::bundled_default_script_works`; keep it in sync with
-  the ctx table.
+  `script::tests::bundled_default_script_works` and the `bundled_default_*`
+  shape tests (loose tiles cleared quickly, a live tile against riichi
+  slower, a rare move slower than an obvious one, the dealer's opening after
+  the deal); keep it in sync with the ctx table.

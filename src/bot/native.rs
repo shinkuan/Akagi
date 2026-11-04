@@ -884,12 +884,37 @@ fn label_pais_candidate(action: &str) -> Option<(&'static str, Vec<String>)> {
     Some(out)
 }
 
-/// Build one `show.items` entry: a label, optional tiles, optional probability
-/// (rendered as a whole-percent string).
+/// The mjai event type a `show.items` row stands for, where its label names
+/// exactly one. `Kan` does not (it is a daiminkan on one path and any kan on
+/// the API's coarse candidate list), so it carries none. Read by
+/// `autoplay::delay::probs::candidates` to tell a runner-up discard from a
+/// button; the HUD ignores it.
+fn show_type(label: &str) -> Option<&'static str> {
+    Some(match label {
+        "Discard" => "dahai",
+        "Riichi" => "reach",
+        "Pon" => "pon",
+        "Chi" => "chi",
+        "Ankan" => "ankan",
+        "Kakan" => "kakan",
+        "Hora" => "hora",
+        "Ryukyoku" => "ryukyoku",
+        "Kita" => "kita",
+        PASS_LABEL => "none",
+        _ => return None,
+    })
+}
+
+/// Build one `show.items` entry: a label, its mjai `type` where the label
+/// names one, optional tiles, optional probability (rendered as a
+/// whole-percent string).
 fn make_show_item(label: &str, pais: &[String], prob: Option<f64>) -> Value {
     use serde_json::json;
     let mut item = serde_json::Map::new();
     item.insert("label".into(), json!(label));
+    if let Some(kind) = show_type(label) {
+        item.insert("type".into(), json!(kind));
+    }
     if pais.iter().any(|p| !p.is_empty()) {
         item.insert("pais".into(), json!(pais));
     }
@@ -1945,8 +1970,50 @@ mod tests {
         assert_eq!(meta["show"]["title"], "Akagi · 4p-x");
         let item = &meta["show"]["items"][0];
         assert_eq!(item["label"], "Discard");
+        assert_eq!(item["type"], "dahai");
         assert_eq!(item["pais"][0], "W");
         assert_eq!(item["value"], "83%");
+    }
+
+    /// Each row says which mjai event it stands for, so pacing can tell a
+    /// runner-up *discard* from a button (`autoplay::delay::probs::runner_up`).
+    /// An API `kan` row names no single kan kind and carries no type.
+    #[test]
+    fn show_items_carry_their_mjai_type_where_the_label_names_one() {
+        let ev = MjaiEvent::Dahai {
+            actor: 0,
+            pai: "5p".into(),
+            tsumogiri: false,
+        };
+        let cands = vec![
+            Candidate {
+                action: "dahai:5p".into(),
+                prob: 0.5,
+            },
+            Candidate {
+                action: "dahai:1m".into(),
+                prob: 0.3,
+            },
+            Candidate {
+                action: "kan".into(),
+                prob: 0.1,
+            },
+            Candidate {
+                action: "none".into(),
+                prob: 0.1,
+            },
+        ];
+        let meta = build_show_meta_mjai(&ev, &cands, "Akagi · Online").unwrap();
+        let items = meta["show"]["items"].as_array().unwrap();
+        assert_eq!(items[0]["type"], "dahai");
+        assert_eq!(items[1]["type"], "dahai");
+        assert!(items[2].get("type").is_none(), "{:?}", items[2]);
+        assert_eq!(items[3]["type"], "none");
+        let read = crate::autoplay::delay::probs::candidates(Some(&meta));
+        assert_eq!(
+            crate::autoplay::delay::probs::runner_up(&read, "5p"),
+            Some("1m")
+        );
     }
 
     /// The card title names the API model that served the decision: the
@@ -2020,6 +2087,7 @@ mod tests {
         let items = meta["show"]["items"].as_array().unwrap();
         assert_eq!(items.len(), 2, "both the pass and the pon it beat");
         assert_eq!(items[0]["label"], "Pass");
+        assert_eq!(items[0]["type"], "none");
         assert_eq!(items[0]["value"], "90%");
         assert!(
             items[0].get("pais").is_none(),

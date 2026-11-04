@@ -134,6 +134,7 @@ fn push_pre_delay(steps: &mut Vec<Step>, ctx: &ActionContext, kind: DecisionKind
             .unwrap_or(0),
         legal_action_count: ctx.legal_actions.len(),
         probs: ctx.probs,
+        reading: ctx.reading,
         // Tenhou never states its allowance on the wire, but it very much
         // has one: overrun it and the client auto-discards, which is how the
         // first live run lost every turn. Feed the lobby's standard clock in
@@ -746,6 +747,7 @@ mod tests {
             delay_cfg: crate::config::DelayModelConfig::default(),
             budget: None,
             probs: None,
+            reading: Default::default(),
             delay_script: None,
             tenhou: Some(&st),
         };
@@ -804,6 +806,7 @@ mod tests {
             delay_cfg: crate::config::DelayModelConfig::default(),
             budget: None,
             probs: None,
+            reading: Default::default(),
             delay_script: None,
             tenhou: Some(&st),
         };
@@ -849,6 +852,7 @@ mod tests {
             delay_cfg: crate::config::DelayModelConfig::default(),
             budget: None,
             probs: None,
+            reading: Default::default(),
             delay_script: None,
             tenhou: Some(&st),
         };
@@ -894,6 +898,7 @@ mod tests {
             delay_cfg: crate::config::DelayModelConfig::default(),
             budget: None,
             probs: None,
+            reading: Default::default(),
             delay_script: None,
             tenhou: Some(&st),
         };
@@ -971,6 +976,7 @@ mod tests {
             delay_cfg: crate::config::DelayModelConfig::default(),
             budget: None,
             probs: None,
+            reading: Default::default(),
             delay_script: None,
             tenhou: Some(&st),
         };

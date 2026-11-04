@@ -227,6 +227,8 @@ Each item in `items`:
 | `value` | string?   | Right-aligned text — any format, e.g. `"85.42%"`, `"+12000"`.                       |
 | `color` | string?   | Hex accent, e.g. `"#00ff80"` — drawn as a left bar + faint row tint.                |
 | `note`  | string?   | Small subtitle under `label`.                                                      |
+| `prob`  | number?   | Not drawn. The row's raw probability (0..1), which autoplay's delay scripts read as `ctx.top_prob` / `ctx.second_prob`. |
+| `type`  | string?   | Not drawn. The mjai event the row stands for (`"dahai"`, `"reach"`, `"pon"`, `"none"`, …); with `prob`, lets delay scripts find the runner-up discard. |
 
 ## Frontend toast notifications
 

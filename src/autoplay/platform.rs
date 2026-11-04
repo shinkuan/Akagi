@@ -5,7 +5,7 @@
 //! later (DOM-based clicks or direct WS inject) without touching the
 //! manager's bus subscription / timing logic.
 
-use crate::autoplay::delay::{BudgetSnapshot, DecisionProbs};
+use crate::autoplay::delay::{BudgetSnapshot, DecisionProbs, Reading};
 use crate::config::{DelayModelConfig, MajsoulAutoplayConfig};
 use crate::game_state::snapshot::GameStateSnapshot;
 use crate::schema::MjaiEvent;
@@ -103,6 +103,11 @@ pub struct ActionContext<'a> {
     /// Normalized bot confidence for this decision, if the bot's meta
     /// could be interpreted (see `autoplay::delay::probs`).
     pub probs: Option<DecisionProbs>,
+    /// Table facts and the second opinion on this decision (see
+    /// `autoplay::delay::Reading`), read by the manager from the tracked
+    /// game state the same way on every platform. Delay scripts only; never
+    /// the action.
+    pub reading: Reading,
     /// User Lua delay policy, when loaded. Consulted by the delay model;
     /// on any script failure the built-in policy runs instead.
     pub delay_script: Option<&'a crate::autoplay::delay::DelayScript>,

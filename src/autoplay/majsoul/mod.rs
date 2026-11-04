@@ -322,6 +322,7 @@ fn push_pre_delay(
             .unwrap_or(0),
         legal_action_count: ctx.legal_actions.len(),
         probs: ctx.probs,
+        reading: ctx.reading,
         budget: ctx.budget,
         click_overhead_ms,
         cfg,
@@ -832,6 +833,7 @@ mod tests {
             delay_cfg: crate::config::DelayModelConfig::default(),
             budget: None,
             probs: None,
+            reading: Default::default(),
             delay_script: None,
             tenhou: None,
         }
