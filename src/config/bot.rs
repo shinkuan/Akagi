@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Everything defaults empty / disabled so a fresh install uses the fully
 /// offline local model until the user opts in and pastes a key.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NativeApiConfig {
     /// Route built-in-bot decisions through the remote API. Ignored unless a
@@ -81,6 +81,44 @@ impl Default for NativeApiConfig {
     }
 }
 
+/// Written by hand rather than derived: the whole config is logged at
+/// startup, and logs get attached to bug reports. The key shows only its
+/// length, and credentials in a URL (`socks5://user:pass@host`) are masked;
+/// every other field prints as stored.
+impl std::fmt::Debug for NativeApiConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = if self.key.is_empty() {
+            String::new()
+        } else {
+            format!("<hidden, {} chars>", self.key.chars().count())
+        };
+        f.debug_struct("NativeApiConfig")
+            .field("enabled", &self.enabled)
+            .field("base_url", &mask_userinfo(&self.base_url))
+            .field("key", &key)
+            .field("model_4p", &self.model_4p)
+            .field("model_3p", &self.model_3p)
+            .field("proxy_enabled", &self.proxy_enabled)
+            .field("proxy", &mask_userinfo(&self.proxy))
+            .field("react_timeout_ms", &self.react_timeout_ms)
+            .finish()
+    }
+}
+
+/// `url` with any `user:pass@` in front of its host replaced by `***@`.
+/// A missing scheme is fine (`user:pass@host:port`); an `@` past the host,
+/// in the path or query, is left alone.
+fn mask_userinfo(url: &str) -> std::borrow::Cow<'_, str> {
+    let start = url.find("://").map_or(0, |i| i + 3);
+    let host_end = url[start..]
+        .find(['/', '?', '#'])
+        .map_or(url.len(), |i| start + i);
+    match url[start..host_end].rfind('@') {
+        Some(at) => format!("{}***{}", &url[..start], &url[start + at..]).into(),
+        None => url.into(),
+    }
+}
+
 impl NativeApiConfig {
     /// True only when the API path is fully configured (opted in with both a
     /// server URL and a key). The manager uses this to decide whether to build
@@ -139,6 +177,57 @@ mod tests {
         // Enabled: the trimmed value is used.
         cfg.proxy_enabled = true;
         assert_eq!(cfg.effective_proxy(), "socks5://127.0.0.1:1080");
+    }
+
+    /// Regression: the startup log printed the whole config, API key
+    /// included, and logs get attached to bug reports.
+    #[test]
+    fn debug_output_hides_the_key_and_proxy_credentials() {
+        let api = NativeApiConfig {
+            key: "FAKEfakeFAKEfakeFAKEfakeFAKEfake".to_string(),
+            proxy: "socks5h://someone:hunter2@127.0.0.1:1080".to_string(),
+            ..Default::default()
+        };
+        let shown = format!("{api:?}");
+        assert!(!shown.contains("FAKEfake"), "{shown}");
+        assert!(!shown.contains("someone"), "{shown}");
+        assert!(!shown.contains("hunter2"), "{shown}");
+        assert!(shown.contains("<hidden, 32 chars>"), "{shown}");
+        assert!(shown.contains("socks5h://***@127.0.0.1:1080"), "{shown}");
+
+        // The startup line prints the whole app config.
+        let app = crate::config::AppConfig {
+            bot: BotConfig {
+                api,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let shown = format!("{app:?}");
+        assert!(!shown.contains("FAKEfake"), "{shown}");
+        assert!(!shown.contains("hunter2"), "{shown}");
+    }
+
+    #[test]
+    fn mask_userinfo_touches_only_credentials() {
+        assert_eq!(mask_userinfo(""), "");
+        assert_eq!(
+            mask_userinfo("https://mjapi.example"),
+            "https://mjapi.example"
+        );
+        assert_eq!(
+            mask_userinfo("http://127.0.0.1:8080/"),
+            "http://127.0.0.1:8080/"
+        );
+        assert_eq!(
+            mask_userinfo("https://host/a@b?c=@d"),
+            "https://host/a@b?c=@d"
+        );
+        assert_eq!(
+            mask_userinfo("http://u:p@host:3128"),
+            "http://***@host:3128"
+        );
+        assert_eq!(mask_userinfo("u:p@host:1080"), "***@host:1080");
     }
 
     #[test]
