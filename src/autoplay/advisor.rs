@@ -299,6 +299,7 @@ mod tests {
             scores: vec![start; num_players as usize],
             tehais,
             num_players,
+            catch_up: 0,
         }
     }
 

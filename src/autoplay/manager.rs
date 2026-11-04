@@ -1391,6 +1391,7 @@ mod tests {
                 scores: vec![25000; 4],
                 tehais: vec![hand, hidden.clone(), hidden.clone(), hidden],
                 num_players: 4,
+                catch_up: 0,
             },
             MjaiEvent::Tsumo {
                 actor: 0,
