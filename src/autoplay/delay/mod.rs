@@ -31,7 +31,10 @@ pub mod probs;
 pub mod script;
 
 pub use probs::DecisionProbs;
-pub use script::{refresh_outdated_default, DelayScript, ScriptHost};
+pub use script::{
+    default_version, refresh_outdated_default, replace_with_default, script_state, DelayScript,
+    ScriptHost, ScriptState,
+};
 
 use crate::config::{DelayDistribution, DelayModelConfig, MajsoulAutoplayConfig};
 use rand::Rng;
@@ -198,6 +201,11 @@ pub struct DelayInput<'a> {
 pub struct DelayDecision {
     pub total_target_ms: u32,
     pub allow_bank: bool,
+    /// Decided by `delay.lua`, which owns the whole computation — floors and
+    /// caps included — so the caller adds nothing on top. `false` for the
+    /// built-in model, whose result the caller still holds to the
+    /// functional floor after deducting the click overhead.
+    pub from_script: bool,
 }
 
 /// The built-in delay policy. Pure given `rng`.
@@ -236,6 +244,7 @@ pub fn decide<R: Rng + ?Sized>(input: &DelayInput, rng: &mut R) -> DelayDecision
     DelayDecision {
         total_target_ms: target,
         allow_bank,
+        from_script: false,
     }
 }
 

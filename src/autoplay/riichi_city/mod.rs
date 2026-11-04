@@ -144,9 +144,15 @@ fn pre_delay(ctx: &ActionContext, kind: DecisionKind) -> u32 {
         .filter(|_| !legacy)
         .and_then(|s| s.try_decide(&input))
         .unwrap_or_else(|| delay::decide(&input, &mut rand::rng()));
-    decision
-        .total_target_ms
-        .max(delay::functional_floor(&input))
+    // A script's answer is final (it owns the floor); the built-in model's
+    // is held to the functional floor.
+    if decision.from_script {
+        decision.total_target_ms
+    } else {
+        decision
+            .total_target_ms
+            .max(delay::functional_floor(&input))
+    }
 }
 
 #[cfg(test)]

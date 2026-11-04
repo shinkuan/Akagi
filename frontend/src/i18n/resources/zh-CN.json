@@ -480,7 +480,7 @@
       "delay_mode_legacy": "旧版（固定随机延迟）",
       "delay_mode_lua_help": "延迟由配置文件旁的 delay.lua 决定，首次使用时会自动生成一份以段位战实测数据校准的拟真人模型。可自由编辑，保存即热重载；删除文件即可还原默认。脚本出错时由内置模型接管。",
       "min_delay": "最小延迟（ms）",
-      "min_delay_hint": "所有动作的安全下限：雀魂需要时间渲染画面，过早点击会被吃掉。两种模式均适用，脚本无法低于这次抽到的下限。",
+      "min_delay_hint": "所有动作的安全下限：雀魂需要时间渲染画面，过早点击会被吃掉。每次决策抽一个值；Lua 模式下这个值交给 delay.lua 处理（默认脚本会套用），旧版模式由 Akagi 套用。",
       "min_button_delay": "按钮最小延迟（ms）",
       "min_button_delay_hint": "吃/碰/杠/和/跳过/立直等按钮的更高下限——按钮要等打牌动画结束加上自身弹出动画才会出现，比手牌渲染更晚。若仍出现按钮没点到的情况请调高此值。"
     },
@@ -858,6 +858,16 @@
       "clear_skipped": "清除跳过记录",
       "none_skipped": "无"
     }
+  },
+  "delay_script_update": {
+    "title": "delay.lua 有新的默认版本",
+    "body": "这次更新带来新的默认 delay.lua，但你的 delay.lua 修改过，所以没有自动替换。要换成新的默认吗？原来的文件会先备份在同一个文件夹。这个问题只会问一次。",
+    "note": "delay.lua 负责完整的思考时间计算，包括最小延迟和不超过服务器的时间上限，Akagi 不会再额外套用。如果保留自己的脚本，请确认它处理了这些。",
+    "replace": "换成新的默认",
+    "keep": "保留我的",
+    "replaced": "已换成新的默认 delay.lua",
+    "backup": "原来的文件备份在 {{path}}",
+    "failed": "无法替换 delay.lua"
   },
   "announcements": {
     "akagims": {

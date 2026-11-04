@@ -215,12 +215,22 @@ Layers, in order:
    more: a floor on the true figure.
 2. **Budget caps** (`budget_cap`) — `soft = time_fixed - safety_margin -
    click_overhead`; `hard = soft + bounded bank spend`, bank only when
-   the policy returned `allow_bank`. Unconditional: overrunning the
-   window means the client auto-discards.
+   the policy allows it. Overrunning the window means the client
+   auto-discards.
 3. **Functional floors** (`functional_floor`) — `min_delay_ms` (Mahjong
    Soul must render buttons/tiles before a click can land; too-early
    clicks are silently lost) and the dealing-animation wait. Applied
-   after the caps; a script cannot go below them.
+   after the caps.
+
+Layers 2 and 3 are the **built-in model's** (legacy mode, and a script
+that failed). In Lua mode the script owns the whole computation: it gets
+every timing setting as this decision drew it (`ctx.settings`), whether
+the decision presses a button (`ctx.button`) and how long the presses
+take (`ctx.click_ms`), and Akagi adds nothing to its answer — no floor,
+no cap; only a `delay_ms` outside `0..=600000` (or an error) falls back
+to the built-in model. The bundled `delay.lua` applies the same caps and
+floors at its end (`within_limits`), to the same effect as when the host
+did: `max(min(think, cap), floor + click_ms)`.
 
 Every timing setting — the two floors, the dealing-animation wait, hover,
 hold, the gap between staged clicks and the input-verification wait — is
@@ -238,8 +248,18 @@ The policy's output is the target **server-observed total** for the
 window. `majsoul::push_pre_delay` converts it to a sleep by deducting
 both the time already elapsed (network + bot inference, from the budget
 snapshot) and the upcoming click sequence's own duration (hover + hold +
-candidate clicks), then re-applies the functional floor so the first
-click still lands after the UI is ready.
+candidate clicks). For the built-in model it then re-applies the
+functional floor so the first click still lands after the UI is ready; a
+script's answer already accounts for that.
+
+**An edited `delay.lua` after an update.** An untouched older default is
+replaced at startup (above). An edited one never is without asking: the
+frontend asks `delay_script_status` at startup and, when the script is
+`modified` and the user has not been asked about this bundled default
+(`version`, a hash of it, remembered in the webview's `localStorage`),
+offers the new default once (`DelayScriptUpdateDialog`). Replacing goes
+through `replace_delay_script`, which keeps the old file as
+`delay.lua.<timestamp>.bak` beside it.
 
 ### What a script can read besides the bot's numbers (`delay::Reading`)
 
@@ -259,6 +279,9 @@ City scripts see the same fields.
 | `ctx.human_top` / `ctx.human_second` | `advisor.rs` | The built-in bot's shares for its two likeliest moves. |
 | `ctx.human_chosen` | `advisor.rs` | Its share for the move actually being made. |
 | `ctx.entropy` | `probs.rs` | Spread of the *playing* bot's listed candidates, in nats (see above). |
+| `ctx.button` | `DecisionKind::clicks_action_button` | The decision presses an action button, which the client shows later than the hand (so its own floor). |
+| `ctx.click_ms` | the planner's click overhead | How long the presses take after the delay; Akagi deducts it from the sleep. `0` off Mahjong Soul. |
+| `ctx.settings` | `MajsoulAutoplayConfig` / `DelayModelConfig`, drawn | Every timing setting as this decision drew it: `min_delay_ms`, `min_button_delay_ms`, `dealer_opening_ms`, `hover_ms`, `hold_ms`, `inter_click_ms`, `verify_ms`, `pre_click_min_ms`/`pre_click_max_ms`, and what the caps are computed from: `safety_margin_ms`, `bank_use_fraction`, `bank_max_single_ms`, `no_budget_cap_ms`. |
 
 - **The table** (`table.rs`). Two loose tiles at even odds are an order to
   throw them in, not a question; a live tile against a riichi is one however
@@ -316,8 +339,9 @@ probabilities and the reading — what to measure a script's tables from.
   distinct error. A missing script file is a normal state, not an error.
 - Hot reload by mtime+size; a broken file is not recompiled until it
   changes.
-- The script decides *when*, never *what*: it gets no coordinates, no
-  action choice, and its output is clamped by caps and floors.
+- The script decides *when*, never *what*: it gets no coordinates and no
+  action choice. Its `delay_ms` is used as given (within `0..=600000`):
+  the floors and caps are the script's to apply.
 
 ## Time budget flow
 

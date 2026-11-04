@@ -31,22 +31,20 @@
 --    is not loose. And a tile that is not safe against a riichi takes
 --    longer than one that is.
 --
--- decide_delay(ctx) returns { delay_ms = <number>, allow_bank = <bool> }.
+-- decide_delay(ctx) returns { delay_ms = <number> }.
 --
 -- delay_ms is the target TOTAL thinking time for the decision window —
 -- the time the SERVER observes between offering the decision and
 -- receiving the action. It is NOT a sleep length: Akagi subtracts
--- whatever networking and bot inference already consumed.
+-- whatever networking and bot inference already consumed, and the time
+-- the presses themselves take (ctx.click_ms).
 --
--- Akagi always enforces on top of whatever this script returns:
---   * a minimum delay (config `min_delay_ms`; the higher
---     `min_button_delay_ms` for chi/pon/kan/ron/skip/riichi buttons,
---     which render later than hand tiles) — clicks issued before the
---     UI exists are silently lost
---   * the dealing-animation wait on the dealer's opening discard
---   * the server time budget — autoplay can never run into an
---     auto-discard; the extra time bank is only spent when this script
---     returns allow_bank = true
+-- This script is the whole computation: Akagi adds nothing to what it
+-- returns. The limits at the end of this file — no press before the client
+-- can take it, no running into the client's auto-discard — are applied
+-- here, from the values in ctx.settings. Keep them if you rewrite the rest.
+-- (A delay_ms outside 0..600000, or an error, makes Akagi use its built-in
+-- model for that decision instead.)
 --
 -- Context passed to decide_delay:
 --   ctx.action          "dahai" | "reach" | "chi" | "pon" | "daiminkan"
@@ -77,6 +75,20 @@
 --                       shares for its likeliest moves and for the move
 --                       being made; nil with no second opinion
 --   ctx.budget          { fixed_ms, add_ms, elapsed_ms } or nil
+--   ctx.button          this decision presses an action button
+--                       (chi/pon/kan/ron/tsumo/skip/riichi/kita), which the
+--                       client shows later than the hand
+--   ctx.click_ms        how long the presses take after the delay, ms
+--   ctx.settings        the timing settings, every range drawn afresh for
+--                       this decision (ms unless noted):
+--     min_delay_ms, min_button_delay_ms   the earliest a press may land
+--     dealer_opening_ms   the deal's length on the dealer's opening discard
+--     hover_ms, hold_ms, inter_click_ms, verify_ms   how the presses go
+--     pre_click_min_ms, pre_click_max_ms   the legacy uniform think range
+--     safety_margin_ms    kept free at the end of the server's window
+--     bank_use_fraction, bank_max_single_ms   how much of the time bank a
+--                         decision that may use it gets (fraction, ms)
+--     no_budget_cap_ms    the limit when the server states no window (0: none)
 --   ctx.rng()           uniform random in [0, 1)
 --   ctx.lognormal(mu, sigma)  log-normal sample in SECONDS
 
@@ -112,8 +124,9 @@ local DEAL_LAG = 0.3
 -- window, counted from the opening as delay_ms is, runs that much longer. A
 -- second of it is used.
 local DEAL_UNCOUNTED_S = 1.0
--- Akagi caps the window at fixed_ms less its safety margin and the click's
--- own time; an opening think past this needs allow_bank to keep its length.
+-- The window's limit below is fixed_ms less the safety margin and the
+-- presses' own time; an opening think past this needs the bank to keep its
+-- length.
 local DEAL_CUTOFF_S = 2.0
 
 -- A tile thrown against a riichi: longer when it is not safe.
@@ -183,6 +196,48 @@ local function clearing(ctx)
     and ctx.runner_up_loose ~= false
 end
 
+-- THE LIMITS. Akagi adds nothing to what decide_delay returns, so this is
+-- where a press is kept from landing before the client takes it and a
+-- decision from running into the client's auto-discard.
+
+-- The earliest the presses may start, ms: the client draws the hand before
+-- it takes a press on a tile, the action buttons later still, and on the
+-- dealer's opening discard nothing until the deal is laid out.
+local function floor_ms(ctx, s)
+  local floor = s.min_delay_ms
+  if ctx.button then floor = math.max(floor, s.min_button_delay_ms) end
+  if ctx.dealer_opening then floor = math.max(floor, s.dealer_opening_ms) end
+  return floor
+end
+
+-- The latest the action may reach the server, ms, or nil for no limit. The
+-- server gives fixed_ms per decision and a bank (add_ms) that refills each
+-- hand; a decision allowed the bank gets a bounded share of it. The safety
+-- margin covers the network, and the presses' own time comes off too.
+local function limit_ms(ctx, s, floor, bank)
+  if ctx.budget == nil then
+    if s.no_budget_cap_ms == 0 then return nil end
+    -- Never below what the legacy think range alone could produce.
+    return math.max(s.no_budget_cap_ms, s.pre_click_max_ms + floor)
+  end
+  local soft = math.max(ctx.budget.fixed_ms - s.safety_margin_ms - ctx.click_ms, 0)
+  if not bank then return soft end
+  return soft + math.min(ctx.budget.add_ms * clamp(s.bank_use_fraction, 0, 1),
+                         s.bank_max_single_ms)
+end
+
+-- The think, in seconds, held to the limits. The floor wins over the
+-- limit: a press before the client takes it is lost outright, which is
+-- worse than eating into the window.
+local function within_limits(ctx, think_s, bank)
+  local s = ctx.settings
+  local floor = floor_ms(ctx, s)
+  local ms = think_s * 1000
+  local limit = limit_ms(ctx, s, floor, bank)
+  if limit ~= nil then ms = math.min(ms, limit) end
+  return { delay_ms = math.max(ms, floor + ctx.click_ms) }
+end
+
 -- The share of decisions no harder than this one, 0..1: where what people
 -- would do puts it, or anywhere with no second opinion.
 local function place(ctx)
@@ -203,7 +258,7 @@ function decide_delay(ctx)
 
   if ctx.in_riichi then
     -- Only call windows arrive in riichi; a glance and a pass.
-    return { delay_ms = drawn(OTHER.in_riichi) * 1000 }
+    return within_limits(ctx, drawn(OTHER.in_riichi), false)
   end
 
   local think
@@ -278,12 +333,12 @@ function decide_delay(ctx)
       end
     end
     -- The opening's window is counted from the moment it opens and cut off
-    -- before the free window above ends: past that, Akagi has to be told
-    -- the time may run on.
+    -- before the free window above ends: past that, the time has to be
+    -- allowed to run on into the bank.
     if ctx.dealer_opening and think > ctx.budget.fixed_ms / 1000 - DEAL_CUTOFF_S then
       allow_bank = true
     end
   end
 
-  return { delay_ms = think * 1000, allow_bank = allow_bank }
+  return within_limits(ctx, think, allow_bank)
 end

@@ -480,7 +480,7 @@
       "delay_mode_legacy": "Legacy (fixed random delay)",
       "delay_mode_lua_help": "Delays come from delay.lua next to the config file, generated with a human-like model calibrated against ranked-game data on first use. Edit it freely — it hot-reloads on save; delete it to restore the default. If the script errors, a built-in model takes over.",
       "min_delay": "Minimum delay (ms)",
-      "min_delay_hint": "Safety floor for every action: Mahjong Soul needs time to render the UI, and a click issued too early is silently lost. Applies in both modes; the script cannot go below the floor drawn for that decision.",
+      "min_delay_hint": "Safety floor for every action: Mahjong Soul needs time to render the UI, and a click issued too early is silently lost. Each decision draws its own value; in Lua mode it is handed to delay.lua, which applies it (the default script does), in legacy mode Akagi applies it.",
       "min_button_delay": "Minimum button delay (ms)",
       "min_button_delay_hint": "Higher floor for chi/pon/kan/ron/skip/riichi buttons — they appear only after the discard animation plus their own pop-in, later than hand tiles. Raise this if buttons are still missing clicks."
     },
@@ -858,6 +858,16 @@
       "clear_skipped": "Clear skipped version",
       "none_skipped": "None"
     }
+  },
+  "delay_script_update": {
+    "title": "New default delay.lua",
+    "body": "This update ships a new default delay.lua, but yours has been edited, so it was not replaced. Replace it with the new default? Your file is backed up in the same folder first. You will only be asked once.",
+    "note": "delay.lua does the whole thinking-time computation, including the minimum delay and staying inside the server's time limit — Akagi no longer adds those on top. If you keep your own script, make sure it handles them.",
+    "replace": "Use the new default",
+    "keep": "Keep mine",
+    "replaced": "delay.lua replaced with the new default",
+    "backup": "Your file was backed up to {{path}}",
+    "failed": "Could not replace delay.lua"
   },
   "announcements": {
     "akagims": {

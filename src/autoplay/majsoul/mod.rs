@@ -362,9 +362,14 @@ fn push_pre_delay(
     };
     // The overhead deduction must not undercut UI readiness: the first
     // click still has to land after the functional floor. Time already
-    // elapsed in the window counts toward that floor.
+    // elapsed in the window counts toward that floor. A script's answer
+    // already accounts for that (it owns the floor and sees `click_ms`).
     let elapsed = ctx.budget.map_or(0, |b| b.elapsed_ms);
-    let sleep = sleep.max(delay::functional_floor(&input).saturating_sub(elapsed));
+    let sleep = if decision.from_script {
+        sleep
+    } else {
+        sleep.max(delay::functional_floor(&input).saturating_sub(elapsed))
+    };
     steps.push(Step::Sleep { duration_ms: sleep });
 }
 
@@ -1203,12 +1208,40 @@ mod tests {
         );
     }
 
-    /// The overhead deduction must not undercut UI readiness: a target
-    /// sitting on the functional floor keeps its full pre-click pause.
+    /// The built-in model's target is held to the floor after the overhead
+    /// deduction: a target sitting on the functional floor keeps its full
+    /// pre-click pause.
     #[test]
     fn overhead_deduction_keeps_ui_floor() {
+        let snap = snapshot_with_hand(0, vec!["1m", "2m", "3m"]);
+        let act = MjaiEvent::Dahai {
+            actor: 0,
+            pai: "3m".into(),
+            tsumogiri: false,
+        };
+        let mut cfg_ref = cfg();
+        cfg_ref.hover_delay_ms = crate::config::MsRange::fixed(200);
+        cfg_ref.click_hold_ms = crate::config::MsRange::fixed(100);
+        let ctx = ctx_for(&act, &snap, &[], Some("1m"), None, false, &cfg_ref);
+        let floor = ctx.delay_cfg.min_delay_ms.ms();
+
+        let result = MajsoulAutoplay::new().plan(&ctx);
+        assert!(
+            matches!(
+                result.steps.first(),
+                Some(Step::Sleep { duration_ms }) if *duration_ms == floor
+            ),
+            "sleep must not dip below the UI-readiness floor: {:?}",
+            result.steps.first()
+        );
+    }
+
+    /// A script's answer is final: it owns the floor (and sees the presses'
+    /// time as `click_ms`), so its target less the overhead is the sleep.
+    #[test]
+    fn a_scripts_answer_is_slept_as_is() {
         let script = crate::autoplay::delay::DelayScript::compile(
-            "function decide_delay(ctx) return { delay_ms = 0 } end",
+            "function decide_delay(ctx) return { delay_ms = 1000 + ctx.click_ms } end",
             "test",
         )
         .unwrap();
@@ -1222,16 +1255,15 @@ mod tests {
         cfg_ref.hover_delay_ms = crate::config::MsRange::fixed(200);
         cfg_ref.click_hold_ms = crate::config::MsRange::fixed(100);
         let mut ctx = ctx_for(&act, &snap, &[], Some("1m"), None, false, &cfg_ref);
+        ctx.delay_cfg.min_delay_ms = crate::config::MsRange::fixed(5000);
         ctx.delay_script = Some(&script);
-        let floor = ctx.delay_cfg.min_delay_ms.ms();
-
         let result = MajsoulAutoplay::new().plan(&ctx);
         assert!(
             matches!(
                 result.steps.first(),
-                Some(Step::Sleep { duration_ms }) if *duration_ms == floor
+                Some(Step::Sleep { duration_ms: 1000 })
             ),
-            "sleep must not dip below the UI-readiness floor: {:?}",
+            "no floor added to a script's answer: {:?}",
             result.steps.first()
         );
     }
