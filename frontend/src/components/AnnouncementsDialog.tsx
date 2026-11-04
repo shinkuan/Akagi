@@ -39,6 +39,7 @@ export function AnnouncementsDialog() {
   // the store's armed/seen state is global, so the ref is just belt and
   // braces against double-arming the timer under StrictMode).
   const fired = useRef(false)
+  const gotIt = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (fired.current) return
@@ -55,7 +56,15 @@ export function AnnouncementsDialog() {
       {/* Wider than the standard dialogs to fit screenshots and two-column
           feature grids; the middle grid row scrolls so the dialog itself
           never grows past the window. */}
-      <DialogContent className="sm:max-w-4xl max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto]">
+      <DialogContent
+        className="sm:max-w-4xl max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto]"
+        // Focus "Got it" rather than the first row: a row focused on open
+        // shows a focus frame, as if it had been selected.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          gotIt.current?.focus()
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t('announcements.dialog.title')}</DialogTitle>
           <DialogDescription>{t('announcements.dialog.intro')}</DialogDescription>
@@ -74,7 +83,7 @@ export function AnnouncementsDialog() {
           >
             {t('announcements.dialog.all_releases')}
           </Button>
-          <Button size="sm" onClick={close}>
+          <Button ref={gotIt} size="sm" onClick={close}>
             {t('announcements.dialog.got_it')}
           </Button>
         </DialogFooter>
@@ -119,19 +128,23 @@ function AnnouncementRow({
   // display one day off west of Greenwich).
   const date = new Date(`${entry.date}T00:00:00`).toLocaleDateString(i18n.language)
   return (
-    <li className="rounded-lg border border-border">
+    // Surfaces are mixed from the foreground rather than taken from the
+    // theme's muted / border colours: in the dark themes those sit within a
+    // few percent of the dialog's own background, so rows, badges and icon
+    // tiles would not stand out from it.
+    <li className="rounded-lg border border-foreground/15 bg-foreground/[0.05]">
       <button
         type="button"
         aria-expanded={expanded}
         onClick={onToggle}
-        className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-muted/50"
+        className="flex w-full items-center gap-3 rounded-lg p-3 text-left outline-none hover:bg-foreground/[0.06] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {entry.version ? (
-          <span className="shrink-0 rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-xs font-semibold">
+          <span className="shrink-0 rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-xs font-semibold">
             v{entry.version}
           </span>
         ) : (
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-foreground/10">
             <Megaphone className="size-3.5" />
           </span>
         )}
@@ -148,12 +161,12 @@ function AnnouncementRow({
       </button>
 
       {expanded && (
-        <div className="grid gap-4 border-t border-border p-3">
+        <div className="grid gap-4 border-t border-foreground/10 p-3">
           {entry.image && (
             <img
               src={entry.image}
               alt={t(`announcements.entries.${entry.id}.image_alt`)}
-              className="w-full rounded-md border border-border"
+              className="w-full rounded-md border border-foreground/10"
             />
           )}
           <ul className="grid gap-3 sm:grid-cols-2">
@@ -161,7 +174,7 @@ function AnnouncementRow({
               const Icon = f.icon
               return (
                 <li key={f.key} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/10 text-foreground">
                     <Icon className="size-4" />
                   </span>
                   <div className="min-w-0">
