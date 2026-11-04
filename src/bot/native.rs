@@ -1112,6 +1112,7 @@ mod tests {
             scores: vec![25000, 25000, 25000, 25000],
             tehais: vec![hand.clone(), hand.clone(), hand.clone(), hand],
             num_players: 4,
+            catch_up: 0,
         }
     }
 
@@ -1138,6 +1139,7 @@ mod tests {
                 hidden,
             ],
             num_players: 4,
+            catch_up: 0,
         }
     }
 
@@ -1838,6 +1840,7 @@ mod tests {
             scores: vec![25000, 25000, 25000, 25000],
             tehais: vec![hand13(), hand13(), hand13(), hand13()],
             num_players: 4,
+            catch_up: 0,
         };
         let v = to_api_event(&sk, 2, 4);
         assert_eq!(v["type"], "start_kyoku");
@@ -1902,6 +1905,7 @@ mod tests {
             scores: vec![35000, 35000, 35000],
             tehais: vec![hand13(), hand13(), hand13()],
             num_players: 3,
+            catch_up: 0,
         };
         let v = to_api_event(&sk, 0, 3);
         assert_eq!(v["scores"].as_array().unwrap().len(), 4);

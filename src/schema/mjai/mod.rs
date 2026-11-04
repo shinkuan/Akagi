@@ -94,6 +94,13 @@ pub enum MjaiEvent {
         /// deserialization of pre-3p log lines.
         #[serde(default = "default_num_players")]
         num_players: u8,
+        /// Not mjai; never serialized. How many of the events after this one
+        /// restate a hand that was already under way when this flow joined
+        /// it (a reconnect rebuilt from a snapshot) rather than happen now.
+        /// The bot manager hands them to the bot as one batch instead of
+        /// asking it about turns that are long over. 0 for a live hand.
+        #[serde(skip, default)]
+        catch_up: usize,
     },
 
     Tsumo {

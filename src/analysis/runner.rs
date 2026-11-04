@@ -164,6 +164,7 @@ mod tests {
                 one_hand,
             ],
             num_players: 4,
+            catch_up: 0,
         }
     }
 

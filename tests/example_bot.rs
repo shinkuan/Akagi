@@ -108,6 +108,7 @@ fn start_kyoku(my_seat: u8, my_tehai: [String; 13]) -> MjaiEvent {
         scores: vec![25000, 25000, 25000, 25000],
         tehais,
         num_players: 4,
+        catch_up: 0,
     }
 }
 

@@ -511,6 +511,7 @@ mod tests {
                 one_hand,
             ],
             num_players: 4,
+            catch_up: 0,
         }
     }
 
@@ -534,6 +535,7 @@ mod tests {
             scores: vec![25_000, 25_000, 25_000, 25_000],
             tehais: vec![ours, hidden.clone(), hidden.clone(), hidden],
             num_players: 4,
+            catch_up: 0,
         }
     }
 
@@ -658,6 +660,7 @@ mod tests {
             scores: vec![25_000, 25_000, 25_000, 25_000],
             tehais: vec![ours, hidden.clone(), hidden.clone(), hidden.clone()],
             num_players: 4,
+            catch_up: 0,
         })
         .unwrap();
         // Seat 2 throws a 5s; seat 1 pons it.

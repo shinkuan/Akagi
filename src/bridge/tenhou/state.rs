@@ -53,13 +53,17 @@ pub struct State {
     /// Emission is deferred to `<INIT/>` so we know yonma vs sanma (via the
     /// 0-score slot) and can stamp `num_players` correctly on `start_game`.
     pub pending_start_game: bool,
-    /// True between a `<REINIT/>` and the next `<INIT/>`: this flow attached
-    /// to a kyoku already in progress and has no event history for it, so
+    /// True from a `<REINIT/>` whose hand could not be rebuilt (or whose
+    /// rebuilt history live play contradicted) until the next `<INIT/>`:
+    /// this flow has no coherent event history for the kyoku in progress, so
     /// nothing it parses can be turned into a coherent mjai stream until the
     /// next kyoku starts. Handlers still run (autoplay reads the hand and
     /// window from here) but their events are dropped — see
     /// `TenhouBridge::dispatch`.
     pub suspended: bool,
+    /// Set by a `<REINIT/>` whose hand was rebuilt (see [`super::rebuild`]):
+    /// who the first live action should come from. Cleared by that action.
+    pub resume: Option<super::rebuild::Next>,
     /// True from a `<REINIT/>` until the next game starts: this flow never
     /// saw the hands before the rejoin, so the game's record is incomplete
     /// and its `end_game` goes out as terminated (History drops it rather
@@ -101,6 +105,7 @@ impl Default for State {
             last_revealed_tile_actor: None,
             pending_start_game: true,
             suspended: false,
+            resume: None,
             rejoined_mid_game: false,
             go_type: None,
             lobby: None,
@@ -210,6 +215,7 @@ impl State {
         self.is_tsumo = false;
         self.last_revealed_tile_actor = None;
         self.window = None;
+        self.resume = None;
     }
 
     /// Open a decision window for our seat with the server's `t` bitmask.
