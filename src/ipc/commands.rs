@@ -710,17 +710,6 @@ fn open_path(path: &Path) -> CmdResult<()> {
         .map_err(|e| format!("open path {}: {e}", path.display()))
 }
 
-/// Opens an `http(s)://` URL in the user's default browser. Used by the
-/// first-run wizard's GitHub / Discord links and the purchase flow's PayPal
-/// approve page — Tauri 2's webview won't reliably honour `target="_blank"`
-/// without the opener plugin, so we route the click through the OS's native
-/// handler ourselves. Validates the scheme to keep this from being abused as
-/// a generic process spawn.
-///
-/// Goes through the `opener` crate (ShellExecuteW on Windows, `open` on
-/// macOS, xdg-open on Linux) rather than spawning `explorer <url>`:
-/// explorer.exe silently opens the Documents folder instead of the browser
-/// when the URL carries a query string (e.g. PayPal's `?token=...`).
 /// The `delay.lua` next to the config file, next to the bundled default:
 /// what the frontend needs to offer an edited script the new default once
 /// per default (see `autoplay::delay::script_state`).
@@ -757,6 +746,17 @@ pub async fn replace_delay_script(state: State<'_, AppState>) -> CmdResult<Optio
         .map_err(|e| format!("replace delay.lua: {e}"))
 }
 
+/// Opens an `http(s)://` URL in the user's default browser. Used by the
+/// first-run wizard's GitHub / Discord links and the purchase flow's PayPal
+/// approve page — Tauri 2's webview won't reliably honour `target="_blank"`
+/// without the opener plugin, so we route the click through the OS's native
+/// handler ourselves. Validates the scheme to keep this from being abused as
+/// a generic process spawn.
+///
+/// Goes through the `opener` crate (ShellExecuteW on Windows, `open` on
+/// macOS, xdg-open on Linux) rather than spawning `explorer <url>`:
+/// explorer.exe silently opens the Documents folder instead of the browser
+/// when the URL carries a query string (e.g. PayPal's `?token=...`).
 #[tauri::command]
 pub async fn open_external_url(url: String) -> CmdResult<()> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {

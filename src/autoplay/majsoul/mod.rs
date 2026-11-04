@@ -338,7 +338,8 @@ fn push_pre_delay(
         delay_cfg: &delay_cfg,
     };
     // User Lua policy first (falls back internally on any failure), then
-    // the built-in model. Both are bound by the same caps and floors.
+    // the built-in model. The built-in model's answer is held to the caps
+    // and floors here; a script's already holds its own.
     let decision = ctx
         .delay_script
         .filter(|_| !legacy)

@@ -20,10 +20,12 @@
 //!   [`TimeBudget`](crate::autoplay::budget::TimeBudget)) sits on top —
 //!   the sampled target is clamped so autoplay can never run the window
 //!   into an auto-discard.
-//! - A user Lua script can replace [`decide`]'s policy; functional floors
-//!   and the budget hard cap are enforced *after* the script so a
-//!   misbehaving script cannot click into an animation or overrun the
-//!   server clock.
+//! - A user Lua script can replace [`decide`]'s policy, and then owns the
+//!   whole computation: it gets every timing setting (`ctx.settings`), the
+//!   budget and the click time, and applies the functional floors and the
+//!   budget caps itself (the bundled default does). The caller adds nothing
+//!   to its answer — only a value outside the sanity range, or an error,
+//!   sends the decision to the built-in model instead.
 //!
 //! All quantities are milliseconds unless stated otherwise.
 
@@ -296,7 +298,9 @@ pub fn budget_cap(input: &DelayInput, allow_bank: bool) -> u32 {
     }
 }
 
-/// The minimum target no policy — built-in or script — may go below.
+/// The minimum target the built-in model may go below, held by the
+/// callers too after they deduct the click overhead. A delay script gets
+/// the same settings in `ctx.settings` and applies its own floor.
 ///
 /// All components are about the client UI rather than style — a click
 /// issued before the UI exists is silently lost (the reason the legacy

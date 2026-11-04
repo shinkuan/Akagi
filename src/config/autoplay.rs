@@ -92,8 +92,9 @@ pub struct DelayModelConfig {
     /// its own floor from the range. This is a functional floor, not a
     /// style knob: Mahjong Soul needs time to render tiles after the
     /// triggering frame, and a click issued before the UI exists is
-    /// silently lost. Applies in every mode and cannot be undercut by the
-    /// Lua script. A range rather than one value because every decision
+    /// silently lost. The built-in model and legacy mode apply it; in Lua
+    /// mode it goes to the script (`ctx.settings.min_delay_ms`), which
+    /// applies it itself. A range rather than one value because every decision
     /// the model aims below the floor lands *on* it — with a single value,
     /// on the same instant every time.
     #[serde(deserialize_with = "upgrade_min_delay")]
@@ -103,8 +104,8 @@ pub struct DelayModelConfig {
     /// per decision. The buttons appear only after the triggering
     /// discard's animation and their own pop-in — noticeably later than
     /// hand tiles render — so they need a higher floor than plain
-    /// discards. Applies in every mode and cannot be undercut by the Lua
-    /// script.
+    /// discards. Applied like `min_delay_ms` (in Lua mode by the script,
+    /// as `ctx.settings.min_button_delay_ms`).
     #[serde(deserialize_with = "upgrade_min_button_delay")]
     pub min_button_delay_ms: MsRange,
     /// Base distribution shape (built-in model; also the fallback when
