@@ -15,7 +15,10 @@ here so it isn't owned by a single subsystem.
   so `"type"` is always the first key. Player-shaped fields (`names`,
   `scores`, `tehais`, `deltas`) are `Vec<T>` of native length; `StartGame`
   and `StartKyoku` carry `num_players: u8` (serde default `4` for
-  backward-compat with pre-3p log lines).
+  backward-compat with pre-3p log lines). Fields marked `#[serde(skip)]`
+  (`StartGame::game_meta`, `StartKyoku::catch_up`, `EndGame`'s result) are
+  Akagi-internal: they ride the event buses but never reach a bot or a log
+  line.
 
 ## Adding a new schema
 

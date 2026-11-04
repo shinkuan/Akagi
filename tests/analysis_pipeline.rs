@@ -56,6 +56,7 @@ fn start_kyoku() -> MjaiEvent {
         scores: vec![25_000, 25_000, 25_000, 25_000],
         tehais: vec![seat0, filler.clone(), filler.clone(), filler],
         num_players: 4,
+        catch_up: 0,
     }
 }
 

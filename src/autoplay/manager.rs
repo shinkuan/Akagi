@@ -1262,6 +1262,7 @@ mod tests {
             scores: vec![25_000; 4],
             tehais: vec![vec!["1m".into(); 13]; 4],
             num_players: 4,
+            catch_up: 0,
         });
         assert_eq!(
             m.state.cached_our_seat,

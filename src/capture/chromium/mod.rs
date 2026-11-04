@@ -126,9 +126,11 @@ impl CaptureBackend for ChromiumBackend {
                 // only runs on the MITM path.
                 riichi_inject: None,
                 notify: None,
+                tenhou_journal: None,
             })
             .unwrap_or_default();
         hooks.notify = Some(ctx.notify_bus.clone());
+        hooks.tenhou_journal = Some(crate::bridge::tenhou::journal::new_shared());
         let bridges = Arc::new(FlowBridges::<cdp::FlowKey>::new(
             ctx.session.clone(),
             ctx.platform,

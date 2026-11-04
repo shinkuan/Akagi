@@ -98,6 +98,10 @@ pub struct BridgeHooks {
     /// that no mjai event can carry (Tenhou: a mid-hand rejoin pauses
     /// analysis until the next hand). Wired by both capture backends.
     pub notify: Option<crate::event_bus::NotifyBus>,
+    /// Tenhou: the capture run's record of the hand in progress, which the
+    /// flow a reconnect opens carries on from (see `tenhou::journal`). One
+    /// per capture run, shared by all its flows.
+    pub tenhou_journal: Option<tenhou::journal::SharedJournal>,
 }
 
 /// Construct a bridge for the given platform.
@@ -121,7 +125,8 @@ pub fn for_platform(
         crate::config::Platform::Tenhou => Box::new(
             TenhouBridge::new(flow_log, session)
                 .with_shared_state(hooks.tenhou_state)
-                .with_notify(hooks.notify),
+                .with_notify(hooks.notify)
+                .with_journal(hooks.tenhou_journal),
         ),
         crate::config::Platform::RiichiCity => {
             Box::new(RiichiCityBridge::new(flow_log, session).with_inject(hooks.riichi_inject))
