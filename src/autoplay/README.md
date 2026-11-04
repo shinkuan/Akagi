@@ -185,7 +185,9 @@ Layers, in order:
    `assets/delay_default.lua` (embedded as `script::DEFAULT_SCRIPT`) on
    first use and hot-reloaded. An existing `delay.lua` that is an
    unmodified copy of an *older* bundled default is replaced by the
-   current one on start; user-edited scripts are never touched. This
+   current one when the app starts (`script::refresh_outdated_default`,
+   whatever the delay mode and the autoplay switch say), and again at the
+   manager's first paced decision; user-edited scripts are never touched. This
    works by verbatim comparison against every previously shipped
    default, embedded from `assets/delay_default_superseded/` — **when
    changing `assets/delay_default.lua`, copy the version being replaced

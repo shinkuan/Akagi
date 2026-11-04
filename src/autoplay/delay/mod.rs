@@ -31,7 +31,7 @@ pub mod probs;
 pub mod script;
 
 pub use probs::DecisionProbs;
-pub use script::{DelayScript, ScriptHost};
+pub use script::{refresh_outdated_default, DelayScript, ScriptHost};
 
 use crate::config::{DelayDistribution, DelayModelConfig, MajsoulAutoplayConfig};
 use rand::Rng;

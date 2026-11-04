@@ -272,6 +272,13 @@ pub fn run() {
                     });
                 }
 
+                // An untouched delay.lua from an older version becomes the
+                // current default now, not at the first paced decision of a
+                // game played with autoplay on.
+                if let Some(dir) = state.config_path.parent() {
+                    autoplay::delay::refresh_outdated_default(&dir.join("delay.lua"));
+                }
+
                 if autoplay_enabled {
                     let cfg_for_ap = state.config.clone();
                     let ctx_for_ap = state.autoplay_context.clone();

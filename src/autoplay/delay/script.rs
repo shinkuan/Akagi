@@ -81,6 +81,39 @@ const SUPERSEDED_DEFAULT_SCRIPTS: &[&str] = &[
     )),
 ];
 
+/// Overwrite the script at `path` with [`DEFAULT_SCRIPT`] iff it is an
+/// unmodified copy of an earlier bundled default; returns whether it did.
+/// A missing, unreadable or user-edited file is left alone.
+///
+/// Run once at startup, whatever the autoplay switch and delay mode say: the
+/// autoplay manager's own check only happens at the first paced decision
+/// (and not at all while autoplay is off), so an updated install would keep
+/// showing — and, once switched on, briefly running — the old default.
+pub fn refresh_outdated_default(path: &Path) -> bool {
+    let Ok(existing) = std::fs::read_to_string(path) else {
+        return false; // missing or unreadable — `maybe_reload` logs the latter
+    };
+    if existing == DEFAULT_SCRIPT || !is_superseded_default(&existing) {
+        return false;
+    }
+    match write_atomic(path, DEFAULT_SCRIPT) {
+        Ok(()) => {
+            info!(
+                "delay script was an outdated bundled default — updated: {}",
+                path.display()
+            );
+            true
+        }
+        Err(e) => {
+            warn!(
+                "could not update outdated delay script at {} — keeping it: {e}",
+                path.display()
+            );
+            false
+        }
+    }
+}
+
 /// Is `content` an unmodified copy of an earlier bundled default? Line
 /// endings are normalized on both sides: the file on disk or the
 /// compiled-in constant may carry CRLF depending on the checkout and
@@ -421,22 +454,7 @@ impl ScriptHost {
             return;
         }
         self.superseded_checked = true;
-        let Ok(existing) = std::fs::read_to_string(path) else {
-            return; // unreadable — maybe_reload logs that case
-        };
-        if existing == DEFAULT_SCRIPT || !is_superseded_default(&existing) {
-            return;
-        }
-        match write_atomic(path, DEFAULT_SCRIPT) {
-            Ok(()) => info!(
-                "delay script was an outdated bundled default — updated: {}",
-                path.display()
-            ),
-            Err(e) => warn!(
-                "could not update outdated delay script at {} — keeping it: {e}",
-                path.display()
-            ),
-        }
+        refresh_outdated_default(path);
     }
 
     /// (Re)load the script when the file at `path` appeared, changed or
@@ -1169,6 +1187,26 @@ mod tests {
         let mut host = ScriptHost::default();
         host.ensure_default(&path);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), DEFAULT_SCRIPT);
+    }
+
+    /// The startup check updates an untouched old default without a host,
+    /// and leaves a user edit and a missing file alone.
+    #[test]
+    fn startup_refresh_updates_only_an_untouched_old_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("delay.lua");
+        assert!(!refresh_outdated_default(&path), "nothing to update");
+        assert!(!path.exists(), "a missing file is not generated here");
+
+        std::fs::write(&path, SUPERSEDED_DEFAULT_SCRIPTS.last().unwrap()).unwrap();
+        assert!(refresh_outdated_default(&path));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), DEFAULT_SCRIPT);
+        assert!(!refresh_outdated_default(&path), "already current");
+
+        let edited = format!("{}\n-- tweak\n", SUPERSEDED_DEFAULT_SCRIPTS.last().unwrap());
+        std::fs::write(&path, &edited).unwrap();
+        assert!(!refresh_outdated_default(&path));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
     }
 
     /// The check runs once per host: rewriting the old script back mid-
