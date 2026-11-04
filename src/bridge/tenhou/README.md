@@ -171,9 +171,14 @@ round, honba and dealer) pins the history to begin with that record, emitted
 exactly as it was, so only what happened while no flow watched is inferred
 (on a live capture: 2 and 5 events, where inferring the whole hand had
 matched the real order at only 29 of 72 and 52 of 71 positions). A record
-the snapshot
-cannot extend is dropped and the whole hand inferred, as below; so is a
-rejoin with no record (Akagi started mid-hand).
+can stop between two frames that belong together, and what it is owed is
+settled before the inferred part: a riichi tile that went out but whose
+acceptance (`<REACH step=2/>`, sent once the tile has passed) was not seen
+is accepted, and a kan whose indicator was not seen gets the snapshot's
+next one — at once for a closed kan or an open/added kan whose discard was
+recorded, otherwise with that discard. A record the snapshot cannot extend
+is dropped and the whole hand inferred, as below; so is a rejoin with no
+record (Akagi started mid-hand).
 
 What is inferred, turn order pins down for the most part: without calls the
 history is the rotation from the dealer and exact; a chi or pon from the caller's left
@@ -216,8 +221,8 @@ The bridge then:
    about turns that are over (each answer would be a stale action looking
    for a window);
 4. checks the first live action against where the history ended
-   (`resume_rebuilt`). Another seat discarding (or kanning, or declaring)
-   (or winning by tsumo) without a draw on this flow had drawn before the
+   (`resume_rebuilt`). Another seat that discards, kans, declares riichi
+   or wins by tsumo without a draw on this flow had drawn before the
    rejoin, so a hidden `tsumo` is put in front of it. Our own draw repeated
    after a snapshot that already held it is dropped, and moves to the tail
    of the hand (`on_tsumo`); the history's last discard sent again is

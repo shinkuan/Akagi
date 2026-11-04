@@ -976,8 +976,9 @@ fn synthesize(
 }
 
 /// Carry a recorded hand on to the snapshot: the record as it was emitted,
-/// then the acts after it with our draws worked out from what our hand
-/// gained since (`forced` acts of `trace` are the record's).
+/// what it stopped short of (a riichi acceptance, a kan indicator), then
+/// the acts after it with our draws worked out from what our hand gained
+/// since (`forced` acts of `trace` are the record's).
 fn synthesize_after(
     snap: &Snapshot,
     steps: &[Vec<Step>],
@@ -1003,7 +1004,35 @@ fn synthesize_after(
     let mut markers_used = 1;
     let mut last_draw: Option<String> = None;
     let mut last_discard = None;
-    for event in &record[1..] {
+    // What the record stops short of. A riichi tile went out but its
+    // acceptance was not seen: the server sends it once the tile has passed,
+    // and the flow can drop in between. And a kan whose indicator was not
+    // seen yet: where its event sits, and whether it still waits on its
+    // seat's discard (an open or added kan) or is due now.
+    let mut declaring = [false; 4];
+    let mut unaccepted = [false; 4];
+    let mut unturned: Vec<(u8, usize, bool)> = Vec::new();
+    for (at, event) in record.iter().enumerate().skip(1) {
+        match event {
+            MjaiEvent::Reach { actor, .. } => declaring[*actor as usize % 4] = true,
+            MjaiEvent::Dahai { actor, .. } => {
+                if std::mem::take(&mut declaring[*actor as usize % 4]) {
+                    unaccepted[*actor as usize % 4] = true;
+                }
+                for kan in unturned.iter_mut().filter(|k| k.0 == *actor) {
+                    kan.2 = false;
+                }
+            }
+            MjaiEvent::ReachAccepted { actor } => unaccepted[*actor as usize % 4] = false,
+            MjaiEvent::Daiminkan { actor, .. } | MjaiEvent::Kakan { actor, .. } => {
+                unturned.push((*actor, at, true));
+            }
+            MjaiEvent::Ankan { actor, .. } => unturned.push((*actor, at, false)),
+            MjaiEvent::Dora { .. } if !unturned.is_empty() => {
+                unturned.remove(0);
+            }
+            _ => {}
+        }
         let ours = |actor: &u8| *actor == us;
         match event {
             MjaiEvent::Tsumo { actor, pai } if ours(actor) => {
@@ -1166,6 +1195,25 @@ fn synthesize_after(
 
     let markers = snap.dora_markers.get(markers_used..).unwrap_or_default();
     let mut emitter = Emitter::new(snap, steps, record.to_vec(), markers, in_riichi);
+    // Settle what the record stopped short of before the gap: an indicator
+    // that is due turns now, one still waiting on its seat's discard goes
+    // out with that discard; a riichi whose tile passed (the snapshot shows
+    // it, and the hand went on) was accepted.
+    for (seat, at, waits) in unturned {
+        if waits {
+            emitter.owed_dora[seat as usize % 4].push(at);
+        } else {
+            emitter.turn_dora();
+        }
+    }
+    for seat in 0..snap.num_players {
+        if unaccepted[seat as usize] {
+            emitter
+                .events
+                .push(MjaiEvent::ReachAccepted { actor: seat });
+            emitter.in_riichi[seat as usize] = true;
+        }
+    }
     emitter.emit(gap, &our_draws, last_draw.clone())?;
     let (events, gap_discard) = emitter.finish();
 
@@ -1291,9 +1339,7 @@ impl<'a> Emitter<'a> {
                     }
                     // An open or added kan turns its indicator after the discard.
                     for _ in std::mem::take(&mut self.owed_dora[seat as usize]) {
-                        if let Some(&m) = self.markers.next() {
-                            self.events.push(MjaiEvent::Dora { dora_marker: mj(m) });
-                        }
+                        self.turn_dora();
                     }
                     self.last_discard = Some((seat, pai));
                 }
@@ -1343,9 +1389,7 @@ impl<'a> Emitter<'a> {
                         consumed: tiles.map(mj),
                     });
                     // A closed kan turns its indicator at once.
-                    if let Some(&m) = self.markers.next() {
-                        self.events.push(MjaiEvent::Dora { dora_marker: mj(m) });
-                    }
+                    self.turn_dora();
                 }
                 Act::Kakan { seat, step } => {
                     let Step::Call {
@@ -1372,6 +1416,15 @@ impl<'a> Emitter<'a> {
             prev_draw = None;
         }
         Ok(())
+    }
+
+    /// Turn the next indicator the snapshot shows, if it shows one more.
+    fn turn_dora(&mut self) {
+        if let Some(&m) = self.markers.next() {
+            self.events.push(MjaiEvent::Dora {
+                dora_marker: tenhou_to_mjai_one(m),
+            });
+        }
     }
 
     /// The events, with any indicator the snapshot already shows for a kan
@@ -2214,6 +2267,111 @@ mod tests {
             },
         ];
         assert_eq!(trim_record(&record).len(), 1);
+    }
+
+    /// The record of `a_record_of_the_hand_pins_when_its_calls_happened` up
+    /// to seat 3's first discard, which declares riichi when `riichi`.
+    fn record_to_seat_3(start: MjaiEvent, riichi: bool) -> Vec<MjaiEvent> {
+        let mut record = vec![
+            start,
+            tsumo(0, "?"),
+            dahai(0, "P", false),
+            MjaiEvent::Pon {
+                actor: 1,
+                target: 0,
+                pai: "P".into(),
+                consumed: ["P".into(), "P".into()],
+            },
+            dahai(1, "7s", false),
+            tsumo(2, "E"),
+            dahai(2, "E", true),
+            tsumo(3, "?"),
+        ];
+        if riichi {
+            record.push(MjaiEvent::Reach {
+                actor: 3,
+                pai: None,
+            });
+        }
+        record.push(dahai(3, "W", false));
+        record
+    }
+
+    /// Regression: a record that stops between a riichi tile and its
+    /// acceptance (the server sends that once the tile has passed) never
+    /// accepted the riichi, leaving the seat's score and the sticks a
+    /// deposit off. The hand went on, so the tile passed: the acceptance
+    /// goes out before the gap, and the seat's later discards are
+    /// tsumogiri.
+    #[test]
+    fn a_riichi_recorded_without_its_acceptance_is_accepted() {
+        let mut snap = left_pon_snapshot();
+        snap.seats[3].riichi_at = Some(0);
+        snap.scores[3] -= 1000;
+        snap.kyotaku += 1;
+        let start = rebuild(&snap, None).unwrap().events[0].clone();
+        let record = record_to_seat_3(start, true);
+        let r = rebuild(&snap, Some(&record)).unwrap();
+        assert_eq!(
+            r.events[..record.len()],
+            record[..],
+            "the record as recorded"
+        );
+        assert_eq!(
+            tokens(&r)[record.len() - 1..],
+            [
+                "RA3", "T0", "D0:1s", "T1", "D1:8s", "T2", "D2:S*", "T3", "D3:N*", "T0", "D0:2s",
+                "T1", "D1:9s"
+            ]
+        );
+        assert_eq!(r.next, Next::Draw(2));
+    }
+
+    /// Regression: a record that stops before an added kan's indicator
+    /// turned dropped that indicator. It goes out with the kan's discard —
+    /// before the gap when the record already holds that discard, in the
+    /// gap when it does not.
+    #[test]
+    fn a_kan_recorded_without_its_indicator_gets_it() {
+        let mut snap = left_pon_snapshot();
+        snap.seats[1].melds = vec![kakan("P", 3, 0, 3)];
+        snap.dora_markers.push(tile("F", 2));
+        let start = rebuild(&snap, None).unwrap().events[0].clone();
+        let mut record = record_to_seat_3(start, false);
+        record.extend([
+            tsumo(0, "?"),
+            dahai(0, "1s", false),
+            tsumo(1, "?"),
+            MjaiEvent::Kakan {
+                actor: 1,
+                pai: "P".into(),
+                consumed: ["P".into(), "P".into(), "P".into()],
+            },
+            tsumo(1, "?"),
+            dahai(1, "8s", false),
+        ]);
+
+        let r = rebuild(&snap, Some(&record)).unwrap();
+        assert_eq!(
+            r.events[..record.len()],
+            record[..],
+            "the record as recorded"
+        );
+        assert_eq!(
+            tokens(&r)[record.len() - 1..],
+            ["dora:F", "T2", "D2:S*", "T3", "D3:N", "T0", "D0:2s", "T1", "D1:9s"],
+            "the kan's discard was recorded: the indicator is due"
+        );
+
+        // Cut before that discard: the replacement draw is the last seen.
+        let cut = &record[..record.len() - 1];
+        let r = rebuild(&snap, Some(cut)).unwrap();
+        assert_eq!(r.recorded, cut.len() - 1);
+        assert_eq!(
+            tokens(&r)[cut.len() - 1..],
+            ["D1:8s", "dora:F", "T2", "D2:S*", "T3", "D3:N", "T0", "D0:2s", "T1", "D1:9s"],
+            "the indicator waits for the kan's discard"
+        );
     }
 
     #[test]
