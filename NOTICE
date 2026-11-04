@@ -90,6 +90,21 @@ mahgen
   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
   THE SOFTWARE.
 
+--------------------------------------------------------------------------------
+Washizu
+  https://github.com/nanomena/Washizu
+  Licensed under the Apache License, Version 2.0.
+
+  Used in: src/autoplay/ (advisor.rs, table.rs, delay/mod.rs, delay/probs.rs,
+           delay/script.rs), assets/delay_default.lua
+  Notes:   Washizu is a derivative of Akagi v3. Portions of src/autoplay/ are
+           adapted from it: the second-opinion advisor, the table facts read
+           for pacing, candidate / runner-up / entropy reading of bot
+           metadata, the delay-script context fields that expose them, and
+           the bundled delay policy.
+
+  See http://www.apache.org/licenses/LICENSE-2.0 for the full license text.
+
 ================================================================================
 References (no code copied — wire format / spec / convention only)
 ================================================================================

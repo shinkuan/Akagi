@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Slider } from '@/components/ui/slider'
 import {
   Select,
   SelectContent,
@@ -62,6 +63,7 @@ import type {
   CaptureMode,
   DelayMode,
   DelayModelConfig,
+  MsRange,
   DetectedBrowser,
   GithubMirrorMode,
   NetworkConfig,
@@ -682,6 +684,46 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
+/** A `[min, max]` duration on one two-thumb slider: each decision draws a
+ *  value between the two. `max` is the slider's usual reach; a hand-edited
+ *  config beyond it widens the slider instead of being clamped. */
+function RangeField({
+  label,
+  hint,
+  value,
+  max,
+  step,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: MsRange
+  max: number
+  step: number
+  onChange: (v: MsRange) => void
+}) {
+  const [lo, hi] = value
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <Label>{label}</Label>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {lo === hi ? `${lo} ms` : `${lo} – ${hi} ms`}
+        </span>
+      </div>
+      <Slider
+        min={0}
+        max={Math.max(max, hi)}
+        step={step}
+        value={[lo, hi]}
+        onValueChange={(v) => onChange([v[0] ?? lo, v[1] ?? hi])}
+        aria-label={label}
+      />
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+    </div>
+  )
+}
+
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between">
@@ -836,13 +878,13 @@ function AutoplayCard({
     majsoul: {
       pre_click_delay_min_ms: 1000,
       pre_click_delay_max_ms: 3000,
-      inter_click_delay_ms: 300,
-      hover_delay_ms: 150,
-      click_hold_ms: 50,
-      verify_input_ms: 300,
+      inter_click_delay_ms: [250, 500],
+      hover_delay_ms: [150, 300],
+      click_hold_ms: [60, 140],
+      verify_input_ms: [300, 500],
       click_retries: 2,
       reload_after_failures: 3,
-      dealer_first_discard_extra_delay_ms: 2000,
+      dealer_first_discard_extra_delay_ms: [2000, 3000],
     },
     delay: defaultDelayModel(),
   }
@@ -910,128 +952,69 @@ function AutoplayCard({
             {t('settings.autoplay.delay_mode_lua_help')}
           </p>
         )}
+        <p className="text-xs text-muted-foreground">
+          {t('settings.autoplay.range_help')}
+        </p>
         {delay.mode === 'legacy' && (
-          <>
-            <Field label={t('settings.autoplay.pre_click_delay_min')}>
-              <Input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={ap.majsoul.pre_click_delay_min_ms}
-                onChange={(e) =>
-                  setMajsoulField({
-                    pre_click_delay_min_ms: Number(e.target.value || 0),
-                  })
-                }
-              />
-            </Field>
-            <Field label={t('settings.autoplay.pre_click_delay_max')}>
-              <Input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={ap.majsoul.pre_click_delay_max_ms}
-                onChange={(e) =>
-                  setMajsoulField({
-                    pre_click_delay_max_ms: Number(e.target.value || 0),
-                  })
-                }
-              />
-            </Field>
-          </>
+          <RangeField
+            label={t('settings.autoplay.pre_click_delay')}
+            value={[ap.majsoul.pre_click_delay_min_ms, ap.majsoul.pre_click_delay_max_ms]}
+            max={10000}
+            step={100}
+            onChange={([min, max]) =>
+              setMajsoulField({
+                pre_click_delay_min_ms: min,
+                pre_click_delay_max_ms: max,
+              })
+            }
+          />
         )}
-        <Field
+        <RangeField
           label={t('settings.autoplay.min_delay')}
           hint={t('settings.autoplay.min_delay_hint')}
-        >
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={delay.min_delay_ms}
-            onChange={(e) =>
-              // Clamp: a typed negative would fail u32 deserialization
-              // on save (min={0} doesn't block typing a minus sign).
-              setDelayField({
-                min_delay_ms: Math.max(0, Number(e.target.value || 0)),
-              })
-            }
-          />
-        </Field>
-        <Field
+          value={delay.min_delay_ms}
+          max={5000}
+          step={50}
+          onChange={(v) => setDelayField({ min_delay_ms: v })}
+        />
+        <RangeField
           label={t('settings.autoplay.min_button_delay')}
           hint={t('settings.autoplay.min_button_delay_hint')}
-        >
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={delay.min_button_delay_ms}
-            onChange={(e) =>
-              setDelayField({
-                min_button_delay_ms: Math.max(0, Number(e.target.value || 0)),
-              })
-            }
-          />
-        </Field>
-        <Field label={t('settings.autoplay.inter_click_delay')}>
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={ap.majsoul.inter_click_delay_ms}
-            onChange={(e) =>
-              setMajsoulField({
-                inter_click_delay_ms: Number(e.target.value || 0),
-              })
-            }
-          />
-        </Field>
-        <Field
+          value={delay.min_button_delay_ms}
+          max={5000}
+          step={50}
+          onChange={(v) => setDelayField({ min_button_delay_ms: v })}
+        />
+        <RangeField
+          label={t('settings.autoplay.inter_click_delay')}
+          value={ap.majsoul.inter_click_delay_ms}
+          max={2000}
+          step={10}
+          onChange={(v) => setMajsoulField({ inter_click_delay_ms: v })}
+        />
+        <RangeField
           label={t('settings.autoplay.hover_delay')}
           hint={t('settings.autoplay.hover_delay_hint')}
-        >
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={ap.majsoul.hover_delay_ms}
-            onChange={(e) =>
-              setMajsoulField({
-                hover_delay_ms: Number(e.target.value || 0),
-              })
-            }
-          />
-        </Field>
-        <Field label={t('settings.autoplay.click_hold')}>
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={ap.majsoul.click_hold_ms}
-            onChange={(e) =>
-              setMajsoulField({
-                click_hold_ms: Number(e.target.value || 0),
-              })
-            }
-          />
-        </Field>
-        <Field
+          value={ap.majsoul.hover_delay_ms}
+          max={1000}
+          step={10}
+          onChange={(v) => setMajsoulField({ hover_delay_ms: v })}
+        />
+        <RangeField
+          label={t('settings.autoplay.click_hold')}
+          value={ap.majsoul.click_hold_ms}
+          max={500}
+          step={10}
+          onChange={(v) => setMajsoulField({ click_hold_ms: v })}
+        />
+        <RangeField
           label={t('settings.autoplay.verify_input')}
           hint={t('settings.autoplay.verify_input_hint')}
-        >
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={ap.majsoul.verify_input_ms}
-            onChange={(e) =>
-              setMajsoulField({
-                verify_input_ms: Number(e.target.value || 0),
-              })
-            }
-          />
-        </Field>
+          value={ap.majsoul.verify_input_ms}
+          max={3000}
+          step={50}
+          onChange={(v) => setMajsoulField({ verify_input_ms: v })}
+        />
         <Field
           label={t('settings.autoplay.click_retries')}
           hint={t('settings.autoplay.click_retries_hint')}
@@ -1064,22 +1047,14 @@ function AutoplayCard({
             }
           />
         </Field>
-        <Field
+        <RangeField
           label={t('settings.autoplay.dealer_first_discard_extra_delay')}
           hint={t('settings.autoplay.dealer_first_discard_extra_delay_hint')}
-        >
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={ap.majsoul.dealer_first_discard_extra_delay_ms}
-            onChange={(e) =>
-              setMajsoulField({
-                dealer_first_discard_extra_delay_ms: Number(e.target.value || 0),
-              })
-            }
-          />
-        </Field>
+          value={ap.majsoul.dealer_first_discard_extra_delay_ms}
+          max={6000}
+          step={100}
+          onChange={(v) => setMajsoulField({ dealer_first_discard_extra_delay_ms: v })}
+        />
         <p className="text-xs text-muted-foreground">
           {t('settings.autoplay.platform_note')}
         </p>
@@ -1092,8 +1067,8 @@ function AutoplayCard({
 function defaultDelayModel(): DelayModelConfig {
   return {
     mode: 'lua',
-    min_delay_ms: 1000,
-    min_button_delay_ms: 1600,
+    min_delay_ms: [1000, 1600],
+    min_button_delay_ms: [1600, 2600],
     distribution: 'log_normal',
     lognormal: {
       dahai_tedashi: [0.87, 0.62],

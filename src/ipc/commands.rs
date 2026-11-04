@@ -710,6 +710,42 @@ fn open_path(path: &Path) -> CmdResult<()> {
         .map_err(|e| format!("open path {}: {e}", path.display()))
 }
 
+/// The `delay.lua` next to the config file, next to the bundled default:
+/// what the frontend needs to offer an edited script the new default once
+/// per default (see `autoplay::delay::script_state`).
+#[derive(Debug, serde::Serialize)]
+pub struct DelayScriptStatus {
+    pub state: crate::autoplay::delay::ScriptState,
+    /// Names the bundled default; changes when an update ships a new one.
+    pub version: String,
+}
+
+fn delay_script_path(state: &AppState) -> PathBuf {
+    state
+        .config_path
+        .parent()
+        .map(|dir| dir.join("delay.lua"))
+        .unwrap_or_else(|| PathBuf::from("delay.lua"))
+}
+
+#[tauri::command]
+pub async fn delay_script_status(state: State<'_, AppState>) -> CmdResult<DelayScriptStatus> {
+    Ok(DelayScriptStatus {
+        state: crate::autoplay::delay::script_state(&delay_script_path(&state)),
+        version: crate::autoplay::delay::default_version(),
+    })
+}
+
+/// Replace `delay.lua` with the bundled default, keeping the old file as a
+/// timestamped `.bak` beside it. Returns the backup's path, if any. The
+/// autoplay manager hot-reloads the new script.
+#[tauri::command]
+pub async fn replace_delay_script(state: State<'_, AppState>) -> CmdResult<Option<String>> {
+    crate::autoplay::delay::replace_with_default(&delay_script_path(&state))
+        .map(|backup| backup.map(|p| p.display().to_string()))
+        .map_err(|e| format!("replace delay.lua: {e}"))
+}
+
 /// Opens an `http(s)://` URL in the user's default browser. Used by the
 /// first-run wizard's GitHub / Discord links and the purchase flow's PayPal
 /// approve page — Tauri 2's webview won't reliably honour `target="_blank"`
@@ -1764,6 +1800,8 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::get_log_dir,
             $crate::ipc::commands::open_log_folder,
             $crate::ipc::commands::open_external_url,
+            $crate::ipc::commands::delay_script_status,
+            $crate::ipc::commands::replace_delay_script,
             $crate::ipc::commands::list_log_sessions,
             $crate::ipc::commands::read_log_session,
             $crate::ipc::commands::subscribe_log_events,

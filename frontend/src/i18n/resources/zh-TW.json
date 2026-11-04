@@ -461,14 +461,14 @@
       "rc_warning_title": "麻雀一番街自動打牌風險警告",
       "rc_warning_desc": "麻雀一番街的自動打牌是透過 MITM 注入遊戲封包的方式實現的,在安全性上仍有疑慮,可能導致帳號被封禁。請自行評估風險後再使用。",
       "rc_warning_ack": "我已了解風險",
-      "pre_click_delay_min": "點擊前延遲 (最小, ms)",
-      "pre_click_delay_max": "點擊前延遲 (最大, ms)",
+      "pre_click_delay": "點擊前延遲 (ms)",
+      "range_help": "以下的時間設定都是範圍：拖動兩個端點設定最小值和最大值，每次決策會在兩者之間隨機取一個值。兩端拉到同一點就是固定值。",
       "inter_click_delay": "連續點擊間延遲 (ms)",
       "hover_delay": "按下前的滑鼠停留時間 (ms)",
-      "hover_delay_hint": "雀魂判定牌面點擊需要在 mousedown 前停留 100ms 以上。低於此值點擊可能被吃掉。",
+      "hover_delay_hint": "雀魂判定牌面點擊需要在 mousedown 前停留 100ms 以上。範圍的最小值低於此值時，點擊可能被吃掉。",
       "click_hold": "按住時間 (ms)",
       "verify_input": "點擊驗證等待時間 (ms)",
-      "verify_input_hint": "點擊後等待遊戲客戶端送出自己的操作訊息；若逾時沒出現，代表點擊被吃掉，會重新點擊。0 表示停用驗證。",
+      "verify_input_hint": "點擊後等待遊戲客戶端送出自己的操作訊息；若逾時沒出現，代表點擊被吃掉，會重新點擊。兩端都拉到 0 表示停用驗證。",
       "click_retries": "點擊重試次數",
       "click_retries_hint": "點擊被吃掉時重試的次數。重試會按得更久（並微移游標），而不是重複同樣的按法。0 表示只記錄不重試。",
       "reload_after_failures": "連續無效後重新載入",
@@ -480,7 +480,7 @@
       "delay_mode_legacy": "舊版（固定隨機延遲）",
       "delay_mode_lua_help": "延遲由設定檔旁的 delay.lua 決定，首次使用時會自動產生一份以段位戰實測資料校準的擬真人模型。可自由編輯，存檔即熱重載；刪除檔案即可還原預設。腳本出錯時由內建模型接手。",
       "min_delay": "最小延遲（ms）",
-      "min_delay_hint": "所有動作的安全下限：雀魂需要時間渲染畫面，太早點擊會被吃掉。兩種模式皆適用，腳本無法低於此值。",
+      "min_delay_hint": "所有動作的安全下限：雀魂需要時間渲染畫面，太早點擊會被吃掉。每次決策抽一個值；Lua 模式下這個值交給 delay.lua 處理（預設腳本會套用），舊版模式由 Akagi 套用。",
       "min_button_delay": "按鈕最小延遲（ms）",
       "min_button_delay_hint": "吃/碰/槓/和/跳過/立直等按鈕的更高下限——按鈕要等打牌動畫結束加上自身彈出動畫才會出現，比手牌渲染更晚。若仍出現按鈕沒點到的情況請調高此值。"
     },
@@ -858,6 +858,16 @@
       "clear_skipped": "清除跳過記錄",
       "none_skipped": "無"
     }
+  },
+  "delay_script_update": {
+    "title": "delay.lua 有新的預設版本",
+    "body": "這次更新帶來新的預設 delay.lua，但你的 delay.lua 有修改過，所以沒有自動替換。要換成新的預設嗎？原本的檔案會先備份在同一個資料夾。這個問題只會問一次。",
+    "note": "delay.lua 負責完整的思考時間計算，包括最小延遲和不超過伺服器的時間上限，Akagi 不會再額外套用。如果保留自己的腳本，請確認它有處理這些。",
+    "replace": "換成新的預設",
+    "keep": "保留我的",
+    "replaced": "已換成新的預設 delay.lua",
+    "backup": "原本的檔案備份在 {{path}}",
+    "failed": "無法替換 delay.lua"
   },
   "announcements": {
     "akagims": {

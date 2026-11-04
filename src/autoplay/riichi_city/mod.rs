@@ -102,7 +102,9 @@ fn decision_kind(ev: &MjaiEvent) -> DecisionKind {
 /// does carry the fresh-hand survey time (`first_action_of_kyoku`), the
 /// pacing half of Majsoul's dealer-opening knob — the correctness half
 /// (clicks dropped during the sort animation) doesn't apply to frames,
-/// where the window-state wait already gates the send.
+/// where the window-state wait already gates the send. The reading (table
+/// facts, second opinion) is the manager's, the same as on the other
+/// platforms.
 fn pre_delay(ctx: &ActionContext, kind: DecisionKind) -> u32 {
     let is_tsumogiri = matches!(
         ctx.action,
@@ -130,6 +132,7 @@ fn pre_delay(ctx: &ActionContext, kind: DecisionKind) -> u32 {
         junme: 0,
         legal_action_count: ctx.legal_actions.len(),
         probs: ctx.probs,
+        reading: ctx.reading,
         budget: ctx.budget,
         click_overhead_ms: 0,
         cfg: ctx.cfg,
@@ -141,9 +144,15 @@ fn pre_delay(ctx: &ActionContext, kind: DecisionKind) -> u32 {
         .filter(|_| !legacy)
         .and_then(|s| s.try_decide(&input))
         .unwrap_or_else(|| delay::decide(&input, &mut rand::rng()));
-    decision
-        .total_target_ms
-        .max(delay::functional_floor(&input))
+    // A script's answer is final (it owns the floor); the built-in model's
+    // is held to the functional floor.
+    if decision.from_script {
+        decision.total_target_ms
+    } else {
+        decision
+            .total_target_ms
+            .max(delay::functional_floor(&input))
+    }
 }
 
 #[cfg(test)]
@@ -199,6 +208,7 @@ mod tests {
                 delay_cfg: self.delay_cfg.clone(),
                 budget: None,
                 probs: None,
+                reading: Default::default(),
                 delay_script: None,
                 tenhou: None,
             }

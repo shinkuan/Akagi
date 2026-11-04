@@ -4,15 +4,24 @@
 //!
 //! ```lua
 //! function decide_delay(ctx)
-//!   return { delay_ms = 2300, allow_bank = false }
+//!   return { delay_ms = 2300 }
 //! end
 //! ```
 //!
 //! `delay_ms` is the target **total** thinking time for the decision
 //! window (the interval the server observes), not a sleep length — the
-//! caller subtracts time already consumed.
+//! caller subtracts time already consumed and the click sequence's own
+//! duration (`ctx.click_ms`).
 //!
-//! Safety contract (all enforced here, not trusted to the script):
+//! The script owns the whole computation. Every timing setting — this
+//! decision's draw from each Settings range — is in `ctx.settings`, with
+//! what the server and the clicks take, and nothing is added on top: the
+//! UI-readiness floor, the dealing-animation wait and the server's time
+//! limit are the script's to apply (the bundled default does, exactly as
+//! the host used to). A script that ignores them can click before the UI
+//! exists or run into the client's auto-discard.
+//!
+//! Safety contract (enforced here, not trusted to the script):
 //! - Restricted stdlib: math/string/table plus a scrubbed base library —
 //!   no io/os/debug, no `load`/`dofile`/`loadfile` (bytecode and
 //!   filesystem escapes), no `pcall`/`xpcall` (they could swallow the
@@ -26,12 +35,9 @@
 //!   error, timeout, wrong return shape, out-of-range delay) falls back
 //!   to the built-in model and is logged **once** per distinct error,
 //!   not once per hand.
-//! - The result is clamped by [`budget_cap`] and [`functional_floor`] —
-//!   a script can neither overrun the server clock nor click into a
-//!   dealing animation.
 //! - The script never sees or influences the chosen action.
 
-use super::{budget_cap, functional_floor, DelayDecision, DelayInput};
+use super::{DelayDecision, DelayInput};
 use mlua::{Function, Lua, LuaOptions, StdLib, Table, Value, VmState};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -75,7 +81,106 @@ const SUPERSEDED_DEFAULT_SCRIPTS: &[&str] = &[
         env!("CARGO_MANIFEST_DIR"),
         "/assets/delay_default_superseded/2e5d892.lua"
     )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/delay_default_superseded/b881105.lua"
+    )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/delay_default_superseded/fa636c2.lua"
+    )),
 ];
+
+/// Overwrite the script at `path` with [`DEFAULT_SCRIPT`] iff it is an
+/// unmodified copy of an earlier bundled default; returns whether it did.
+/// A missing, unreadable or user-edited file is left alone.
+///
+/// Run once at startup, whatever the autoplay switch and delay mode say: the
+/// autoplay manager's own check only happens at the first paced decision
+/// (and not at all while autoplay is off), so an updated install would keep
+/// showing — and, once switched on, briefly running — the old default.
+pub fn refresh_outdated_default(path: &Path) -> bool {
+    let Ok(existing) = std::fs::read_to_string(path) else {
+        return false; // missing or unreadable — `maybe_reload` logs the latter
+    };
+    if existing == DEFAULT_SCRIPT || !is_superseded_default(&existing) {
+        return false;
+    }
+    match write_atomic(path, DEFAULT_SCRIPT) {
+        Ok(()) => {
+            info!(
+                "delay script was an outdated bundled default — updated: {}",
+                path.display()
+            );
+            true
+        }
+        Err(e) => {
+            warn!(
+                "could not update outdated delay script at {} — keeping it: {e}",
+                path.display()
+            );
+            false
+        }
+    }
+}
+
+/// What the `delay.lua` on disk is, next to the bundled default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScriptState {
+    /// No file (it is generated on first use).
+    Missing,
+    /// The current bundled default.
+    Current,
+    /// An unmodified older default ([`refresh_outdated_default`] updates it).
+    Outdated,
+    /// Anything else: the user's own edits, never replaced without asking.
+    Modified,
+}
+
+/// Classify the script at `path`. An unreadable file counts as modified:
+/// it is not ours to judge.
+pub fn script_state(path: &Path) -> ScriptState {
+    match std::fs::read_to_string(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => ScriptState::Missing,
+        Ok(s) if s.replace("\r\n", "\n") == DEFAULT_SCRIPT.replace("\r\n", "\n") => {
+            ScriptState::Current
+        }
+        Ok(s) if is_superseded_default(&s) => ScriptState::Outdated,
+        _ => ScriptState::Modified,
+    }
+}
+
+/// A short, stable name for the bundled default: what the frontend keys
+/// "already asked about this one" on, so an edited script is offered each
+/// new default once.
+pub fn default_version() -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(DEFAULT_SCRIPT.replace("\r\n", "\n").as_bytes());
+    digest[..6].iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Replace the script at `path` with the bundled default, first copying an
+/// existing file to `delay.lua.<YYYYMMDD-HHMMSS>.bak` beside it. Returns
+/// the backup's path, if there was a file to back up.
+pub fn replace_with_default(path: &Path) -> std::io::Result<Option<PathBuf>> {
+    let backup = if path.exists() {
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let mut name = path.file_name().unwrap_or_default().to_os_string();
+        name.push(format!(".{stamp}.bak"));
+        let backup = path.with_file_name(name);
+        std::fs::copy(path, &backup)?;
+        Some(backup)
+    } else {
+        None
+    };
+    write_atomic(path, DEFAULT_SCRIPT)?;
+    info!(
+        "delay script replaced by the bundled default: {}",
+        path.display()
+    );
+    Ok(backup)
+}
 
 /// Is `content` an unmodified copy of an earlier bundled default? Line
 /// endings are normalized on both sides: the file on disk or the
@@ -211,17 +316,14 @@ impl DelayScript {
         self.lua.remove_hook();
 
         match result {
-            Ok((target_ms, allow_bank)) => {
+            Ok(target_ms) => {
                 if let Ok(mut g) = self.last_error.lock() {
                     *g = None;
                 }
-                // Enforce the non-negotiables on the script's answer.
-                let target = target_ms
-                    .min(budget_cap(input, allow_bank))
-                    .max(functional_floor(input));
                 Some(DelayDecision {
-                    total_target_ms: target,
-                    allow_bank,
+                    total_target_ms: target_ms,
+                    allow_bank: false,
+                    from_script: true,
                 })
             }
             Err(e) => {
@@ -237,12 +339,12 @@ impl DelayScript {
         }
     }
 
-    fn call(&self, input: &DelayInput) -> mlua::Result<(u32, bool)> {
+    fn call(&self, input: &DelayInput) -> mlua::Result<u32> {
         let ctx = self.build_ctx(input)?;
         let ret: Value = self.func.call(ctx)?;
         let Value::Table(t) = ret else {
             return Err(mlua::Error::RuntimeError(
-                "decide_delay must return a table { delay_ms, allow_bank }".into(),
+                "decide_delay must return a table { delay_ms }".into(),
             ));
         };
         let delay_ms: f64 = t.get("delay_ms").map_err(|_| {
@@ -253,19 +355,9 @@ impl DelayScript {
                 "decide_delay returned out-of-range delay_ms {delay_ms}"
             )));
         }
-        // Strict boolean: Lua truthiness would read `allow_bank = 0`
-        // (C-style false) as *true* and silently unlock bank spending.
-        let allow_bank = match t.get::<Value>("allow_bank") {
-            Ok(Value::Nil) | Err(_) => false,
-            Ok(Value::Boolean(b)) => b,
-            Ok(other) => {
-                return Err(mlua::Error::RuntimeError(format!(
-                    "decide_delay `allow_bank` must be a boolean or nil, got {}",
-                    other.type_name()
-                )));
-            }
-        };
-        Ok((delay_ms as u32, allow_bank))
+        // Any `allow_bank` a script still returns is ignored: the bank is
+        // the script's own business now (it has the budget and the limits).
+        Ok(delay_ms as u32)
     }
 
     /// Build the read-only `ctx` table the script receives.
@@ -286,6 +378,23 @@ impl DelayScript {
         }
         ctx.set("junme", input.junme)?;
         ctx.set("legal_count", input.legal_action_count)?;
+        let reading = &input.reading;
+        if let Some(loose) = reading.loose {
+            ctx.set("loose", loose)?;
+        }
+        if let Some(loose) = reading.runner_up_loose {
+            ctx.set("runner_up_loose", loose)?;
+        }
+        if let Some(safe) = reading.safe {
+            ctx.set("safe", safe)?;
+        }
+        if let Some(human) = reading.human {
+            ctx.set("human_top", human.top)?;
+            ctx.set("human_chosen", human.chosen)?;
+            if let Some(second) = human.second {
+                ctx.set("human_second", second)?;
+            }
+        }
         if let Some(p) = input.probs {
             ctx.set("top_prob", p.top)?;
             if let Some(second) = p.second {
@@ -294,7 +403,34 @@ impl DelayScript {
             if let Some(margin) = p.margin() {
                 ctx.set("margin", margin)?;
             }
+            ctx.set("entropy", p.entropy)?;
         }
+        // Whether this decision presses an action button (which renders later
+        // than the hand, hence its own floor), and how long the presses
+        // themselves take once the delay is over.
+        ctx.set("button", input.kind.clicks_action_button())?;
+        ctx.set("click_ms", input.click_overhead_ms)?;
+        // Every timing setting, as drawn for this decision from its range,
+        // and what the time limits are computed from.
+        let (c, d) = (input.cfg, input.delay_cfg);
+        let settings = lua.create_table()?;
+        settings.set("min_delay_ms", d.min_delay_ms.ms())?;
+        settings.set("min_button_delay_ms", d.min_button_delay_ms.ms())?;
+        settings.set(
+            "dealer_opening_ms",
+            c.dealer_first_discard_extra_delay_ms.ms(),
+        )?;
+        settings.set("hover_ms", c.hover_delay_ms.ms())?;
+        settings.set("hold_ms", c.click_hold_ms.ms())?;
+        settings.set("inter_click_ms", c.inter_click_delay_ms.ms())?;
+        settings.set("verify_ms", c.verify_input_ms.ms())?;
+        settings.set("pre_click_min_ms", c.pre_click_delay_min_ms)?;
+        settings.set("pre_click_max_ms", c.pre_click_delay_max_ms)?;
+        settings.set("safety_margin_ms", d.safety_margin_ms)?;
+        settings.set("bank_use_fraction", d.bank_use_fraction)?;
+        settings.set("bank_max_single_ms", d.bank_max_single_ms)?;
+        settings.set("no_budget_cap_ms", d.no_budget_cap_ms)?;
+        ctx.set("settings", settings)?;
         if let Some(b) = input.budget {
             let budget = lua.create_table()?;
             budget.set("fixed_ms", b.fixed_ms)?;
@@ -399,22 +535,7 @@ impl ScriptHost {
             return;
         }
         self.superseded_checked = true;
-        let Ok(existing) = std::fs::read_to_string(path) else {
-            return; // unreadable — maybe_reload logs that case
-        };
-        if existing == DEFAULT_SCRIPT || !is_superseded_default(&existing) {
-            return;
-        }
-        match write_atomic(path, DEFAULT_SCRIPT) {
-            Ok(()) => info!(
-                "delay script was an outdated bundled default — updated: {}",
-                path.display()
-            ),
-            Err(e) => warn!(
-                "could not update outdated delay script at {} — keeping it: {e}",
-                path.display()
-            ),
-        }
+        refresh_outdated_default(path);
     }
 
     /// (Re)load the script when the file at `path` appeared, changed or
@@ -504,6 +625,7 @@ mod tests {
             junme: 0,
             legal_action_count: 1,
             probs: None,
+            reading: Default::default(),
             budget: None,
             click_overhead_ms: 0,
             cfg,
@@ -539,7 +661,69 @@ mod tests {
               assert(r >= 0 and r < 1)
               local ln = ctx.lognormal(0.6, 0.5)
               assert(ln > 0)
-              return { delay_ms = 1000 + ctx.budget.elapsed_ms, allow_bank = true }
+              assert(ctx.button == false)
+              assert(ctx.click_ms == 300)
+              local s = ctx.settings
+              assert(s.min_delay_ms == 1234 and s.min_button_delay_ms == 2345)
+              assert(s.dealer_opening_ms == 2500 and s.hover_ms == 210)
+              assert(s.hold_ms == 90 and s.inter_click_ms == 330 and s.verify_ms == 410)
+              assert(s.pre_click_min_ms == 1000 and s.pre_click_max_ms == 3000)
+              assert(s.safety_margin_ms == 1000 and s.bank_use_fraction == 0.25)
+              assert(s.bank_max_single_ms == 5000 and s.no_budget_cap_ms == 15000)
+              return { delay_ms = 1000 + ctx.budget.elapsed_ms }
+            end
+            "#,
+            "test",
+        )
+        .unwrap();
+        use crate::config::MsRange;
+        // Settings as one decision draws them.
+        let cfg = MajsoulAutoplayConfig {
+            dealer_first_discard_extra_delay_ms: MsRange::fixed(2500),
+            hover_delay_ms: MsRange::fixed(210),
+            click_hold_ms: MsRange::fixed(90),
+            inter_click_delay_ms: MsRange::fixed(330),
+            verify_input_ms: MsRange::fixed(410),
+            ..MajsoulAutoplayConfig::default()
+        };
+        let d = DelayModelConfig {
+            min_delay_ms: MsRange::fixed(1234),
+            min_button_delay_ms: MsRange::fixed(2345),
+            ..DelayModelConfig::default()
+        };
+        let mut i = base_input(&cfg, &d);
+        i.click_overhead_ms = 300;
+        i.budget = Some(BudgetSnapshot {
+            fixed_ms: 5000,
+            add_ms: 20_000,
+            elapsed_ms: 250,
+        });
+        let dec = s.try_decide(&i).unwrap();
+        assert_eq!(dec.total_target_ms, 1250);
+        assert!(dec.from_script);
+    }
+
+    /// The table facts, the second opinion and the entropy reach the script
+    /// when read, and are nil when not — "not read" is never "no".
+    #[test]
+    fn script_sees_the_reading_and_nil_when_unread() {
+        let s = DelayScript::compile(
+            r#"
+            function decide_delay(ctx)
+              if ctx.human_chosen == nil then
+                assert(ctx.loose == nil and ctx.safe == nil and ctx.runner_up_loose == nil)
+                assert(ctx.human_top == nil and ctx.human_second == nil)
+                assert(ctx.entropy == nil)
+                return { delay_ms = 1111 }
+              end
+              assert(ctx.loose == true)
+              assert(ctx.runner_up_loose == false)
+              assert(ctx.safe == false)
+              assert(math.abs(ctx.human_top - 0.6) < 1e-9)
+              assert(math.abs(ctx.human_second - 0.3) < 1e-9)
+              assert(math.abs(ctx.human_chosen - 0.3) < 1e-9)
+              assert(math.abs(ctx.entropy - 0.5) < 1e-9)
+              return { delay_ms = 2222 }
             end
             "#,
             "test",
@@ -548,14 +732,23 @@ mod tests {
         let cfg = MajsoulAutoplayConfig::default();
         let d = DelayModelConfig::default();
         let mut i = base_input(&cfg, &d);
-        i.budget = Some(BudgetSnapshot {
-            fixed_ms: 5000,
-            add_ms: 20_000,
-            elapsed_ms: 250,
+        assert_eq!(s.try_decide(&i).unwrap().total_target_ms, 1111);
+        i.reading = crate::autoplay::delay::Reading {
+            loose: Some(true),
+            runner_up_loose: Some(false),
+            safe: Some(false),
+            human: Some(crate::autoplay::delay::HumanView {
+                top: 0.6,
+                second: Some(0.3),
+                chosen: 0.3,
+            }),
+        };
+        i.probs = Some(crate::autoplay::delay::DecisionProbs {
+            top: 0.7,
+            second: Some(0.2),
+            entropy: 0.5,
         });
-        let dec = s.try_decide(&i).unwrap();
-        assert_eq!(dec.total_target_ms, 1250);
-        assert!(dec.allow_bank);
+        assert_eq!(s.try_decide(&i).unwrap().total_target_ms, 2222);
     }
 
     #[test]
@@ -721,85 +914,92 @@ mod tests {
         }
     }
 
-    /// Regression: `allow_bank = 0` was read through Lua truthiness as
-    /// `true`, silently unlocking bank spending. Non-boolean values are
-    /// a script bug → fallback; nil stays "false".
+    /// The script owns the whole computation: the host adds no floor and
+    /// no cap to its answer (an `allow_bank` it still returns is ignored).
     #[test]
-    fn allow_bank_must_be_boolean() {
+    fn the_host_adds_nothing_to_a_scripts_answer() {
         let cfg = MajsoulAutoplayConfig::default();
         let d = DelayModelConfig::default();
-        let bad = DelayScript::compile(
-            "function decide_delay(ctx) return { delay_ms = 2000, allow_bank = 0 } end",
-            "test",
-        )
-        .unwrap();
-        assert!(bad.try_decide(&base_input(&cfg, &d)).is_none());
-
-        let good = DelayScript::compile(
-            "function decide_delay(ctx) return { delay_ms = 2000, allow_bank = true } end",
-            "test",
-        )
-        .unwrap();
-        assert!(good.try_decide(&base_input(&cfg, &d)).unwrap().allow_bank);
-    }
-
-    /// The functional floor and budget cap bind the script's answer:
-    /// returning 0 cannot click into the dealing animation, and a huge
-    /// value cannot overrun the server window.
-    #[test]
-    fn script_cannot_break_floor_or_cap() {
-        let cfg = MajsoulAutoplayConfig::default();
-        let d = DelayModelConfig::default();
-
-        let zero = DelayScript::compile(
-            "function decide_delay(ctx) return { delay_ms = 0 } end",
-            "test",
-        )
-        .unwrap();
+        let run = |src: &str, i: &DelayInput| {
+            DelayScript::compile(src, "test")
+                .unwrap()
+                .try_decide(i)
+                .unwrap()
+                .total_target_ms
+        };
+        let zero = "function decide_delay(ctx) return { delay_ms = 0, allow_bank = 0 } end";
         let mut i = base_input(&cfg, &d);
         i.opening_animation = true;
-        let dec = zero.try_decide(&i).unwrap();
-        assert_eq!(
-            dec.total_target_ms, cfg.dealer_first_discard_extra_delay_ms,
-            "animation floor must hold against a 0 return"
-        );
-
-        // Regression: even outside the opening animation, a 0 return is
-        // lifted to the UI-readiness floor — clicking before Majsoul
-        // renders the tiles loses the click.
-        let dec = zero.try_decide(&base_input(&cfg, &d)).unwrap();
-        assert_eq!(
-            dec.total_target_ms, d.min_delay_ms,
-            "min_delay_ms floor must hold against a 0 return"
-        );
-
-        // Regression: claim windows click an action button, which renders
-        // later than tiles — the higher button floor must hold.
+        assert_eq!(run(zero, &i), 0, "no dealing-animation floor added");
         let mut i = base_input(&cfg, &d);
         i.kind = DecisionKind::Pon;
-        let dec = zero.try_decide(&i).unwrap();
-        assert_eq!(
-            dec.total_target_ms, d.min_button_delay_ms,
-            "min_button_delay_ms floor must hold against a 0 return"
-        );
+        assert_eq!(run(zero, &i), 0, "no button floor added");
 
-        let huge = DelayScript::compile(
-            "function decide_delay(ctx) return { delay_ms = 500000 } end",
-            "test",
-        )
-        .unwrap();
+        let huge = "function decide_delay(ctx) return { delay_ms = 500000 } end";
         let mut i = base_input(&cfg, &d);
         i.budget = Some(BudgetSnapshot {
             fixed_ms: 5000,
             add_ms: 0,
             elapsed_ms: 0,
         });
-        let dec = huge.try_decide(&i).unwrap();
-        assert_eq!(
-            dec.total_target_ms,
-            5000 - d.safety_margin_ms,
-            "soft cap must hold against a huge return"
-        );
+        assert_eq!(run(huge, &i), 500_000, "no budget cap added");
+    }
+
+    /// What the host no longer adds, the bundled default does: never
+    /// before the drawn floor (plus the presses' own time), never past the
+    /// server's window (less the safety margin and the presses), the floor
+    /// winning where the two cross.
+    #[test]
+    fn the_bundled_default_holds_the_floor_and_the_limit() {
+        use crate::config::MsRange;
+        let s = DelayScript::compile(DEFAULT_SCRIPT, "delay_default.lua").unwrap();
+        let cfg = MajsoulAutoplayConfig {
+            dealer_first_discard_extra_delay_ms: MsRange::fixed(2600),
+            ..MajsoulAutoplayConfig::default()
+        };
+        let d = DelayModelConfig {
+            min_delay_ms: MsRange::fixed(1300),
+            min_button_delay_ms: MsRange::fixed(2100),
+            ..DelayModelConfig::default()
+        };
+        let click = 300;
+        for (kind, opening, floor) in [
+            (DecisionKind::Dahai, false, 1300),
+            (DecisionKind::Pon, false, 2100),
+            (DecisionKind::Dahai, true, 2600),
+        ] {
+            for budget in [
+                None,
+                Some(BudgetSnapshot {
+                    fixed_ms: 5000,
+                    add_ms: 0,
+                    elapsed_ms: 0,
+                }),
+                Some(BudgetSnapshot {
+                    fixed_ms: 3000,
+                    add_ms: 0,
+                    elapsed_ms: 0,
+                }),
+            ] {
+                let mut i = base_input(&cfg, &d);
+                i.kind = kind;
+                i.opening_animation = opening;
+                i.click_overhead_ms = click;
+                i.budget = budget;
+                let limit = match budget {
+                    Some(b) => b.fixed_ms - d.safety_margin_ms - click,
+                    None => d.no_budget_cap_ms,
+                };
+                for _ in 0..200 {
+                    let t = s.try_decide(&i).unwrap().total_target_ms;
+                    assert!(t >= floor + click, "{kind:?} {budget:?}: {t} < floor");
+                    assert!(
+                        t <= limit.max(floor + click),
+                        "{kind:?} {budget:?}: {t} > limit"
+                    );
+                }
+            }
+        }
     }
 
     /// The bundled default (`DEFAULT_SCRIPT`, generated as `delay.lua`)
@@ -823,7 +1023,7 @@ mod tests {
         );
         // Floors/caps still bind: nothing below min_delay_ms, nothing
         // above the no-budget static cap.
-        assert!(*samples.first().unwrap() >= d.min_delay_ms);
+        assert!(*samples.first().unwrap() >= d.min_delay_ms.ms());
         assert!(*samples.last().unwrap() <= d.no_budget_cap_ms);
 
         // In riichi: measured Throne players still glance (~1.4s median),
@@ -837,7 +1037,7 @@ mod tests {
             })
             .collect();
         riichi_samples.sort_unstable();
-        assert!(*riichi_samples.first().unwrap() >= d.min_delay_ms);
+        assert!(*riichi_samples.first().unwrap() >= d.min_delay_ms.ms());
         let riichi_med = riichi_samples[riichi_samples.len() / 2];
         assert!(
             (1100..=1800).contains(&riichi_med),
@@ -853,6 +1053,7 @@ mod tests {
                 i.probs = Some(crate::autoplay::delay::DecisionProbs {
                     top: 0.40,
                     second: Some(0.399),
+                    entropy: 0.0,
                 });
                 s.try_decide(&i).unwrap().total_target_ms
             })
@@ -893,8 +1094,10 @@ mod tests {
         // Tsumogiri honor: the bucket with the largest routine weight
         // (0.15). With the collapse rule that dropped to 0.045, pushing
         // the fast (≤1.2s) fraction from ~30% down to ~24%.
+        // 10k draws: the bundled script lands near 0.29 here, and at 3k the
+        // sampling spread alone came within two standard errors of 0.27.
         let fast_fraction = |probs: Option<crate::autoplay::delay::DecisionProbs>| {
-            let n = 3000;
+            let n = 10_000;
             let fast = (0..n)
                 .filter(|_| {
                     let mut i = base_input(&cfg, &d);
@@ -912,11 +1115,110 @@ mod tests {
         let flat = fast_fraction(Some(crate::autoplay::delay::DecisionProbs {
             top: 0.11,
             second: Some(0.105),
+            entropy: 0.0,
         }));
         assert!(
             flat > 0.27,
             "flat-prob fast fraction {flat:.3} — routine collapse is back"
         );
+    }
+
+    /// Median total target of the bundled script over `n` draws of `tweak`ed
+    /// input, with the UI floors off so only the script's own shape shows.
+    fn bundled_median(tweak: impl Fn(&mut DelayInput)) -> u32 {
+        let s = DelayScript::compile(DEFAULT_SCRIPT, "delay_default.lua").unwrap();
+        let cfg = MajsoulAutoplayConfig::default();
+        let d = DelayModelConfig {
+            min_delay_ms: crate::config::MsRange::fixed(0),
+            min_button_delay_ms: crate::config::MsRange::fixed(0),
+            ..DelayModelConfig::default()
+        };
+        let mut samples: Vec<u32> = (0..2000)
+            .map(|_| {
+                let mut i = base_input(&cfg, &d);
+                tweak(&mut i);
+                s.try_decide(&i).unwrap().total_target_ms
+            })
+            .collect();
+        samples.sort_unstable();
+        samples[samples.len() / 2]
+    }
+
+    fn human(chosen: f64) -> crate::autoplay::delay::Reading {
+        crate::autoplay::delay::Reading {
+            human: Some(crate::autoplay::delay::HumanView {
+                top: chosen.max(0.5),
+                second: None,
+                chosen,
+            }),
+            ..Default::default()
+        }
+    }
+
+    /// The bundled policy thinks longer over a move few people would make
+    /// than over one nearly everyone makes.
+    #[test]
+    fn bundled_default_thinks_longer_where_people_split() {
+        let obvious = bundled_median(|i| i.reading = human(0.97));
+        let rare = bundled_median(|i| i.reading = human(0.10));
+        assert!(
+            rare as f64 > obvious as f64 * 1.4,
+            "rare move median {rare} vs obvious {obvious}"
+        );
+    }
+
+    /// Clearing loose tiles with nobody in riichi is not a question.
+    #[test]
+    fn bundled_default_clears_loose_tiles_quickly() {
+        let contested = bundled_median(|i| {
+            i.reading = crate::autoplay::delay::Reading {
+                loose: Some(false),
+                ..Default::default()
+            }
+        });
+        let clearing = bundled_median(|i| {
+            i.reading = crate::autoplay::delay::Reading {
+                loose: Some(true),
+                runner_up_loose: Some(true),
+                ..Default::default()
+            }
+        });
+        assert!(
+            (clearing as f64) < contested as f64 * 0.85,
+            "clearing median {clearing} vs contested {contested}"
+        );
+    }
+
+    /// Against a riichi a live tile takes longer than a safe one.
+    #[test]
+    fn bundled_default_takes_longer_over_a_live_tile() {
+        let reading = |safe| crate::autoplay::delay::Reading {
+            loose: Some(false),
+            safe: Some(safe),
+            ..Default::default()
+        };
+        let safe = bundled_median(|i| {
+            i.opponent_riichi = true;
+            i.reading = reading(true);
+        });
+        let live = bundled_median(|i| {
+            i.opponent_riichi = true;
+            i.reading = reading(false);
+        });
+        assert!(
+            live as f64 > safe as f64 * 1.1,
+            "live median {live} vs safe {safe}"
+        );
+    }
+
+    /// The dealer's opening thinks after the deal is laid out, not under it.
+    #[test]
+    fn bundled_default_thinks_after_the_deal() {
+        let opening = bundled_median(|i| {
+            i.opening_animation = true;
+            i.first_action_of_kyoku = true;
+        });
+        assert!(opening >= 4000, "opening median {opening}");
     }
 
     /// `ensure_default` generates the bundled script once and never
@@ -996,6 +1298,68 @@ mod tests {
         let mut host = ScriptHost::default();
         host.ensure_default(&path);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), DEFAULT_SCRIPT);
+    }
+
+    #[test]
+    fn a_script_is_told_apart_from_the_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("delay.lua");
+        assert_eq!(script_state(&path), ScriptState::Missing);
+        std::fs::write(&path, DEFAULT_SCRIPT).unwrap();
+        assert_eq!(script_state(&path), ScriptState::Current);
+        std::fs::write(&path, SUPERSEDED_DEFAULT_SCRIPTS.last().unwrap()).unwrap();
+        assert_eq!(script_state(&path), ScriptState::Outdated);
+        std::fs::write(
+            &path,
+            "-- mine\nfunction decide_delay(c) return { delay_ms = 1 } end",
+        )
+        .unwrap();
+        assert_eq!(script_state(&path), ScriptState::Modified);
+        assert_eq!(default_version().len(), 12);
+    }
+
+    /// Replacing keeps the user's script beside the new default.
+    #[test]
+    fn replacing_backs_the_old_script_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("delay.lua");
+        let mine = "-- mine\nfunction decide_delay(c) return { delay_ms = 1 } end";
+        std::fs::write(&path, mine).unwrap();
+        let backup = replace_with_default(&path).unwrap().expect("a backup");
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), mine);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), DEFAULT_SCRIPT);
+        assert!(backup
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("delay.lua."));
+
+        let fresh = dir.path().join("none.lua");
+        assert!(
+            replace_with_default(&fresh).unwrap().is_none(),
+            "nothing to back up"
+        );
+        assert_eq!(std::fs::read_to_string(&fresh).unwrap(), DEFAULT_SCRIPT);
+    }
+
+    /// The startup check updates an untouched old default without a host,
+    /// and leaves a user edit and a missing file alone.
+    #[test]
+    fn startup_refresh_updates_only_an_untouched_old_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("delay.lua");
+        assert!(!refresh_outdated_default(&path), "nothing to update");
+        assert!(!path.exists(), "a missing file is not generated here");
+
+        std::fs::write(&path, SUPERSEDED_DEFAULT_SCRIPTS.last().unwrap()).unwrap();
+        assert!(refresh_outdated_default(&path));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), DEFAULT_SCRIPT);
+        assert!(!refresh_outdated_default(&path), "already current");
+
+        let edited = format!("{}\n-- tweak\n", SUPERSEDED_DEFAULT_SCRIPTS.last().unwrap());
+        std::fs::write(&path, &edited).unwrap();
+        assert!(!refresh_outdated_default(&path));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
     }
 
     /// The check runs once per host: rewriting the old script back mid-

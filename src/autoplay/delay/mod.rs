@@ -20,10 +20,12 @@
 //!   [`TimeBudget`](crate::autoplay::budget::TimeBudget)) sits on top —
 //!   the sampled target is clamped so autoplay can never run the window
 //!   into an auto-discard.
-//! - A user Lua script can replace [`decide`]'s policy; functional floors
-//!   and the budget hard cap are enforced *after* the script so a
-//!   misbehaving script cannot click into an animation or overrun the
-//!   server clock.
+//! - A user Lua script can replace [`decide`]'s policy, and then owns the
+//!   whole computation: it gets every timing setting (`ctx.settings`), the
+//!   budget and the click time, and applies the functional floors and the
+//!   budget caps itself (the bundled default does). The caller adds nothing
+//!   to its answer — only a value outside the sanity range, or an error,
+//!   sends the decision to the built-in model instead.
 //!
 //! All quantities are milliseconds unless stated otherwise.
 
@@ -31,7 +33,10 @@ pub mod probs;
 pub mod script;
 
 pub use probs::DecisionProbs;
-pub use script::{DelayScript, ScriptHost};
+pub use script::{
+    default_version, refresh_outdated_default, replace_with_default, script_state, DelayScript,
+    ScriptHost, ScriptState,
+};
 
 use crate::config::{DelayDistribution, DelayModelConfig, MajsoulAutoplayConfig};
 use rand::Rng;
@@ -103,6 +108,34 @@ impl TileClass {
     }
 }
 
+/// How a policy that imitates people sees a decision (see
+/// `autoplay::advisor`): the share of players making their likeliest move,
+/// the next likeliest, and the move that is actually being made.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HumanView {
+    pub top: f64,
+    pub second: Option<f64>,
+    pub chosen: f64,
+}
+
+/// What is known about a decision besides the bot's own numbers: facts read
+/// off the table (`autoplay::table`) and a second opinion
+/// (`autoplay::advisor`). Every part is optional — `None` is "not read", not
+/// "no" — and, like the probabilities, none of it can alter the action. The
+/// built-in model ignores it; it is there for delay scripts.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Reading {
+    /// The discarded tile is loose in the hand.
+    pub loose: Option<bool>,
+    /// The runner-up discard is loose in the hand. `None` unless the bot's
+    /// two likeliest candidates are discards of different tiles.
+    pub runner_up_loose: Option<bool>,
+    /// The discarded tile cannot deal in to any riichi. `None` with no
+    /// riichi on the table.
+    pub safe: Option<bool>,
+    pub human: Option<HumanView>,
+}
+
 /// Copy of the server time budget taken at planning time.
 /// `elapsed_ms` is pre-computed so the planner stays free of clocks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +182,9 @@ pub struct DelayInput<'a> {
     /// could be interpreted (see [`probs::normalize_meta`]). The built-in
     /// model ignores them; they are exposed to user Lua scripts only.
     pub probs: Option<DecisionProbs>,
+    /// Table facts and a second opinion on this decision, as far as they
+    /// were read. Exposed to Lua scripts only.
+    pub reading: Reading,
     /// Server time budget for this window, if known.
     pub budget: Option<BudgetSnapshot>,
     /// Time the click sequence itself will take *after* the pre-delay
@@ -167,6 +203,11 @@ pub struct DelayInput<'a> {
 pub struct DelayDecision {
     pub total_target_ms: u32,
     pub allow_bank: bool,
+    /// Decided by `delay.lua`, which owns the whole computation — floors and
+    /// caps included — so the caller adds nothing on top. `false` for the
+    /// built-in model, whose result the caller still holds to the
+    /// functional floor after deducting the click overhead.
+    pub from_script: bool,
 }
 
 /// The built-in delay policy. Pure given `rng`.
@@ -187,7 +228,7 @@ pub fn decide<R: Rng + ?Sized>(input: &DelayInput, rng: &mut R) -> DelayDecision
     if input.opening_animation {
         // Historical behaviour: the animation wait is added on top of the
         // random delay, keeping the visible post-animation pause random.
-        target = target.saturating_add(input.cfg.dealer_first_discard_extra_delay_ms);
+        target = target.saturating_add(input.cfg.dealer_first_discard_extra_delay_ms.ms());
     }
     if input.can_riichi {
         target = target.saturating_add(d.riichi_extra_ms);
@@ -205,6 +246,7 @@ pub fn decide<R: Rng + ?Sized>(input: &DelayInput, rng: &mut R) -> DelayDecision
     DelayDecision {
         total_target_ms: target,
         allow_bank,
+        from_script: false,
     }
 }
 
@@ -256,7 +298,9 @@ pub fn budget_cap(input: &DelayInput, allow_bank: bool) -> u32 {
     }
 }
 
-/// The minimum target no policy — built-in or script — may go below.
+/// The minimum target the built-in model may go below, held by the
+/// callers too after they deduct the click overhead. A delay script gets
+/// the same settings in `ctx.settings` and applies its own floor.
 ///
 /// All components are about the client UI rather than style — a click
 /// issued before the UI exists is silently lost (the reason the legacy
@@ -269,12 +313,12 @@ pub fn budget_cap(input: &DelayInput, allow_bank: bool) -> u32 {
 /// - the dealer-opening pad covers the 14-tile hand-sort animation.
 pub fn functional_floor(input: &DelayInput) -> u32 {
     let d = input.delay_cfg;
-    let mut floor = d.min_delay_ms;
+    let mut floor = d.min_delay_ms.ms();
     if input.kind.clicks_action_button() {
-        floor = floor.max(d.min_button_delay_ms);
+        floor = floor.max(d.min_button_delay_ms.ms());
     }
     if input.opening_animation {
-        floor = floor.max(input.cfg.dealer_first_discard_extra_delay_ms);
+        floor = floor.max(input.cfg.dealer_first_discard_extra_delay_ms.ms());
     }
     floor
 }
@@ -401,6 +445,7 @@ mod tests {
             junme: 0,
             legal_action_count: 1,
             probs: None,
+            reading: Default::default(),
             budget: None,
             click_overhead_ms: 0,
             cfg,
@@ -535,9 +580,35 @@ mod tests {
         let dec = decide(&i, &mut r);
         assert_eq!(
             dec.total_target_ms,
-            c.pre_click_delay_max_ms + c.dealer_first_discard_extra_delay_ms
+            c.pre_click_delay_max_ms + c.dealer_first_discard_extra_delay_ms.ms()
         );
         assert!(dec.total_target_ms >= functional_floor(&i));
+    }
+
+    /// Regression: a decision aimed below the floor lands *on* the floor.
+    /// With one floor value every such decision took the same time to the
+    /// millisecond (a quarter of all discards in a live session); with the
+    /// floor drawn per decision they spread over its range.
+    #[test]
+    fn decisions_held_up_by_the_floor_do_not_share_one_time() {
+        // A base sample of 0: every decision is held up by the floor.
+        let c = MajsoulAutoplayConfig {
+            pre_click_delay_min_ms: 0,
+            pre_click_delay_max_ms: 0,
+            ..cfg()
+        };
+        let d = uniform();
+        let mut r = StdRng::seed_from_u64(AKAGI_SEED);
+        let totals: Vec<u32> = (0..100)
+            .map(|_| {
+                let (c, d) = (c.draw(&mut r), d.draw(&mut r));
+                decide(&input(&c, &d), &mut r).total_target_ms
+            })
+            .collect();
+        let range = d.min_delay_ms;
+        assert!(totals.iter().all(|t| (range.min..=range.max).contains(t)));
+        let distinct: std::collections::HashSet<_> = totals.iter().collect();
+        assert!(distinct.len() > 50, "{} distinct of 100", distinct.len());
     }
 
     /// Rule bonuses are additive and off by default.
@@ -574,10 +645,12 @@ mod tests {
             Some(DecisionProbs {
                 top: 0.41,
                 second: Some(0.409), // near-tie
+                entropy: 0.0,
             }),
             Some(DecisionProbs {
                 top: 0.999,
                 second: Some(0.001), // obvious
+                entropy: 0.0,
             }),
         ] {
             let mut i = input(&c, &d);
@@ -590,6 +663,29 @@ mod tests {
             let expected = decide(&base, &mut r);
             assert_eq!(dec, expected, "probs {probs:?} must not change the outcome");
         }
+    }
+
+    /// The reading (table facts, second opinion) is for scripts; the
+    /// built-in model draws the same with or without it.
+    #[test]
+    fn reading_does_not_affect_the_built_in_model() {
+        let c = cfg();
+        let d = uniform();
+        let mut i = input(&c, &d);
+        i.reading = Reading {
+            loose: Some(true),
+            runner_up_loose: Some(false),
+            safe: Some(false),
+            human: Some(HumanView {
+                top: 0.9,
+                second: Some(0.05),
+                chosen: 0.05,
+            }),
+        };
+        let mut r = StdRng::seed_from_u64(AKAGI_SEED);
+        let dec = decide(&i, &mut r);
+        let mut r = StdRng::seed_from_u64(AKAGI_SEED);
+        assert_eq!(dec, decide(&input(&c, &d), &mut r));
     }
 
     // ------------------------------------------------------------------
@@ -756,7 +852,8 @@ mod tests {
             let mut r = StdRng::seed_from_u64(AKAGI_SEED);
             let dec = decide(&i, &mut r);
             assert_eq!(
-                dec.total_target_ms, d.min_button_delay_ms,
+                dec.total_target_ms,
+                d.min_button_delay_ms.ms(),
                 "{kind:?} must sit on the button floor"
             );
         }
@@ -765,7 +862,7 @@ mod tests {
         let i = input(&c, &d);
         let mut r = StdRng::seed_from_u64(AKAGI_SEED);
         let dec = decide(&i, &mut r);
-        assert_eq!(dec.total_target_ms, d.min_delay_ms);
+        assert_eq!(dec.total_target_ms, d.min_delay_ms.ms());
     }
 
     /// The functional floor (animation wait) wins over the cap: losing
@@ -784,7 +881,7 @@ mod tests {
         let mut r = StdRng::seed_from_u64(AKAGI_SEED);
         let dec = decide(&i, &mut r);
         assert!(
-            dec.total_target_ms >= c.dealer_first_discard_extra_delay_ms,
+            dec.total_target_ms >= c.dealer_first_discard_extra_delay_ms.ms(),
             "floor must not be undercut by the cap"
         );
     }

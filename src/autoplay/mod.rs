@@ -54,9 +54,15 @@
 //!   tell a click that registered from one the UI swallowed, and retry.
 //!   Canvas clicks only — the Tenhou steps run the client's own handlers,
 //!   which report their own failure.
+//! - [`delay`] — how long a decision appears to take, shared by every
+//!   platform. Its inputs besides the decision itself: [`table`] (facts read
+//!   off the table — loose tile, safe against every riichi) and [`advisor`]
+//!   (a second opinion from the built-in bot on how obvious the move is to a
+//!   person). Neither can change the action.
 //!
 //! Entry point: [`manager::run_autoplay_manager`].
 
+pub mod advisor;
 pub mod budget;
 pub mod cdp_input;
 pub mod context;
@@ -66,6 +72,7 @@ pub mod majsoul;
 pub mod manager;
 pub mod platform;
 pub mod riichi_city;
+pub mod table;
 pub mod tenhou;
 pub mod tenhou_state;
 pub mod verify;

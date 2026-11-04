@@ -99,7 +99,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                     return PlanResult::default();
                 }
                 result.steps.push(Step::Sleep {
-                    duration_ms: ctx.cfg.inter_click_delay_ms,
+                    duration_ms: ctx.cfg.inter_click_delay_ms.ms(),
                 });
                 if let Some(click) = plan_dahai_click(tile, ctx) {
                     result.steps.push(click);
@@ -255,14 +255,23 @@ fn push_pre_delay(
     extra_clicks: u32,
 ) {
     let cfg = ctx.cfg;
-    let per_click = cfg.hover_delay_ms + cfg.click_hold_ms;
-    let click_overhead_ms = per_click + extra_clicks * (per_click + cfg.inter_click_delay_ms);
+    let per_click = cfg.hover_delay_ms.ms() + cfg.click_hold_ms.ms();
+    let click_overhead_ms = per_click + extra_clicks * (per_click + cfg.inter_click_delay_ms.ms());
 
+    // Nothing has happened on the table yet this kyoku: no discard, and no
+    // kita of ours (a dealer can set aside several North tiles before the
+    // first discard; only the first of them follows the deal).
+    let untouched = ctx.last_kawa_tile.is_none()
+        && ctx
+            .snapshot
+            .players
+            .get(ctx.our_seat as usize)
+            .is_none_or(|p| p.kita_tiles.is_empty());
     let opening_animation = match kind {
         DecisionKind::Dahai => is_dealer_first_discard(ctx),
         // A kita on the opening draw of a kyoku waits out the same
         // dealing animation as the dealer's first discard.
-        DecisionKind::Kita => ctx.last_kawa_tile.is_none(),
+        DecisionKind::Kita => untouched,
         _ => false,
     };
 
@@ -305,7 +314,7 @@ fn push_pre_delay(
         kind,
         is_tsumogiri,
         is_post_call,
-        first_action_of_kyoku: ctx.last_kawa_tile.is_none(),
+        first_action_of_kyoku: untouched,
         opening_animation,
         can_riichi: ctx
             .legal_actions
@@ -322,13 +331,15 @@ fn push_pre_delay(
             .unwrap_or(0),
         legal_action_count: ctx.legal_actions.len(),
         probs: ctx.probs,
+        reading: ctx.reading,
         budget: ctx.budget,
         click_overhead_ms,
         cfg,
         delay_cfg: &delay_cfg,
     };
     // User Lua policy first (falls back internally on any failure), then
-    // the built-in model. Both are bound by the same caps and floors.
+    // the built-in model. The built-in model's answer is held to the caps
+    // and floors here; a script's already holds its own.
     let decision = ctx
         .delay_script
         .filter(|_| !legacy)
@@ -352,9 +363,14 @@ fn push_pre_delay(
     };
     // The overhead deduction must not undercut UI readiness: the first
     // click still has to land after the functional floor. Time already
-    // elapsed in the window counts toward that floor.
+    // elapsed in the window counts toward that floor. A script's answer
+    // already accounts for that (it owns the floor and sees `click_ms`).
     let elapsed = ctx.budget.map_or(0, |b| b.elapsed_ms);
-    let sleep = sleep.max(delay::functional_floor(&input).saturating_sub(elapsed));
+    let sleep = if decision.from_script {
+        sleep
+    } else {
+        sleep.max(delay::functional_floor(&input).saturating_sub(elapsed))
+    };
     steps.push(Step::Sleep { duration_ms: sleep });
 }
 
@@ -502,7 +518,7 @@ fn plan_meld(op: MajsoulOpType, at: ActionType, result: &mut PlanResult, ctx: &A
     {
         if let Some(p) = candidate_pos(idx, candidates.len()) {
             result.steps.push(Step::Sleep {
-                duration_ms: ctx.cfg.inter_click_delay_ms,
+                duration_ms: ctx.cfg.inter_click_delay_ms.ms(),
             });
             result.steps.push(Step::Click {
                 x_norm: p.0,
@@ -580,7 +596,7 @@ fn plan_kan(op: MajsoulOpType, at: ActionType, result: &mut PlanResult, ctx: &Ac
         // — kept in the signature so future logic can branch on it.
         let _ = at;
         result.steps.push(Step::Sleep {
-            duration_ms: ctx.cfg.inter_click_delay_ms,
+            duration_ms: ctx.cfg.inter_click_delay_ms.ms(),
         });
         result.steps.push(Step::Click {
             x_norm: p.0,
@@ -750,19 +766,19 @@ mod tests {
         MajsoulAutoplayConfig {
             pre_click_delay_min_ms: 0,
             pre_click_delay_max_ms: 0,
-            inter_click_delay_ms: 0,
-            hover_delay_ms: 0,
-            click_hold_ms: 0,
-            verify_input_ms: 0,
+            inter_click_delay_ms: crate::config::MsRange::fixed(0),
+            hover_delay_ms: crate::config::MsRange::fixed(0),
+            click_hold_ms: crate::config::MsRange::fixed(0),
+            verify_input_ms: crate::config::MsRange::fixed(0),
             click_retries: 0,
             reload_after_failures: 0,
-            dealer_first_discard_extra_delay_ms: 0,
+            dealer_first_discard_extra_delay_ms: crate::config::MsRange::fixed(0),
         }
     }
 
     fn cfg_with_dealer_delay(ms: u32) -> MajsoulAutoplayConfig {
         let mut c = cfg();
-        c.dealer_first_discard_extra_delay_ms = ms;
+        c.dealer_first_discard_extra_delay_ms = crate::config::MsRange::fixed(ms);
         c
     }
 
@@ -832,6 +848,7 @@ mod tests {
             delay_cfg: crate::config::DelayModelConfig::default(),
             budget: None,
             probs: None,
+            reading: Default::default(),
             delay_script: None,
             tenhou: None,
         }
@@ -1159,8 +1176,8 @@ mod tests {
             tsumogiri: false,
         };
         let mut cfg_ref = cfg();
-        cfg_ref.hover_delay_ms = 200;
-        cfg_ref.click_hold_ms = 100; // single-click dahai → 300ms overhead
+        cfg_ref.hover_delay_ms = crate::config::MsRange::fixed(200);
+        cfg_ref.click_hold_ms = crate::config::MsRange::fixed(100); // single-click dahai → 300ms overhead
         let mut ctx = ctx_for(&act, &snap, &[], Some("1m"), None, false, &cfg_ref);
         ctx.delay_script = Some(&script);
 
@@ -1192,12 +1209,40 @@ mod tests {
         );
     }
 
-    /// The overhead deduction must not undercut UI readiness: a target
-    /// sitting on the functional floor keeps its full pre-click pause.
+    /// The built-in model's target is held to the floor after the overhead
+    /// deduction: a target sitting on the functional floor keeps its full
+    /// pre-click pause.
     #[test]
     fn overhead_deduction_keeps_ui_floor() {
+        let snap = snapshot_with_hand(0, vec!["1m", "2m", "3m"]);
+        let act = MjaiEvent::Dahai {
+            actor: 0,
+            pai: "3m".into(),
+            tsumogiri: false,
+        };
+        let mut cfg_ref = cfg();
+        cfg_ref.hover_delay_ms = crate::config::MsRange::fixed(200);
+        cfg_ref.click_hold_ms = crate::config::MsRange::fixed(100);
+        let ctx = ctx_for(&act, &snap, &[], Some("1m"), None, false, &cfg_ref);
+        let floor = ctx.delay_cfg.min_delay_ms.ms();
+
+        let result = MajsoulAutoplay::new().plan(&ctx);
+        assert!(
+            matches!(
+                result.steps.first(),
+                Some(Step::Sleep { duration_ms }) if *duration_ms == floor
+            ),
+            "sleep must not dip below the UI-readiness floor: {:?}",
+            result.steps.first()
+        );
+    }
+
+    /// A script's answer is final: it owns the floor (and sees the presses'
+    /// time as `click_ms`), so its target less the overhead is the sleep.
+    #[test]
+    fn a_scripts_answer_is_slept_as_is() {
         let script = crate::autoplay::delay::DelayScript::compile(
-            "function decide_delay(ctx) return { delay_ms = 0 } end",
+            "function decide_delay(ctx) return { delay_ms = 1000 + ctx.click_ms } end",
             "test",
         )
         .unwrap();
@@ -1208,19 +1253,18 @@ mod tests {
             tsumogiri: false,
         };
         let mut cfg_ref = cfg();
-        cfg_ref.hover_delay_ms = 200;
-        cfg_ref.click_hold_ms = 100;
+        cfg_ref.hover_delay_ms = crate::config::MsRange::fixed(200);
+        cfg_ref.click_hold_ms = crate::config::MsRange::fixed(100);
         let mut ctx = ctx_for(&act, &snap, &[], Some("1m"), None, false, &cfg_ref);
+        ctx.delay_cfg.min_delay_ms = crate::config::MsRange::fixed(5000);
         ctx.delay_script = Some(&script);
-        let floor = ctx.delay_cfg.min_delay_ms;
-
         let result = MajsoulAutoplay::new().plan(&ctx);
         assert!(
             matches!(
                 result.steps.first(),
-                Some(Step::Sleep { duration_ms }) if *duration_ms == floor
+                Some(Step::Sleep { duration_ms: 1000 })
             ),
-            "sleep must not dip below the UI-readiness floor: {:?}",
+            "no floor added to a script's answer: {:?}",
             result.steps.first()
         );
     }
@@ -1579,6 +1623,40 @@ mod tests {
             dora_markers: Vec::new(),
             our_seat: Some(seat),
         }
+    }
+
+    /// Only a dealer's first opening kita follows the deal. A second one is
+    /// a fresh window and must not wait the deal out again.
+    #[test]
+    fn only_the_first_opening_kita_waits_out_the_deal() {
+        let mut cfg_ref = cfg();
+        cfg_ref.dealer_first_discard_extra_delay_ms = crate::config::MsRange::fixed(5000);
+        let act = MjaiEvent::Kita {
+            actor: 0,
+            pai: Some("N".into()),
+        };
+        let legal = vec![Action::new(ActionType::Kita, Some(120), vec![], Some(0))];
+        let sleep_with = |kita: Vec<&str>| {
+            let tehai = vec![
+                "1m", "9m", "1p", "2p", "3p", "4s", "5s", "6s", "E", "E", "S", "P", "N", "N",
+            ];
+            let snap = snapshot_3p_with_kita(0, 0, tehai, kita, Some("N"));
+            let mut ctx = ctx_for(&act, &snap, &legal, None, Some("N"), false, &cfg_ref);
+            ctx.delay_cfg.mode = crate::config::DelayMode::Legacy;
+            ctx.delay_cfg.min_delay_ms = crate::config::MsRange::fixed(0);
+            ctx.delay_cfg.min_button_delay_ms = crate::config::MsRange::fixed(0);
+            MajsoulAutoplay::new()
+                .plan(&ctx)
+                .steps
+                .iter()
+                .find_map(|s| match s {
+                    Step::Sleep { duration_ms } => Some(*duration_ms),
+                    _ => None,
+                })
+                .expect("the kita is paced")
+        };
+        assert_eq!(sleep_with(vec![]), 5000, "the first kita follows the deal");
+        assert_eq!(sleep_with(vec!["N"]), 0, "the second does not");
     }
 
     #[test]

@@ -5,22 +5,46 @@
 -- the default on the next start. If the script ever errors, Akagi keeps
 -- playing with its built-in model and logs the reason once.
 --
--- decide_delay(ctx) returns { delay_ms = <number>, allow_bank = <bool> }.
+-- Adapted from Washizu's pacing policy
+-- (https://github.com/nanomena/Washizu, Apache-2.0).
+--
+-- HOW LONG PEOPLE TAKE comes from people: the log-normal think times below
+-- were fitted to ranked game records by kind of decision (30 games, about
+-- 21,500 decisions, think times on the server clock).
+--
+-- WHICH DECISIONS GET THE LONG ONES is the question this file answers. A
+-- person thinks where the position is a question for a person: pushing or
+-- folding, finding a tile to fold with, choosing between shapes. Two
+-- things are read for that, each for what it is good at.
+--
+-- 1. What people would do (ctx.human_*). The built-in bot imitates people,
+--    so its policy is roughly the share of players making each move. The
+--    smaller the share that makes the move being made, the less obvious the
+--    move, and the longer the think. Those cases are exactly where players
+--    split. The bot that plays may be another one; this only reads it.
+--
+-- 2. The table (ctx.loose, ctx.runner_up_loose, ctx.safe), for what the
+--    first reading cannot say. Loose tiles — nothing in the hand connects
+--    to them — go out in whatever order: players split over which, and
+--    nobody thinks about it. This is about the tile's place in the hand,
+--    not its kind: a loose 8 is cleared like a loose North, and a 9 in a run
+--    is not loose. And a tile that is not safe against a riichi takes
+--    longer than one that is.
+--
+-- decide_delay(ctx) returns { delay_ms = <number> }.
 --
 -- delay_ms is the target TOTAL thinking time for the decision window —
 -- the time the SERVER observes between offering the decision and
 -- receiving the action. It is NOT a sleep length: Akagi subtracts
--- whatever networking and bot inference already consumed.
+-- whatever networking and bot inference already consumed, and the time
+-- the presses themselves take (ctx.click_ms).
 --
--- Akagi always enforces on top of whatever this script returns:
---   * a minimum delay (config `min_delay_ms`; the higher
---     `min_button_delay_ms` for chi/pon/kan/ron/skip/riichi buttons,
---     which render later than hand tiles) — clicks issued before the
---     UI exists are silently lost
---   * the dealing-animation wait on the dealer's opening discard
---   * the server time budget — autoplay can never run into an
---     auto-discard; the extra time bank is only spent when this script
---     returns allow_bank = true
+-- This script is the whole computation: Akagi adds nothing to what it
+-- returns. The limits at the end of this file — no press before the client
+-- can take it, no running into the client's auto-discard — are applied
+-- here, from the values in ctx.settings. Keep them if you rewrite the rest.
+-- (A delay_ms outside 0..600000, or an error, makes Akagi use its built-in
+-- model for that decision instead.)
 --
 -- Context passed to decide_delay:
 --   ctx.action          "dahai" | "reach" | "chi" | "pon" | "daiminkan"
@@ -30,51 +54,98 @@
 --   ctx.post_call       discard following our own chi/pon
 --   ctx.tile_class      "honor" | "terminal" | "middle" for a discard
 --   ctx.first_action    first action of the kyoku
---   ctx.dealer_opening  dealer's 14-tile opening discard
+--   ctx.dealer_opening  dealer's 14-tile opening discard (Mahjong Soul only:
+--                       the other platforms wait for the client instead)
 --   ctx.can_riichi      riichi is declarable this turn
 --   ctx.is_kan          the action is a kan declaration
 --   ctx.in_riichi       we are in accepted riichi
 --   ctx.opponent_riichi an opponent has declared riichi
 --   ctx.junme           our discard number this kyoku (1 = first)
 --   ctx.legal_count     number of legal actions
---   ctx.top_prob        bot's top candidate probability (0..1), or nil
+--   ctx.top_prob        the playing bot's top candidate probability (0..1),
+--                       or nil
 --   ctx.second_prob     second candidate probability, or nil
 --   ctx.margin          top_prob - second_prob, or nil
---                       (the three above are unused by this default
---                       model — see the note before routine_probability)
+--   ctx.entropy         how spread the candidates were, in nats, or nil
+--   ctx.loose, ctx.runner_up_loose, ctx.safe   read off the table; nil when
+--                       not read (ctx.safe is nil with no riichi;
+--                       runner_up_loose is nil unless the bot's two
+--                       likeliest moves are discards of different tiles)
+--   ctx.human_top, ctx.human_second, ctx.human_chosen   the built-in bot's
+--                       shares for its likeliest moves and for the move
+--                       being made; nil with no second opinion
 --   ctx.budget          { fixed_ms, add_ms, elapsed_ms } or nil
+--   ctx.button          this decision presses an action button
+--                       (chi/pon/kan/ron/tsumo/skip/riichi/kita), which the
+--                       client shows later than the hand
+--   ctx.click_ms        how long the presses take after the delay, ms
+--   ctx.settings        the timing settings, every range drawn afresh for
+--                       this decision (ms unless noted):
+--     min_delay_ms, min_button_delay_ms   the earliest a press may land
+--     dealer_opening_ms   the deal's length on the dealer's opening discard
+--     hover_ms, hold_ms, inter_click_ms, verify_ms   how the presses go
+--     pre_click_min_ms, pre_click_max_ms   the legacy uniform think range
+--     safety_margin_ms    kept free at the end of the server's window
+--     bank_use_fraction, bank_max_single_ms   how much of the time bank a
+--                         decision that may use it gets (fraction, ms)
+--     no_budget_cap_ms    the limit when the server states no window (0: none)
 --   ctx.rng()           uniform random in [0, 1)
 --   ctx.lognormal(mu, sigma)  log-normal sample in SECONDS
---
--- Every number below is calibrated against ranked Throne-room game
--- records (30 games, ~21,500 decisions, think times on the server
--- clock). Real discards are a MIXTURE: a "routine" cluster (~1s — the
--- tile was already decided) and a genuine think whose length depends on
--- what is being discarded, how deep the hand is, and whether someone
--- has declared riichi.
 
--- Probability that a discard is routine (no real thought). These are
--- MIXTURE WEIGHTS, not the measured fast-fractions directly: the
--- routine cluster only puts ~84% of its own mass under 1.2s and the
--- genuine-think cluster contributes sub-1.2s mass too, so each weight
--- w solves  w*0.844 + (1-w)*P_think(<1.2s) = measured fast-fraction
--- (tedashi h/t/m: 21%/10%/4%; tsumogiri h/t/m: 31%/26%/20%). Tedashi
--- terminal/middle round to zero — their think cluster alone already
--- covers the measured fast mass.
+-- How much of a decision's place in its distribution is read (the rest is
+-- noise). 0 ignores the readings; 1 makes the time a function of them.
+local FOLLOW = 0.75
+
+-- Where "few people would play this" falls among decisions: { 1 - share of
+-- players making the move, share of decisions at or below it }, measured
+-- from decision logs.
+local PLACE_HUMAN = {
+  discard = { { 0.04, 0.10 }, { 0.11, 0.20 }, { 0.20, 0.30 }, { 0.37, 0.40 },
+              { 0.56, 0.50 }, { 0.72, 0.60 }, { 0.80, 0.70 }, { 0.92, 0.80 },
+              { 0.95, 0.90 }, { 0.97, 0.95 }, { 1.00, 1.00 } },
+  other   = { { 0.05, 0.30 }, { 0.31, 0.50 }, { 0.68, 0.70 }, { 0.97, 0.90 },
+              { 1.00, 1.00 } },
+}
+
+-- The time bank is for the decisions that earn it: from this place up. The
+-- rest finish inside the free window.
+local BANK_PLACE = 0.75
+
+-- The dealer's first discard on Mahjong Soul (the only platform that sets
+-- ctx.dealer_opening): its window opens with the deal, which takes
+-- about three seconds to lay out (the client takes no press before then).
+-- The hand is looked at once it is laid out, so the think comes after the
+-- deal, not under it; the eye lands on the hand a moment after.
+local DEAL_S = 3.2
+local DEAL_LAG = 0.3
+-- Mahjong Soul gives that window 8 s rather than 5, and starts its clock —
+-- the time use the client reports, which the bank is charged by — only
+-- later: 1.0 to 3.7 s after the window opens, 1.75 s typically. So the free
+-- window, counted from the opening as delay_ms is, runs that much longer. A
+-- second of it is used.
+local DEAL_UNCOUNTED_S = 1.0
+-- The window's limit below is fixed_ms less the safety margin and the
+-- presses' own time; an opening think past this needs the bank to keep its
+-- length.
+local DEAL_CUTOFF_S = 2.0
+
+-- A tile thrown against a riichi: longer when it is not safe.
+local LIVE_TILE = 1.35
+local SAFE_TILE = 1.10
+
+-- Share of discards that are routine — out in about a second, the tile was
+-- already decided — and the log-normal { mu, sigma } (ln-seconds) of the ones
+-- that are thought about.
 local ROUTINE = {
   tedashi   = { honor = 0.12, terminal = 0.00, middle = 0.00 },
   tsumogiri = { honor = 0.15, terminal = 0.10, middle = 0.04 },
 }
-
--- Log-normal { mu, sigma } (ln-seconds) of the *genuine-think* cluster.
 local THINK = {
   tedashi   = { honor = { 0.77, 0.50 }, terminal = { 0.83, 0.50 },
                 middle = { 1.01, 0.55 }, default = { 0.87, 0.55 } },
   tsumogiri = { honor = { 0.54, 0.45 }, terminal = { 0.57, 0.45 },
                 middle = { 0.63, 0.48 }, default = { 0.57, 0.47 } },
 }
-
--- Non-discard decisions (single log-normal fits them well).
 local OTHER = {
   reach           = { 1.10, 0.55 }, -- riichi declaration   (median ~3.0s)
   claim           = { 0.26, 0.57 }, -- call window incl pass (median ~1.3s)
@@ -83,109 +154,191 @@ local OTHER = {
   in_riichi       = { 0.35, 0.30 }, -- skip while in riichi  (median ~1.4s)
 }
 
--- NOTE: this model deliberately ignores the bot's reported probabilities
--- (ctx.top_prob / ctx.second_prob / ctx.margin). Measured bot policies
--- can be nearly flat (top ~0.11 on most decisions), which turned every
--- confidence-based rule — "obvious tile" speed-ups and "contested call"
--- slow-downs alike — into a permanent bias instead of a signal. The
--- fields remain available for custom scripts tuned to a specific bot.
-local function routine_probability(ctx, giri)
-  local p = (ROUTINE[giri] or {})[ctx.tile_class or "middle"] or 0.04
-  -- A riichi on the table means every discard gets a safety read.
-  if ctx.opponent_riichi then p = p * 0.4 end
-  if p > 0.6 then p = 0.6 end
-  return p
+local function clamp(x, lo, hi)
+  if x < lo then return lo end
+  if x > hi then return hi end
+  return x
 end
 
-local function discard_think(ctx)
-  local giri = ctx.tsumogiri and "tsumogiri" or "tedashi"
-  if ctx.rng() < routine_probability(ctx, giri) then
-    -- Routine flick: tight cluster around one second.
-    return ctx.lognormal(0.0, 0.18)
+-- A standard normal draw, and the standard normal's quantile (Abramowitz and
+-- Stegun 26.2.23, good to a thousandth), kept inside the middle 98%.
+local function normal(ctx)
+  return math.log(ctx.lognormal(0, 1))
+end
+
+local function quantile(u)
+  u = clamp(u, 0.01, 0.99)
+  local tail = u < 0.5 and u or 1 - u
+  local t = math.sqrt(-2 * math.log(tail))
+  local z = t - (2.515517 + 0.802853 * t + 0.010328 * t * t)
+                / (1 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t)
+  return u < 0.5 and -z or z
+end
+
+-- The share of decisions at or below `x`, from a table of knots.
+local function placed(ctx, knots, x)
+  local below_x, below_u = 0, 0
+  for i, knot in ipairs(knots) do
+    if x <= knot[1] then
+      if i == 1 and #knots > 1 then return ctx.rng() * knot[2] end
+      return below_u + (knot[2] - below_u) * (x - below_x) / (knot[1] - below_x)
+    end
+    below_x, below_u = knot[1], knot[2]
   end
-  local params = THINK[giri][ctx.tile_class or "default"]
-                 or THINK[giri].default
-  local think = ctx.lognormal(params[1], params[2])
-  -- Deeper hands are read longer — but only tedashi shows this
-  -- (measured tsumogiri medians are junme-flat).
-  if giri == "tedashi" and ctx.junme ~= nil and ctx.junme > 0 then
-    think = think * (1.0 + 0.012 * math.min(ctx.junme, 15))
+  return 1
+end
+
+-- Clearing the hand: the tile is loose, nobody is in riichi, and the
+-- runner-up — when there is one — is loose too. Which goes first is not a
+-- question.
+local function clearing(ctx)
+  return ctx.action == "dahai" and ctx.loose == true and ctx.safe == nil
+    and ctx.runner_up_loose ~= false
+end
+
+-- THE LIMITS. Akagi adds nothing to what decide_delay returns, so this is
+-- where a press is kept from landing before the client takes it and a
+-- decision from running into the client's auto-discard.
+
+-- The earliest the presses may start, ms: the client draws the hand before
+-- it takes a press on a tile, the action buttons later still, and on the
+-- dealer's opening discard nothing until the deal is laid out.
+local function floor_ms(ctx, s)
+  local floor = s.min_delay_ms
+  if ctx.button then floor = math.max(floor, s.min_button_delay_ms) end
+  if ctx.dealer_opening then floor = math.max(floor, s.dealer_opening_ms) end
+  return floor
+end
+
+-- The latest the action may reach the server, ms, or nil for no limit. The
+-- server gives fixed_ms per decision and a bank (add_ms) that refills each
+-- hand; a decision allowed the bank gets a bounded share of it. The safety
+-- margin covers the network, and the presses' own time comes off too.
+local function limit_ms(ctx, s, floor, bank)
+  if ctx.budget == nil then
+    if s.no_budget_cap_ms == 0 then return nil end
+    -- Never below what the legacy think range alone could produce.
+    return math.max(s.no_budget_cap_ms, s.pre_click_max_ms + floor)
   end
-  -- Defence reads against a live riichi: +16% tedashi, +25% tsumogiri,
-  -- with a fatter tail.
-  if ctx.opponent_riichi then
-    think = think * (giri == "tedashi" and 1.16 or 1.25)
-    if ctx.rng() < 0.06 then think = think + ctx.lognormal(0.9, 0.5) end
-  end
-  return think
+  local soft = math.max(ctx.budget.fixed_ms - s.safety_margin_ms - ctx.click_ms, 0)
+  if not bank then return soft end
+  return soft + math.min(ctx.budget.add_ms * clamp(s.bank_use_fraction, 0, 1),
+                         s.bank_max_single_ms)
+end
+
+-- The think, in seconds, held to the limits. The floor wins over the
+-- limit: a press before the client takes it is lost outright, which is
+-- worse than eating into the window.
+local function within_limits(ctx, think_s, bank)
+  local s = ctx.settings
+  local floor = floor_ms(ctx, s)
+  local ms = think_s * 1000
+  local limit = limit_ms(ctx, s, floor, bank)
+  if limit ~= nil then ms = math.min(ms, limit) end
+  return { delay_ms = math.max(ms, floor + ctx.click_ms) }
+end
+
+-- The share of decisions no harder than this one, 0..1: where what people
+-- would do puts it, or anywhere with no second opinion.
+local function place(ctx)
+  if clearing(ctx) then return ctx.rng() * 0.3 end
+  if ctx.human_chosen == nil then return ctx.rng() end
+  local discard = ctx.action == "dahai" or ctx.action == "reach"
+  return placed(ctx, discard and PLACE_HUMAN.discard or PLACE_HUMAN.other,
+                clamp(1 - ctx.human_chosen, 0, 1))
 end
 
 function decide_delay(ctx)
-  local think
-  local allow_bank = false
+  local u = place(ctx)
+  -- This decision's place in its distribution, in standard deviations.
+  local z = FOLLOW * quantile(u) + math.sqrt(1 - FOLLOW * FOLLOW) * normal(ctx)
+  local function drawn(params)
+    return math.exp(params[1] + params[2] * z)
+  end
 
   if ctx.in_riichi then
-    -- Only claim windows reach this point in riichi (Majsoul auto-
-    -- discards our draws). Measured: still ~1.4s — humans do glance.
-    think = ctx.lognormal(OTHER.in_riichi[1], OTHER.in_riichi[2])
-    return { delay_ms = think * 1000 }
+    -- Only call windows arrive in riichi; a glance and a pass.
+    return within_limits(ctx, drawn(OTHER.in_riichi), false)
   end
 
+  local think
+  local giri = ctx.tsumogiri and "tsumogiri" or "tedashi"
   if ctx.action == "dahai" then
     if ctx.post_call then
-      think = ctx.lognormal(OTHER.post_call_dahai[1], OTHER.post_call_dahai[2])
+      think = drawn(OTHER.post_call_dahai)
     else
-      think = discard_think(ctx)
+      -- The easier the decision, the likelier it was routine: twice the
+      -- measured share for the easiest, none for the hardest, the measured
+      -- share over all of them.
+      local routine = (ROUTINE[giri][ctx.tile_class or "middle"] or 0.04) * 2 * (1 - u)
+      if ctx.opponent_riichi then routine = routine * 0.4 end
+      if ctx.rng() < routine then
+        think = math.exp(0.18 * normal(ctx))
+      else
+        think = drawn(THINK[giri][ctx.tile_class or "default"] or THINK[giri].default)
+        -- Deeper hands are read longer, from the hand only.
+        if giri == "tedashi" and ctx.junme ~= nil and ctx.junme > 0 then
+          think = think * (1.0 + 0.012 * math.min(ctx.junme, 15))
+        end
+      end
+    end
+    -- Against a riichi every tile is a question of safety, and a live one
+    -- more than a safe one.
+    if ctx.safe == false then
+      think = think * LIVE_TILE
+    elseif ctx.safe == true then
+      think = think * SAFE_TILE
+    elseif ctx.opponent_riichi then
+      think = think * (giri == "tedashi" and 1.16 or 1.25)
     end
   elseif ctx.action == "reach" then
-    think = ctx.lognormal(OTHER.reach[1], OTHER.reach[2])
+    think = drawn(OTHER.reach)
   elseif ctx.action == "hora" then
-    think = ctx.lognormal(OTHER.hora[1], OTHER.hora[2])
+    think = drawn(OTHER.hora)
   elseif ctx.action == "ankan" or ctx.action == "kakan" then
-    -- Own-turn kan declaration thinks like a middle-tile tedashi.
-    think = ctx.lognormal(THINK.tedashi.middle[1], THINK.tedashi.middle[2])
+    think = drawn(THINK.tedashi.middle)
   else
-    -- Claim-window responses: chi/pon/daiminkan/skip/kyuushu.
-    think = ctx.lognormal(OTHER.claim[1], OTHER.claim[2])
+    think = drawn(OTHER.claim)
   end
 
-  -- First action of a kyoku: the fresh hand gets surveyed.
-  if ctx.first_action then
-    think = think + 0.5 + 0.8 * ctx.rng()
-  end
+  -- The first look at a new hand.
+  if ctx.first_action then think = think + 0.5 + 0.8 * ctx.rng() end
+  -- A riichi that could be declared is a decision even when it is not made.
+  if ctx.can_riichi and ctx.action == "dahai" then think = think + 0.4 + 0.8 * ctx.rng() end
 
-  -- A declarable riichi makes this discard a real decision even when
-  -- the bot ends up not declaring.
-  if ctx.can_riichi and ctx.action == "dahai" then
-    think = think + 0.4 + 0.8 * ctx.rng()
-  end
-
-  -- Occasional genuine tank — recounting discards, weighing a fold.
-  if ctx.rng() < 0.02 then
+  -- Now and then, a real tank over a tile: among the hardest tenth, one in five.
+  local allow_bank = false
+  if (ctx.action == "dahai" or ctx.action == "reach") and u > 0.9 and ctx.rng() < 0.2 then
     think = think + 2.0 + ctx.lognormal(0.8, 0.6)
     allow_bank = true
   end
 
-  -- Budget shaping. The server grants fixed_ms per decision plus a
-  -- bank (add_ms) that REFILLS EVERY KYOKU — measured Throne players
-  -- dip into it on ~7% of draws, so exceeding the free window is
-  -- normal play, not an emergency. But when the bank is nearly dry,
-  -- humans wrap up instead of risking the auto-discard timer.
+  local deal = 0
+  if ctx.dealer_opening then deal = DEAL_S + DEAL_LAG * ctx.rng() end
+  think = deal + think
+
+  -- The server gives fixed_ms per decision and a bank (add_ms) that refills
+  -- every hand. The harder decisions may dip into a bank that has something
+  -- in it; the rest wrap up inside the free window, a little before its end
+  -- rather than all at the same instant, and never inside the deal.
   if ctx.budget ~= nil then
-    -- Floored at 0: a sub-second fixed_ms must degrade to "answer at
-    -- the enforced minimum", not to a negative delay_ms that Akagi
-    -- would reject (which would silently disable this script for the
-    -- whole room).
     local free_s = math.max(ctx.budget.fixed_ms / 1000 - 1.0, 0)
-    local bank_s = ctx.budget.add_ms / 1000
+    if ctx.dealer_opening then free_s = free_s + DEAL_UNCOUNTED_S end
     if think > free_s then
-      if bank_s >= 3.0 then
-        allow_bank = true -- natural dip; Akagi bounds how much is spent
+      if u >= BANK_PLACE and ctx.budget.add_ms / 1000 >= 3.0 then
+        allow_bank = true
       else
-        think = free_s    -- nearly broke: finish the thought quickly
+        allow_bank = false
+        think = math.max(free_s - 0.8 * ctx.rng(), deal)
       end
+    end
+    -- The opening's window is counted from the moment it opens and cut off
+    -- before the free window above ends: past that, the time has to be
+    -- allowed to run on into the bank.
+    if ctx.dealer_opening and think > ctx.budget.fixed_ms / 1000 - DEAL_CUTOFF_S then
+      allow_bank = true
     end
   end
 
-  return { delay_ms = think * 1000, allow_bank = allow_bank }
+  return within_limits(ctx, think, allow_bank)
 end

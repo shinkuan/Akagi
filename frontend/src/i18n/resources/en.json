@@ -461,14 +461,14 @@
       "rc_warning_title": "Riichi City autoplay risk warning",
       "rc_warning_desc": "Autoplay on Riichi City is implemented by injecting protocol frames through the MITM proxy. This approach still has open safety concerns and may get your account banned. Use it at your own risk.",
       "rc_warning_ack": "I understand the risk",
-      "pre_click_delay_min": "Pre-click delay (min, ms)",
-      "pre_click_delay_max": "Pre-click delay (max, ms)",
+      "pre_click_delay": "Pre-click delay (ms)",
+      "range_help": "Each timing below is a range: drag the two handles to set the minimum and maximum, and every decision picks a random value between them. Put both handles on the same point for a fixed value.",
       "inter_click_delay": "Inter-click delay (ms)",
       "hover_delay": "Hover delay before press (ms)",
-      "hover_delay_hint": "Mouse must hover for ≥100ms before mousedown for Mahjong Soul to register a tile click. Lower values risk dropped clicks.",
+      "hover_delay_hint": "Mouse must hover for ≥100ms before mousedown for Mahjong Soul to register a tile click. With the lower end below that, clicks may be dropped.",
       "click_hold": "Click hold (ms)",
       "verify_input": "Click verification timeout (ms)",
-      "verify_input_hint": "After clicking, wait this long for the game client to send its own input command. If nothing arrives the click was swallowed and is pressed again. 0 disables verification.",
+      "verify_input_hint": "After clicking, wait this long for the game client to send its own input command. If nothing arrives the click was swallowed and is pressed again. Set both ends to 0 to disable verification.",
       "click_retries": "Click retries",
       "click_retries_hint": "How many times a swallowed click is pressed again. Retries hold the button longer (and nudge the cursor) instead of repeating the same press. 0 only logs.",
       "reload_after_failures": "Reload after dead decisions",
@@ -480,7 +480,7 @@
       "delay_mode_legacy": "Legacy (fixed random delay)",
       "delay_mode_lua_help": "Delays come from delay.lua next to the config file, generated with a human-like model calibrated against ranked-game data on first use. Edit it freely — it hot-reloads on save; delete it to restore the default. If the script errors, a built-in model takes over.",
       "min_delay": "Minimum delay (ms)",
-      "min_delay_hint": "Safety floor for every action: Mahjong Soul needs time to render the UI, and a click issued too early is silently lost. Applies in both modes and cannot be undercut by the script.",
+      "min_delay_hint": "Safety floor for every action: Mahjong Soul needs time to render the UI, and a click issued too early is silently lost. Each decision draws its own value; in Lua mode it is handed to delay.lua, which applies it (the default script does), in legacy mode Akagi applies it.",
       "min_button_delay": "Minimum button delay (ms)",
       "min_button_delay_hint": "Higher floor for chi/pon/kan/ron/skip/riichi buttons — they appear only after the discard animation plus their own pop-in, later than hand tiles. Raise this if buttons are still missing clicks."
     },
@@ -858,6 +858,16 @@
       "clear_skipped": "Clear skipped version",
       "none_skipped": "None"
     }
+  },
+  "delay_script_update": {
+    "title": "New default delay.lua",
+    "body": "This update ships a new default delay.lua, but yours has been edited, so it was not replaced. Replace it with the new default? Your file is backed up in the same folder first. You will only be asked once.",
+    "note": "delay.lua does the whole thinking-time computation, including the minimum delay and staying inside the server's time limit — Akagi no longer adds those on top. If you keep your own script, make sure it handles them.",
+    "replace": "Use the new default",
+    "keep": "Keep mine",
+    "replaced": "delay.lua replaced with the new default",
+    "backup": "Your file was backed up to {{path}}",
+    "failed": "Could not replace delay.lua"
   },
   "announcements": {
     "akagims": {

@@ -338,13 +338,16 @@ delay.some_future_knob = 1
 ";
         let mut cfg = AppConfig::default();
         cfg.autoplay.enabled = true;
-        cfg.autoplay.delay.min_delay_ms = 1234;
+        cfg.autoplay.delay.min_delay_ms = super::super::MsRange::new(1234, 1500);
 
         let out = merge_into(&cfg, existing).unwrap();
         let back: AppConfig = toml::from_str(&out).unwrap();
 
         assert!(back.autoplay.enabled);
-        assert_eq!(back.autoplay.delay.min_delay_ms, 1234);
+        assert_eq!(
+            back.autoplay.delay.min_delay_ms,
+            super::super::MsRange::new(1234, 1500)
+        );
         assert_eq!(back.autoplay.delay.mode, super::super::DelayMode::Lua);
         assert!(
             out.contains("delay.some_future_knob = 1"),
