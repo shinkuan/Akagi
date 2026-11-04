@@ -31,8 +31,12 @@ use tracing::warn;
 #[derive(Default)]
 pub struct Advisor {
     engine: Option<Engine>,
+    /// Our seat in the game being followed.
+    seat: u8,
     /// Events seen since it was last asked; fed in when it is asked next.
     pending: Vec<MjaiEvent>,
+    /// The last event fed to the engine.
+    last: Option<MjaiEvent>,
 }
 
 impl Advisor {
@@ -45,6 +49,8 @@ impl Advisor {
                 id, num_players, ..
             } => {
                 self.pending.clear();
+                self.last = None;
+                self.seat = id.unwrap_or_default();
                 self.engine = id.and_then(|seat| {
                     native_bot::defaults::engine(*num_players, seat)
                         .map_err(|e| warn!("autoplay: no second opinion for this game: {e:#}"))
@@ -54,6 +60,7 @@ impl Advisor {
             MjaiEvent::EndGame { .. } => {
                 self.engine = None;
                 self.pending.clear();
+                self.last = None;
             }
             _ => {}
         }
@@ -68,11 +75,31 @@ impl Advisor {
     pub fn view(&mut self, action: &MjaiEvent) -> Option<HumanView> {
         let engine = self.engine.as_mut()?;
         let pending = std::mem::take(&mut self.pending);
+        if let Some(ev) = pending.last() {
+            self.last = Some(ev.clone());
+        }
+        // Our own kan waits for its replacement draw, and a riichi
+        // acceptance closes a window: neither opens a decision, and the
+        // engine may still hold the legal set from before (the built-in
+        // bot's own runner refuses to decide there for the same reason).
+        let seat = self.seat;
+        let waiting = match &self.last {
+            Some(MjaiEvent::ReachAccepted { .. }) => true,
+            Some(
+                MjaiEvent::Daiminkan { actor, .. }
+                | MjaiEvent::Ankan { actor, .. }
+                | MjaiEvent::Kakan { actor, .. },
+            ) => *actor == seat,
+            _ => false,
+        };
         let decided = catch_unwind(AssertUnwindSafe(|| {
             for ev in &pending {
                 if let Ok(Some(event)) = convert::to_riichienv(ev) {
                     engine.feed(event);
                 }
+            }
+            if waiting {
+                return Ok(None);
             }
             engine.decide()
         }));
@@ -301,6 +328,39 @@ mod tests {
         // The game ends; so does the following.
         advisor.note(&serde_json::from_str(r#"{"type":"end_game"}"#).unwrap());
         assert!(advisor.view(&played("E")).is_none());
+    }
+
+    /// After our own kan the replacement draw is still to come, and the
+    /// engine may hold the legal set from before it: no view until then.
+    #[test]
+    fn no_view_while_our_kan_waits_for_its_replacement_draw() {
+        let mut advisor = Advisor::default();
+        let ours = [
+            "1m", "1m", "1m", "5m", "7m", "9m", "2p", "4p", "6p", "8p", "1s", "3s", "5s",
+        ];
+        for ev in [
+            start_game(),
+            start_kyoku_of(4, ours),
+            MjaiEvent::Tsumo {
+                actor: 0,
+                pai: "1m".into(),
+            },
+            MjaiEvent::Ankan {
+                actor: 0,
+                consumed: ["1m".into(), "1m".into(), "1m".into(), "1m".into()],
+            },
+        ] {
+            advisor.note(&ev);
+        }
+        assert!(advisor.view(&played("9m")).is_none());
+        advisor.note(&MjaiEvent::Tsumo {
+            actor: 0,
+            pai: "E".into(),
+        });
+        assert!(
+            advisor.view(&played("E")).is_some(),
+            "the replacement draw is a decision again"
+        );
     }
 
     /// Sanma is followed with the 3p model, not turned off: the built-in bot

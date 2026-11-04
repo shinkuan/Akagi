@@ -258,11 +258,20 @@ fn push_pre_delay(
     let per_click = cfg.hover_delay_ms + cfg.click_hold_ms;
     let click_overhead_ms = per_click + extra_clicks * (per_click + cfg.inter_click_delay_ms);
 
+    // Nothing has happened on the table yet this kyoku: no discard, and no
+    // kita of ours (a dealer can set aside several North tiles before the
+    // first discard; only the first of them follows the deal).
+    let untouched = ctx.last_kawa_tile.is_none()
+        && ctx
+            .snapshot
+            .players
+            .get(ctx.our_seat as usize)
+            .is_none_or(|p| p.kita_tiles.is_empty());
     let opening_animation = match kind {
         DecisionKind::Dahai => is_dealer_first_discard(ctx),
         // A kita on the opening draw of a kyoku waits out the same
         // dealing animation as the dealer's first discard.
-        DecisionKind::Kita => ctx.last_kawa_tile.is_none(),
+        DecisionKind::Kita => untouched,
         _ => false,
     };
 
@@ -305,7 +314,7 @@ fn push_pre_delay(
         kind,
         is_tsumogiri,
         is_post_call,
-        first_action_of_kyoku: ctx.last_kawa_tile.is_none(),
+        first_action_of_kyoku: untouched,
         opening_animation,
         can_riichi: ctx
             .legal_actions
@@ -1581,6 +1590,40 @@ mod tests {
             dora_markers: Vec::new(),
             our_seat: Some(seat),
         }
+    }
+
+    /// Only a dealer's first opening kita follows the deal. A second one is
+    /// a fresh window and must not wait the deal out again.
+    #[test]
+    fn only_the_first_opening_kita_waits_out_the_deal() {
+        let mut cfg_ref = cfg();
+        cfg_ref.dealer_first_discard_extra_delay_ms = 5000;
+        let act = MjaiEvent::Kita {
+            actor: 0,
+            pai: Some("N".into()),
+        };
+        let legal = vec![Action::new(ActionType::Kita, Some(120), vec![], Some(0))];
+        let sleep_with = |kita: Vec<&str>| {
+            let tehai = vec![
+                "1m", "9m", "1p", "2p", "3p", "4s", "5s", "6s", "E", "E", "S", "P", "N", "N",
+            ];
+            let snap = snapshot_3p_with_kita(0, 0, tehai, kita, Some("N"));
+            let mut ctx = ctx_for(&act, &snap, &legal, None, Some("N"), false, &cfg_ref);
+            ctx.delay_cfg.mode = crate::config::DelayMode::Legacy;
+            ctx.delay_cfg.min_delay_ms = 0;
+            ctx.delay_cfg.min_button_delay_ms = 0;
+            MajsoulAutoplay::new()
+                .plan(&ctx)
+                .steps
+                .iter()
+                .find_map(|s| match s {
+                    Step::Sleep { duration_ms } => Some(*duration_ms),
+                    _ => None,
+                })
+                .expect("the kita is paced")
+        };
+        assert_eq!(sleep_with(vec![]), 5000, "the first kita follows the deal");
+        assert_eq!(sleep_with(vec!["N"]), 0, "the second does not");
     }
 
     #[test]

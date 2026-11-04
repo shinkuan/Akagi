@@ -136,15 +136,13 @@ impl AutoplayManager {
         });
 
         loop {
+            // Game events first: a reply is published only after the event
+            // that triggered it, so when both are waiting (a plan just held
+            // the loop) the events up to its trigger have to be taken in
+            // before it — or the second opinion and the last-discard state
+            // would describe an older position than the one being answered.
             tokio::select! {
-                msg = bot_rx.recv() => match msg {
-                    Ok(resp) => self.handle_bot_response(resp).await,
-                    Err(RecvError::Lagged(n)) => warn!("autoplay: bot bus lagged {n}"),
-                    Err(RecvError::Closed) => {
-                        info!("autoplay: bot bus closed; exiting");
-                        return Ok(());
-                    }
-                },
+                biased;
                 msg = mjai_rx.recv() => match msg {
                     Ok(ev) => {
                         self.handle_mjai_event(&ev);
@@ -158,6 +156,14 @@ impl AutoplayManager {
                     }
                     Err(RecvError::Closed) => {
                         info!("autoplay: mjai bus closed; exiting");
+                        return Ok(());
+                    }
+                },
+                msg = bot_rx.recv() => match msg {
+                    Ok(resp) => self.handle_bot_response(resp).await,
+                    Err(RecvError::Lagged(n)) => warn!("autoplay: bot bus lagged {n}"),
+                    Err(RecvError::Closed) => {
+                        info!("autoplay: bot bus closed; exiting");
                         return Ok(());
                     }
                 },
