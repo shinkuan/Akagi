@@ -627,6 +627,49 @@ mod tests {
         assert_eq!(t.our_seat_can_act(), Some(true), "two 1m in hand — pon");
     }
 
+    /// A hand that has ended leaves nothing to choose. The bot still answers
+    /// the round's closing events — that is how it learns the hand is over —
+    /// and autoplay tells those answers from real decisions by asking here.
+    #[test]
+    fn cannot_act_once_the_hand_is_over() {
+        let mut t = GameTracker::new();
+        t.handle(&start_game()).unwrap();
+        t.handle(&start_kyoku_with_our_hand()).unwrap();
+        t.handle(&AkagiEvent::Tsumo {
+            actor: 1,
+            pai: "1m".into(),
+        })
+        .unwrap();
+        t.handle(&dahai(1, "1m")).unwrap();
+        assert_eq!(t.our_seat_can_act(), Some(true), "two 1m in hand — pon");
+        // Another seat's ron takes the tile we could have called.
+        t.handle(&AkagiEvent::Hora {
+            actor: 2,
+            target: 1,
+            deltas: Some(vec![0, -7_700, 7_700, 0]),
+            ura_markers: None,
+        })
+        .unwrap();
+        assert_eq!(t.our_seat_can_act(), Some(false), "after the ron");
+        t.handle(&AkagiEvent::EndKyoku).unwrap();
+        assert_eq!(t.our_seat_can_act(), Some(false), "after end_kyoku");
+
+        let mut t = GameTracker::new();
+        t.handle(&start_game()).unwrap();
+        t.handle(&start_kyoku_with_our_hand()).unwrap();
+        t.handle(&AkagiEvent::Tsumo {
+            actor: 0,
+            pai: "5s".into(),
+        })
+        .unwrap();
+        assert_eq!(t.our_seat_can_act(), Some(true), "our draw");
+        t.handle(&AkagiEvent::Ryukyoku {
+            deltas: Some(vec![0; 4]),
+        })
+        .unwrap();
+        assert_eq!(t.our_seat_can_act(), Some(false), "after an abortive draw");
+    }
+
     /// Our own discard hands the window to everyone else.
     #[test]
     fn cannot_act_on_our_own_discard() {

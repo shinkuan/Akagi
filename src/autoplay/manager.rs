@@ -219,7 +219,7 @@ impl AutoplayManager {
 
         // Pull our seat + legal actions from the live engine state. This
         // bracket releases the tracker mutex before we sleep/click.
-        let (our_seat, legal_actions, snapshot, num_players) = {
+        let (our_seat, legal_actions, snapshot, num_players, deciding) = {
             let tracker = self.tracker.lock().await;
             let our_seat = match tracker.our_seat() {
                 Some(s) => s,
@@ -243,15 +243,23 @@ impl AutoplayManager {
                     .map(|s| s._get_legal_actions_internal(our_seat))
                     .unwrap_or_default()
             };
-            (our_seat, legal_actions, snapshot, num_players)
+            (
+                our_seat,
+                legal_actions,
+                snapshot,
+                num_players,
+                tracker.our_seat_can_act(),
+            )
         };
 
-        // Every reply that gets here is one the engine asked for: the bot
-        // manager only reacts where our seat can act (`bot::manager`), so a
-        // `None` means a decline and not "nothing to say". Belt and braces
-        // all the same — one window is answered once. A second reply for it
-        // is at best a wasted press and at worst one aimed at whatever
-        // replaced it.
+        // Nearly every reply that gets here is one the engine asked for: the
+        // bot manager only reacts where our seat can act (`bot::manager`), so
+        // a `None` means a decline and not "nothing to say". The exception is
+        // the hand's closing events (hora, ryukyoku, end_kyoku, end_game):
+        // the bot is always told about those and always answers `none`, and
+        // `deciding` is `Some(false)` for them. Belt and braces all the same
+        // — one window is answered once. A second reply for it is at best a
+        // wasted press and at worst one aimed at whatever replaced it.
         if let Some(w) = planned_window {
             if self.state.acted_window == Some(w.opened_at) {
                 debug!("autoplay: already acted on this window; ignoring extra bot reply");
@@ -266,8 +274,12 @@ impl AutoplayManager {
             human: self.advisor.view(&resp.action),
             ..table_reading(&resp, &snapshot, our_seat)
         };
-        // One line a decision, for measuring a delay script against afterwards.
-        info!(action = ?resp.action, ?probs, ?reading, "autoplay: decision read");
+        // One line a decision, for measuring a delay script against
+        // afterwards. Replies to a hand's closing events are left out: they
+        // decide nothing, and in the log they would read as passes.
+        if deciding != Some(false) {
+            info!(action = ?resp.action, ?probs, ?reading, "autoplay: decision read");
+        }
 
         // Elapsed is read after the second opinion, so the model step it
         // took counts against the window like the bot's own inference.
