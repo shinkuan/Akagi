@@ -97,6 +97,10 @@ pub struct ProxyHandler {
     /// bridge's `in_game` flag). `None` in "log only" mode / tests.
     /// See `autoplay::inject`.
     inject: Option<crate::autoplay::inject::SharedInjectBus>,
+    /// Tenhou: the record of the hand in progress that every flow of this
+    /// proxy shares, so the flow a reconnect opens carries on from what the
+    /// dropped one saw. See `bridge::tenhou::journal`.
+    tenhou_journal: crate::bridge::tenhou::journal::SharedJournal,
 }
 
 impl ProxyHandler {
@@ -136,6 +140,7 @@ impl ProxyHandler {
             rewrite_cert_report,
             block_telemetry,
             inject,
+            tenhou_journal: crate::bridge::tenhou::journal::new_shared(),
         })
     }
 
@@ -424,6 +429,7 @@ impl ProxyHandler {
                         None
                     },
                     notify: self.notify_tx.clone(),
+                    tenhou_journal: Some(self.tenhou_journal.clone()),
                     ..bridge::BridgeHooks::default()
                 };
                 Arc::new(StdMutex::new(bridge::for_platform(

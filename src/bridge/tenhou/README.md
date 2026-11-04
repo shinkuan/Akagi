@@ -159,11 +159,24 @@ each seat's discards and calls are in order, but not how the seats
 interleave. (Majsoul's `GameRestore` is an ordered action log, which the
 Majsoul bridge replays as it is.)
 
-### Rebuilding the hand (`rebuild.rs`)
+### Rebuilding the hand (`rebuild.rs`, `journal.rs`)
 
 The bridge looks for a history that ends in exactly this snapshot and emits
-it. Turn order pins most of it down: without calls the history is the
-rotation from the dealer and exact; a chi or pon from the caller's left
+it. Most of it is usually known already: the flow that dropped was watching
+the hand. Every Tenhou bridge of one capture run records what it emits into
+one shared journal (`BridgeHooks::tenhou_journal`, created once per Chromium
+backend run and once per MITM proxy) — `start_kyoku` opens a record, the
+hand's end closes it. A REINIT for the same hand (same seat, table size,
+round, honba and dealer) pins the history to begin with that record, emitted
+exactly as it was, so only what happened while no flow watched is inferred
+(on a live capture: 2 and 5 events, where inferring the whole hand had
+matched the real order at only 29 of 72 and 52 of 71 positions). A record
+the snapshot
+cannot extend is dropped and the whole hand inferred, as below; so is a
+rejoin with no record (Akagi started mid-hand).
+
+What is inferred, turn order pins down for the most part: without calls the
+history is the rotation from the dealer and exact; a chi or pon from the caller's left
 skips nobody, so only where the called tile sat in its river is open; a pon
 or open kan from across or from the right skips seats, and when it happened
 can have more than one answer. The search prefers each seat's next river
