@@ -885,6 +885,15 @@
       "settings_button": "Announcements"
     },
     "entries": {
+      "v3_8_0": {
+        "title": "Tenhou reconnects and autoplay thinking time",
+        "tenhou_rejoin_title": "Tenhou reconnects",
+        "tenhou_rejoin_desc": "Games you rejoin on Tenhou after a disconnect are now handled too.",
+        "think_time_title": "Thinking time follows difficulty",
+        "think_time_desc": "Autoplay's thinking time now depends on how hard the move is for a person.",
+        "delay_settings_title": "New delay settings",
+        "delay_settings_desc": "Each autoplay delay setting is now a two-handle slider that sets a minimum and a maximum."
+      },
       "v3_7_0": {
         "title": "Riichi City autoplay & whole-game review (Beta)",
         "rc_autoplay_title": "Riichi City autoplay",

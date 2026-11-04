@@ -885,6 +885,15 @@
       "settings_button": "公告"
     },
     "entries": {
+      "v3_8_0": {
+        "title": "天凤断线重连与自动打牌思考时间更新",
+        "tenhou_rejoin_title": "天凤断线重连",
+        "tenhou_rejoin_desc": "现在天凤断线后重连的对局也能处理了。",
+        "think_time_title": "思考时间依难度变化",
+        "think_time_desc": "自动打牌的思考时间会依这一手对人有多难来决定。",
+        "delay_settings_title": "新延迟设置",
+        "delay_settings_desc": "自动打牌设置里的各项延迟改成双端滑杆,设置最小值和最大值。"
+      },
       "v3_7_0": {
         "title": "麻雀一番街自动打牌,对局复盘(Beta)",
         "rc_autoplay_title": "麻雀一番街自动打牌",

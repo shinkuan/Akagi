@@ -885,6 +885,15 @@
       "settings_button": "お知らせ"
     },
     "entries": {
+      "v3_8_0": {
+        "title": "天鳳の切断・再接続と自動打牌の思考時間を更新",
+        "tenhou_rejoin_title": "天鳳の切断・再接続",
+        "tenhou_rejoin_desc": "天鳳で切断後に再接続した対局も処理できるようになりました。",
+        "think_time_title": "難しさに応じた思考時間",
+        "think_time_desc": "自動打牌の思考時間は、その一手が人にとってどれだけ難しいかで決まるようになりました。",
+        "delay_settings_title": "新しい遅延設定",
+        "delay_settings_desc": "自動打牌設定の各遅延は、最小値と最大値を指定する2つのつまみのスライダーになりました。"
+      },
       "v3_7_0": {
         "title": "麻雀一番街の自動打牌と、対局検討（ベータ）",
         "rc_autoplay_title": "麻雀一番街の自動打牌",
