@@ -98,20 +98,24 @@ export type DetectedBrowser = {
 /// PascalCase JSON: `"Majsoul"`, `"Tenhou"`).
 export type PlatformKind = 'Majsoul' | 'Tenhou' | 'RiichiCity'
 
+/** A duration setting as an inclusive `[min, max]` range, ms. Mirrors
+ *  `src/config/range.rs::MsRange`; every decision draws one value from it. */
+export type MsRange = [number, number]
+
 export type MajsoulAutoplayConfig = {
   pre_click_delay_min_ms: number
   pre_click_delay_max_ms: number
-  inter_click_delay_ms: number
-  hover_delay_ms: number
-  click_hold_ms: number
+  inter_click_delay_ms: MsRange
+  hover_delay_ms: MsRange
+  click_hold_ms: MsRange
   /** Wait this long for the client's own input command after a click
-   *  before pressing again; 0 disables verification. */
-  verify_input_ms: number
+   *  before pressing again; `[0, 0]` disables verification. */
+  verify_input_ms: MsRange
   /** Retries when no input command follows a click sequence; 0 = log only. */
   click_retries: number
   /** Reload the game page after this many dead decisions in a row; 0 = off. */
   reload_after_failures: number
-  dealer_first_discard_extra_delay_ms: number
+  dealer_first_discard_extra_delay_ms: MsRange
 }
 
 /** Pre-click delay model parameters. Mirrors
@@ -124,13 +128,14 @@ export type DelayModelConfig = {
    *  uniform model, `lua` = the scriptable human-like model backed by
    *  `delay.lua` next to the config file (auto-generated). */
   mode: DelayMode
-  /** UI-readiness floor: minimum total thinking time per decision, ms.
-   *  Clicks issued before Mahjong Soul renders the UI are lost. */
-  min_delay_ms: number
+  /** UI-readiness floor: minimum total thinking time per decision, ms,
+   *  drawn per decision. Clicks issued before Mahjong Soul renders the UI
+   *  are lost. */
+  min_delay_ms: MsRange
   /** Higher floor for decisions that click an action button (chi/pon/
    *  kan/ron/skip/riichi) — buttons render after the discard animation
    *  plus their own pop-in, later than hand tiles. */
-  min_button_delay_ms: number
+  min_button_delay_ms: MsRange
   distribution: 'uniform' | 'log_normal'
   /** Per-decision-kind log-normal `[mu, sigma]` in ln(seconds); keys like
    *  `dahai_tedashi`, `claim`. Calibrated from ranked-game records. */

@@ -178,8 +178,16 @@ impl AutoplayManager {
         if !cfg_guard.autoplay.enabled {
             return;
         }
-        let cfg = cfg_guard.autoplay.majsoul.clone();
-        let delay_cfg = cfg_guard.autoplay.delay.clone();
+        // Every timing range is drawn once for this decision: the floor the
+        // planner waits out, the click overhead it budgets for and the
+        // clicks themselves then agree, and no two decisions share them.
+        let (cfg, delay_cfg) = {
+            let mut rng = rand::rng();
+            (
+                cfg_guard.autoplay.majsoul.draw(&mut rng),
+                cfg_guard.autoplay.delay.draw(&mut rng),
+            )
+        };
         let platform_kind = cfg_guard.platform.kind;
         drop(cfg_guard);
 
@@ -361,7 +369,7 @@ impl AutoplayManager {
                 return;
             };
             let inject = self.ctx.inject.clone();
-            let verify_input_ms = cfg.verify_input_ms;
+            let verify_input_ms = cfg.verify_input_ms.ms();
             let retries = cfg.click_retries;
             let action = resp.action.clone();
             let window_open_at_plan = inject.window_is_open();
@@ -519,8 +527,8 @@ impl AutoplayManager {
                         page,
                         px,
                         py,
-                        cfg.hover_delay_ms,
-                        cfg.click_hold_ms,
+                        cfg.hover_delay_ms.ms(),
+                        cfg.click_hold_ms.ms(),
                         declares_reach,
                     )
                     .await
@@ -544,7 +552,7 @@ impl AutoplayManager {
         // own handlers — a DOM press or its discard call either resolved or
         // reported that it did not, with no swallowed-input case in between —
         // and `rect` is `None` for a plan built of those, which skips this.
-        if let (true, Some(rect)) = (cfg.verify_input_ms > 0, rect) {
+        if let (true, Some(rect)) = (cfg.verify_input_ms.ms() > 0, rect) {
             // What counts as proof. A discard plan is proven by any input.
             // Every other plan pressed action buttons, and for those a
             // plain discard can only be the client's own turn-timeout
@@ -759,7 +767,7 @@ impl AutoplayManager {
 
         for attempt in 0..=cfg.click_retries {
             if self
-                .wait_for_input(ticket, cfg.verify_input_ms, require_non_discard)
+                .wait_for_input(ticket, cfg.verify_input_ms.ms(), require_non_discard)
                 .await
             {
                 if attempt > 0 {
@@ -782,8 +790,8 @@ impl AutoplayManager {
             // line is what says which slot was aimed at.
             warn!(
                 "autoplay: no input command after clicking {action:?} at {clicks:?} (hover {}ms, hold {}ms); pressing {} of {} click(s) again (attempt {})",
-                cfg.hover_delay_ms,
-                cfg.click_hold_ms,
+                cfg.hover_delay_ms.ms(),
+                cfg.click_hold_ms.ms(),
                 again.len(),
                 clicks.len(),
                 attempt + 1
@@ -793,12 +801,14 @@ impl AutoplayManager {
             // commit is not a positioning problem, so pressing the same way
             // again has nothing new to offer: the second attempt holds
             // longer, the third also nudges the cursor mid-press.
-            let hold = retry_hold_ms(cfg.click_hold_ms, attempt);
+            let hold = retry_hold_ms(cfg.click_hold_ms.ms(), attempt);
             let jiggle = attempt >= 1;
             for (i, (x_norm, y_norm)) in again.iter().enumerate() {
                 if i > 0 {
-                    tokio::time::sleep(Duration::from_millis(u64::from(cfg.inter_click_delay_ms)))
-                        .await;
+                    tokio::time::sleep(Duration::from_millis(u64::from(
+                        cfg.inter_click_delay_ms.ms(),
+                    )))
+                    .await;
                 }
                 let (px, py) = rect.pixel(*x_norm, *y_norm);
                 if !rect.contains(px, py) {
@@ -814,7 +824,7 @@ impl AutoplayManager {
                     return false;
                 };
                 if let Err(e) =
-                    dispatch_click_shaped(page, px, py, cfg.hover_delay_ms, hold, jiggle).await
+                    dispatch_click_shaped(page, px, py, cfg.hover_delay_ms.ms(), hold, jiggle).await
                 {
                     warn!("autoplay: retry dispatch_click failed: {e:#}");
                 }
@@ -827,8 +837,8 @@ impl AutoplayManager {
         warn!(
             "autoplay: {action:?} never produced an input command after {} attempt(s) at {clicks:?} (hover {}ms, hold {}ms); if the button visibly reacts to these coordinates the press is being ignored — try longer timings under Settings -> Autoplay",
             cfg.click_retries + 1,
-            cfg.hover_delay_ms,
-            cfg.click_hold_ms
+            cfg.hover_delay_ms.ms(),
+            cfg.click_hold_ms.ms()
         );
         false
     }

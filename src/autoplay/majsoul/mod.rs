@@ -99,7 +99,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                     return PlanResult::default();
                 }
                 result.steps.push(Step::Sleep {
-                    duration_ms: ctx.cfg.inter_click_delay_ms,
+                    duration_ms: ctx.cfg.inter_click_delay_ms.ms(),
                 });
                 if let Some(click) = plan_dahai_click(tile, ctx) {
                     result.steps.push(click);
@@ -255,8 +255,8 @@ fn push_pre_delay(
     extra_clicks: u32,
 ) {
     let cfg = ctx.cfg;
-    let per_click = cfg.hover_delay_ms + cfg.click_hold_ms;
-    let click_overhead_ms = per_click + extra_clicks * (per_click + cfg.inter_click_delay_ms);
+    let per_click = cfg.hover_delay_ms.ms() + cfg.click_hold_ms.ms();
+    let click_overhead_ms = per_click + extra_clicks * (per_click + cfg.inter_click_delay_ms.ms());
 
     // Nothing has happened on the table yet this kyoku: no discard, and no
     // kita of ours (a dealer can set aside several North tiles before the
@@ -512,7 +512,7 @@ fn plan_meld(op: MajsoulOpType, at: ActionType, result: &mut PlanResult, ctx: &A
     {
         if let Some(p) = candidate_pos(idx, candidates.len()) {
             result.steps.push(Step::Sleep {
-                duration_ms: ctx.cfg.inter_click_delay_ms,
+                duration_ms: ctx.cfg.inter_click_delay_ms.ms(),
             });
             result.steps.push(Step::Click {
                 x_norm: p.0,
@@ -590,7 +590,7 @@ fn plan_kan(op: MajsoulOpType, at: ActionType, result: &mut PlanResult, ctx: &Ac
         // — kept in the signature so future logic can branch on it.
         let _ = at;
         result.steps.push(Step::Sleep {
-            duration_ms: ctx.cfg.inter_click_delay_ms,
+            duration_ms: ctx.cfg.inter_click_delay_ms.ms(),
         });
         result.steps.push(Step::Click {
             x_norm: p.0,
@@ -760,19 +760,19 @@ mod tests {
         MajsoulAutoplayConfig {
             pre_click_delay_min_ms: 0,
             pre_click_delay_max_ms: 0,
-            inter_click_delay_ms: 0,
-            hover_delay_ms: 0,
-            click_hold_ms: 0,
-            verify_input_ms: 0,
+            inter_click_delay_ms: crate::config::MsRange::fixed(0),
+            hover_delay_ms: crate::config::MsRange::fixed(0),
+            click_hold_ms: crate::config::MsRange::fixed(0),
+            verify_input_ms: crate::config::MsRange::fixed(0),
             click_retries: 0,
             reload_after_failures: 0,
-            dealer_first_discard_extra_delay_ms: 0,
+            dealer_first_discard_extra_delay_ms: crate::config::MsRange::fixed(0),
         }
     }
 
     fn cfg_with_dealer_delay(ms: u32) -> MajsoulAutoplayConfig {
         let mut c = cfg();
-        c.dealer_first_discard_extra_delay_ms = ms;
+        c.dealer_first_discard_extra_delay_ms = crate::config::MsRange::fixed(ms);
         c
     }
 
@@ -1170,8 +1170,8 @@ mod tests {
             tsumogiri: false,
         };
         let mut cfg_ref = cfg();
-        cfg_ref.hover_delay_ms = 200;
-        cfg_ref.click_hold_ms = 100; // single-click dahai → 300ms overhead
+        cfg_ref.hover_delay_ms = crate::config::MsRange::fixed(200);
+        cfg_ref.click_hold_ms = crate::config::MsRange::fixed(100); // single-click dahai → 300ms overhead
         let mut ctx = ctx_for(&act, &snap, &[], Some("1m"), None, false, &cfg_ref);
         ctx.delay_script = Some(&script);
 
@@ -1219,11 +1219,11 @@ mod tests {
             tsumogiri: false,
         };
         let mut cfg_ref = cfg();
-        cfg_ref.hover_delay_ms = 200;
-        cfg_ref.click_hold_ms = 100;
+        cfg_ref.hover_delay_ms = crate::config::MsRange::fixed(200);
+        cfg_ref.click_hold_ms = crate::config::MsRange::fixed(100);
         let mut ctx = ctx_for(&act, &snap, &[], Some("1m"), None, false, &cfg_ref);
         ctx.delay_script = Some(&script);
-        let floor = ctx.delay_cfg.min_delay_ms;
+        let floor = ctx.delay_cfg.min_delay_ms.ms();
 
         let result = MajsoulAutoplay::new().plan(&ctx);
         assert!(
@@ -1597,7 +1597,7 @@ mod tests {
     #[test]
     fn only_the_first_opening_kita_waits_out_the_deal() {
         let mut cfg_ref = cfg();
-        cfg_ref.dealer_first_discard_extra_delay_ms = 5000;
+        cfg_ref.dealer_first_discard_extra_delay_ms = crate::config::MsRange::fixed(5000);
         let act = MjaiEvent::Kita {
             actor: 0,
             pai: Some("N".into()),
@@ -1610,8 +1610,8 @@ mod tests {
             let snap = snapshot_3p_with_kita(0, 0, tehai, kita, Some("N"));
             let mut ctx = ctx_for(&act, &snap, &legal, None, Some("N"), false, &cfg_ref);
             ctx.delay_cfg.mode = crate::config::DelayMode::Legacy;
-            ctx.delay_cfg.min_delay_ms = 0;
-            ctx.delay_cfg.min_button_delay_ms = 0;
+            ctx.delay_cfg.min_delay_ms = crate::config::MsRange::fixed(0);
+            ctx.delay_cfg.min_button_delay_ms = crate::config::MsRange::fixed(0);
             MajsoulAutoplay::new()
                 .plan(&ctx)
                 .steps

@@ -849,7 +849,8 @@ mod tests {
         i.opening_animation = true;
         let dec = zero.try_decide(&i).unwrap();
         assert_eq!(
-            dec.total_target_ms, cfg.dealer_first_discard_extra_delay_ms,
+            dec.total_target_ms,
+            cfg.dealer_first_discard_extra_delay_ms.ms(),
             "animation floor must hold against a 0 return"
         );
 
@@ -858,7 +859,8 @@ mod tests {
         // renders the tiles loses the click.
         let dec = zero.try_decide(&base_input(&cfg, &d)).unwrap();
         assert_eq!(
-            dec.total_target_ms, d.min_delay_ms,
+            dec.total_target_ms,
+            d.min_delay_ms.ms(),
             "min_delay_ms floor must hold against a 0 return"
         );
 
@@ -868,7 +870,8 @@ mod tests {
         i.kind = DecisionKind::Pon;
         let dec = zero.try_decide(&i).unwrap();
         assert_eq!(
-            dec.total_target_ms, d.min_button_delay_ms,
+            dec.total_target_ms,
+            d.min_button_delay_ms.ms(),
             "min_button_delay_ms floor must hold against a 0 return"
         );
 
@@ -912,7 +915,7 @@ mod tests {
         );
         // Floors/caps still bind: nothing below min_delay_ms, nothing
         // above the no-budget static cap.
-        assert!(*samples.first().unwrap() >= d.min_delay_ms);
+        assert!(*samples.first().unwrap() >= d.min_delay_ms.ms());
         assert!(*samples.last().unwrap() <= d.no_budget_cap_ms);
 
         // In riichi: measured Throne players still glance (~1.4s median),
@@ -926,7 +929,7 @@ mod tests {
             })
             .collect();
         riichi_samples.sort_unstable();
-        assert!(*riichi_samples.first().unwrap() >= d.min_delay_ms);
+        assert!(*riichi_samples.first().unwrap() >= d.min_delay_ms.ms());
         let riichi_med = riichi_samples[riichi_samples.len() / 2];
         assert!(
             (1100..=1800).contains(&riichi_med),
@@ -1018,8 +1021,8 @@ mod tests {
         let s = DelayScript::compile(DEFAULT_SCRIPT, "delay_default.lua").unwrap();
         let cfg = MajsoulAutoplayConfig::default();
         let d = DelayModelConfig {
-            min_delay_ms: 0,
-            min_button_delay_ms: 0,
+            min_delay_ms: crate::config::MsRange::fixed(0),
+            min_button_delay_ms: crate::config::MsRange::fixed(0),
             ..DelayModelConfig::default()
         };
         let mut samples: Vec<u32> = (0..2000)

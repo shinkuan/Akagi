@@ -218,7 +218,7 @@ pub fn decide<R: Rng + ?Sized>(input: &DelayInput, rng: &mut R) -> DelayDecision
     if input.opening_animation {
         // Historical behaviour: the animation wait is added on top of the
         // random delay, keeping the visible post-animation pause random.
-        target = target.saturating_add(input.cfg.dealer_first_discard_extra_delay_ms);
+        target = target.saturating_add(input.cfg.dealer_first_discard_extra_delay_ms.ms());
     }
     if input.can_riichi {
         target = target.saturating_add(d.riichi_extra_ms);
@@ -300,12 +300,12 @@ pub fn budget_cap(input: &DelayInput, allow_bank: bool) -> u32 {
 /// - the dealer-opening pad covers the 14-tile hand-sort animation.
 pub fn functional_floor(input: &DelayInput) -> u32 {
     let d = input.delay_cfg;
-    let mut floor = d.min_delay_ms;
+    let mut floor = d.min_delay_ms.ms();
     if input.kind.clicks_action_button() {
-        floor = floor.max(d.min_button_delay_ms);
+        floor = floor.max(d.min_button_delay_ms.ms());
     }
     if input.opening_animation {
-        floor = floor.max(input.cfg.dealer_first_discard_extra_delay_ms);
+        floor = floor.max(input.cfg.dealer_first_discard_extra_delay_ms.ms());
     }
     floor
 }
@@ -567,9 +567,35 @@ mod tests {
         let dec = decide(&i, &mut r);
         assert_eq!(
             dec.total_target_ms,
-            c.pre_click_delay_max_ms + c.dealer_first_discard_extra_delay_ms
+            c.pre_click_delay_max_ms + c.dealer_first_discard_extra_delay_ms.ms()
         );
         assert!(dec.total_target_ms >= functional_floor(&i));
+    }
+
+    /// Regression: a decision aimed below the floor lands *on* the floor.
+    /// With one floor value every such decision took the same time to the
+    /// millisecond (a quarter of all discards in a live session); with the
+    /// floor drawn per decision they spread over its range.
+    #[test]
+    fn decisions_held_up_by_the_floor_do_not_share_one_time() {
+        // A base sample of 0: every decision is held up by the floor.
+        let c = MajsoulAutoplayConfig {
+            pre_click_delay_min_ms: 0,
+            pre_click_delay_max_ms: 0,
+            ..cfg()
+        };
+        let d = uniform();
+        let mut r = StdRng::seed_from_u64(AKAGI_SEED);
+        let totals: Vec<u32> = (0..100)
+            .map(|_| {
+                let (c, d) = (c.draw(&mut r), d.draw(&mut r));
+                decide(&input(&c, &d), &mut r).total_target_ms
+            })
+            .collect();
+        let range = d.min_delay_ms;
+        assert!(totals.iter().all(|t| (range.min..=range.max).contains(t)));
+        let distinct: std::collections::HashSet<_> = totals.iter().collect();
+        assert!(distinct.len() > 50, "{} distinct of 100", distinct.len());
     }
 
     /// Rule bonuses are additive and off by default.
@@ -813,7 +839,8 @@ mod tests {
             let mut r = StdRng::seed_from_u64(AKAGI_SEED);
             let dec = decide(&i, &mut r);
             assert_eq!(
-                dec.total_target_ms, d.min_button_delay_ms,
+                dec.total_target_ms,
+                d.min_button_delay_ms.ms(),
                 "{kind:?} must sit on the button floor"
             );
         }
@@ -822,7 +849,7 @@ mod tests {
         let i = input(&c, &d);
         let mut r = StdRng::seed_from_u64(AKAGI_SEED);
         let dec = decide(&i, &mut r);
-        assert_eq!(dec.total_target_ms, d.min_delay_ms);
+        assert_eq!(dec.total_target_ms, d.min_delay_ms.ms());
     }
 
     /// The functional floor (animation wait) wins over the cap: losing
@@ -841,7 +868,7 @@ mod tests {
         let mut r = StdRng::seed_from_u64(AKAGI_SEED);
         let dec = decide(&i, &mut r);
         assert!(
-            dec.total_target_ms >= c.dealer_first_discard_extra_delay_ms,
+            dec.total_target_ms >= c.dealer_first_discard_extra_delay_ms.ms(),
             "floor must not be undercut by the cap"
         );
     }

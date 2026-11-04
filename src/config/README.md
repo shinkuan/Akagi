@@ -97,6 +97,17 @@ bar = "default_value"
 - `overlay` (`overlay.rs`) — the always-on-top suggestion window. `enabled` (default **true**) doubles as its lifecycle switch: `ipc::overlay::reconcile` opens or closes the window to match it, at startup and on every `update_config` / `set_overlay_enabled`, so both "I closed it" and "I left it open" survive a restart. A `config.toml` written before this section existed therefore gets the overlay switched on, which is the intent. `top_n` and `opacity` are bounds-checked by `clamped_top_n()` / `clamped_opacity()` rather than trusted, because `config.toml` is a text file a user can put `top_n = 0` into — which would render an overlay with no rows and no explanation.
 - `network` (`network.rs`) — how GitHub-hosted downloads (app updates, bot installs) are routed. `github_mirror_mode`: `auto` (direct with a short timeout, then gh-proxy-style accelerator mirrors — the default), `direct` (never mirror), or `mirror` (mirrors first, for users who know GitHub is blocked). `github_custom_mirror` is an optional accelerator prefix tried before the built-in list; `custom_mirror()` normalises and validates it (scheme required) rather than trusting the raw string. Consumed by `github::mirror::candidates`. Mirror-fetched bytes are untrusted — see `src/github/README.md` for how signing gates them.
 
+## Duration ranges (`range.rs`)
+
+The autoplay timing settings are `MsRange`s, written `[min, max]` in
+`config.toml` (a bare number still reads as a range of one value). To turn
+an existing `u32` duration setting into a range without stranding
+installs on a constant, read it through `range::upgrade` with the old
+default: a bare old default becomes the new default range, any other bare
+number stays exactly what the user chose (see the `upgraded_range!` fields
+in `autoplay.rs`). Runtime code draws the range once per use
+(`MsRange::draw`) and reads the drawn value with `MsRange::ms`.
+
 ## Notes
 
 - All section structs must derive `Default` and use `#[serde(default)]` so partial configs work.

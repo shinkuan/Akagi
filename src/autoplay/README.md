@@ -222,6 +222,18 @@ Layers, in order:
    clicks are silently lost) and the dealing-animation wait. Applied
    after the caps; a script cannot go below them.
 
+Every timing setting — the two floors, the dealing-animation wait, hover,
+hold, the gap between staged clicks and the input-verification wait — is
+a range (`config::MsRange`, `[min, max]` in `config.toml`, a two-thumb
+slider in Settings). `manager::handle_bot_response` draws each one **once
+per decision** (`MajsoulAutoplayConfig::draw`, `DelayModelConfig::draw`)
+and plans and clicks with those values (`MsRange::ms`), so the floor a
+decision waits out, the click overhead it budgets for and the clicks it
+makes agree. The reason is the floor: every decision the policy aims
+below it lands *on* it, and with one value that was the same instant
+every time — a quarter of all discards and every call/pass/win in a live
+session.
+
 The policy's output is the target **server-observed total** for the
 window. `majsoul::push_pre_delay` converts it to a sleep by deducting
 both the time already elapsed (network + bot inference, from the budget
