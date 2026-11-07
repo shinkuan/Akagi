@@ -89,32 +89,67 @@ function mergeItemWithDefault(saved: LayoutItem, def: LayoutItem): LayoutItem {
   }
 }
 
+// Every id the tile registry can render. Tiles that ship hidden
+// (`recommendations`) are listed here but deliberately have no slot in some or
+// all of `DEFAULT_LAYOUTS`, so registry membership — not a default-layout
+// lookup — is what distinguishes a saved entry worth keeping from one left
+// behind by a tile that no longer exists.
+const KNOWN_TILES = new Set<string>(ALL_TILES)
+
 // Ensure all four breakpoints exist as arrays AND every item has up-to-date
-// constraints. Stale / partial localStorage data (older format, missing
-// keys, non-array values) is replaced from defaults.
-function normaliseLayouts(parsed: unknown, fallback: Layouts): Layouts {
+// constraints. Stale / partial localStorage data (older format, missing keys,
+// non-array values) is replaced from defaults.
+function normaliseLayouts(parsed: unknown, fallback: Layouts, hidden: HiddenSet): Layouts {
   const fresh = deepClone(fallback)
-  if (!parsed || typeof parsed !== 'object') return fresh
-  const obj = parsed as Record<string, unknown>
+  const obj = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+
   for (const bp of ['lg', 'md', 'sm', 'xs'] as const) {
-    if (!Array.isArray(obj[bp])) continue
-    const defByI = new Map(fresh[bp].map((d) => [d.i, d]))
-    const savedByI = new Map(
-      (obj[bp] as LayoutItem[])
-        .filter((s) => s && typeof s === 'object' && typeof s.i === 'string')
-        .map((s) => [s.i, s] as const),
-    )
+    const saved = obj && Array.isArray(obj[bp]) ? (obj[bp] as LayoutItem[]) : null
     const merged: LayoutItem[] = []
-    // Saved tiles still in defaults — keep position, refresh constraints.
-    for (const [i, saved] of savedByI) {
-      const def = defByI.get(i)
-      if (!def) continue // tile removed from defaults — drop it
-      merged.push(mergeItemWithDefault(saved, def))
+
+    if (saved) {
+      const defByI = new Map(fresh[bp].map((d) => [d.i, d]))
+      const seen = new Set<string>()
+      for (const item of saved) {
+        if (!item || typeof item !== 'object' || typeof item.i !== 'string') continue
+        if (!KNOWN_TILES.has(item.i) || seen.has(item.i)) continue
+        seen.add(item.i)
+        // A live tile need not have a default slot at this breakpoint. Dropping
+        // its saved entry (as a `defByI` miss used to) left the entry out while
+        // the tile was still visible, so react-grid-layout synthesised a 1x1 item
+        // at the bottom of the grid — and the next layout change persisted that
+        // placeholder as the tile’s layout. Keep the saved geometry instead.
+        const def = defByI.get(item.i) ?? fallbackItem(item.i as TileId)
+        // Smaller than the tile’s own minimum can only be that synthesised item,
+        // so rebuild it at a usable size; anything else is the user’s geometry.
+        const synthesised =
+          (item.w ?? def.w) < (def.minW ?? 1) || (item.h ?? def.h) < (def.minH ?? 1)
+        merged.push(
+          synthesised
+            ? { ...def, x: item.x ?? def.x, y: item.y ?? def.y }
+            : mergeItemWithDefault(item, def),
+        )
+      }
     }
-    // Default tiles missing from save — add fresh (e.g. new tile shipped).
+
+    // Default tiles missing from the save — add fresh (e.g. a new tile shipped).
+    const haveSlot = new Set(merged.map((l) => l.i))
     for (const def of fresh[bp]) {
-      if (!savedByI.has(def.i)) merged.push({ ...def })
+      if (!haveSlot.has(def.i)) {
+        merged.push({ ...def })
+        haveSlot.add(def.i)
+      }
     }
+
+    // Finally, make sure every tile that is *not* hidden owns a slot. A visible
+    // child with no entry is exactly what RGL turns into a synthesised 1x1 item.
+    // This also covers presets that omit a visible tile, such as
+    // `recommendations` in the 3p `sm` layout.
+    const hiddenHere = new Set<string>(hidden[bp] ?? [])
+    for (const id of ALL_TILES) {
+      if (!hiddenHere.has(id) && !haveSlot.has(id)) merged.push(fallbackItem(id))
+    }
+
     fresh[bp] = merged
   }
   return fresh
@@ -133,14 +168,14 @@ function normaliseHidden(parsed: unknown, defaults: TileId[]): HiddenSet {
   return fallback
 }
 
-function loadLayouts(key: string, fallback: Layouts): Layouts {
-  if (typeof localStorage === 'undefined') return deepClone(fallback)
+function loadLayouts(key: string, fallback: Layouts, hidden: HiddenSet): Layouts {
+  if (typeof localStorage === 'undefined') return normaliseLayouts(null, fallback, hidden)
   try {
     const raw = localStorage.getItem(key)
-    if (!raw) return deepClone(fallback)
-    return normaliseLayouts(unwrap(JSON.parse(raw)), fallback)
+    if (!raw) return normaliseLayouts(null, fallback, hidden)
+    return normaliseLayouts(unwrap(JSON.parse(raw)), fallback, hidden)
   } catch {
-    return deepClone(fallback)
+    return normaliseLayouts(null, fallback, hidden)
   }
 }
 
@@ -181,18 +216,27 @@ function persistMode(
   }
 }
 
+// Geometry for a tile a breakpoint has no default slot for. `y` past the end of
+// the grid keeps the tile last; the vertical compactor then pulls it up to the
+// first free row, which reads as “append” without pinning a row number that a
+// later default-layout change would invalidate.
+function fallbackItem(id: TileId): LayoutItem {
+  return { i: id, x: 0, y: 999, w: 4, h: 4, minW: 2, minH: 2 }
+}
+
 function defaultEntry(id: TileId, bp: Breakpoint, mode: GameMode): LayoutItem {
   const presets = mode === '3p' ? DEFAULT_LAYOUTS_3P : DEFAULT_LAYOUTS
   const def = presets[bp].find((l) => l.i === id)
   if (def) return { ...def }
-  return { i: id, x: 0, y: 999, w: 4, h: 4, minW: 2, minH: 2 }
+  return fallbackItem(id)
 }
 
 export const useLayoutStore = create<LayoutStore>((set, get) => {
-  const layouts4p = loadLayouts(LAYOUTS_KEY_4P, DEFAULT_LAYOUTS)
+  // `hidden` is loaded first: it decides which tiles a saved layout must cover.
   const hidden4p = loadHidden(HIDDEN_KEY_4P, DEFAULT_HIDDEN)
-  const layouts3p = loadLayouts(LAYOUTS_KEY_3P, DEFAULT_LAYOUTS_3P)
+  const layouts4p = loadLayouts(LAYOUTS_KEY_4P, DEFAULT_LAYOUTS, hidden4p)
   const hidden3p = loadHidden(HIDDEN_KEY_3P, DEFAULT_HIDDEN_3P)
+  const layouts3p = loadLayouts(LAYOUTS_KEY_3P, DEFAULT_LAYOUTS_3P, hidden3p)
   return {
     mode: '4p',
     layouts4p,
@@ -254,11 +298,13 @@ export const useLayoutStore = create<LayoutStore>((set, get) => {
       const s = get()
       const presets = s.mode === '3p' ? DEFAULT_LAYOUTS_3P : DEFAULT_LAYOUTS
       const defaultsHidden = s.mode === '3p' ? DEFAULT_HIDDEN_3P : DEFAULT_HIDDEN
-      const layouts = deepClone(presets)
       const hidden: HiddenSet = {
         lg: [...defaultsHidden], md: [...defaultsHidden],
         sm: [...defaultsHidden], xs: [...defaultsHidden],
       }
+      // Reconcile like a load, so a preset that omits a tile the user can see
+      // does not hand react-grid-layout a child to synthesise a placeholder for.
+      const layouts = normaliseLayouts(null, presets, hidden)
       persistMode(s.mode, layouts, hidden)
       set(
         s.mode === '3p'
