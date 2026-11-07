@@ -629,7 +629,7 @@ on tag push (`v3.*`) or manual dispatch. One portable zip per target:
 | OS runner | Target | Artifact |
 |---|---|---|
 | `ubuntu-22.04` (glibc 2.35) | `x86_64-unknown-linux-gnu` | `akagi-<version>-linux-x64.zip` |
-| `macos-14` | `aarch64-apple-darwin` | `akagi-<version>-macos-arm64.zip` |
+| `macos-15` | `aarch64-apple-darwin` | `akagi-<version>-macos-arm64.zip` |
 | `windows-latest` | `x86_64-pc-windows-msvc` | `akagi-<version>-windows-x64.zip` |
 
 Repository admins can build the current head commit of an open PR by posting

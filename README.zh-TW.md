@@ -630,7 +630,7 @@ portable zip:
 | OS runner | 目標 | 產出檔案 |
 |---|---|---|
 | `ubuntu-22.04`(glibc 2.35) | `x86_64-unknown-linux-gnu` | `akagi-<version>-linux-x64.zip` |
-| `macos-14` | `aarch64-apple-darwin` | `akagi-<version>-macos-arm64.zip` |
+| `macos-15` | `aarch64-apple-darwin` | `akagi-<version>-macos-arm64.zip` |
 | `windows-latest` | `x86_64-pc-windows-msvc` | `akagi-<version>-windows-x64.zip` |
 
 每個 zip 都將 `python-build-standalone` 3.12 + `uv` 一併放在

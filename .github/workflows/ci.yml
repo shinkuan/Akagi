@@ -85,7 +85,7 @@ jobs:
 
   # Compile-only on the other two release targets. No tests, no packaging — the
   # point is purely "does this platform's cfg path still build", which is the
-  # one thing the Linux gate above structurally cannot tell us. `macos-14` is
+  # one thing the Linux gate above structurally cannot tell us. `macos-15` is
   # arm64, matching release.yml's `aarch64-apple-darwin`.
   compile:
     name: Compile (${{ matrix.os }})
@@ -93,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-latest]
+        os: [macos-15, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
