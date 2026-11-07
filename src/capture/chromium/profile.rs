@@ -520,7 +520,11 @@ mod tests {
             &[udir.clone(), "--remote-debugging-port=1234".into()],
             profile
         ));
-        assert!(is_controlled_browser("chromium", &[udir.clone()], profile));
+        assert!(is_controlled_browser(
+            "chromium",
+            std::slice::from_ref(&udir),
+            profile
+        ));
 
         // Renderer/GPU child: has --type → not the process we target directly.
         assert!(!is_controlled_browser(
@@ -555,15 +559,23 @@ mod tests {
 
         // A non-browser process is never matched, even with the arg — e.g.
         // the cmd.exe that launched the browser carries the same argument.
-        assert!(!is_controlled_browser("firefox", &[udir.clone()], profile));
-        assert!(!is_controlled_browser("cmd.exe", &[udir.clone()], profile));
+        assert!(!is_controlled_browser(
+            "firefox",
+            std::slice::from_ref(&udir),
+            profile
+        ));
+        assert!(!is_controlled_browser(
+            "cmd.exe",
+            std::slice::from_ref(&udir),
+            profile
+        ));
 
         // Regression: every browser family the backend can auto-detect must
         // match, not just chrome/chromium — a surviving msedge.exe went
         // unreclaimed and capture timed out waiting for the CDP endpoint.
         for name in ["msedge.exe", "brave.exe", "vivaldi.exe", "opera.exe"] {
             assert!(
-                is_controlled_browser(name, &[udir.clone()], profile),
+                is_controlled_browser(name, std::slice::from_ref(&udir), profile),
                 "{name} must be reclaimable"
             );
         }
