@@ -77,6 +77,16 @@ jobs:
       - name: build all test targets
         run: cargo test --no-run --all-targets
 
+      # native_bot is a path dependency and this manifest declares no
+      # [workspace], so every command above is scoped to the root package:
+      # its unit and integration tests never ran and clippy never saw it. Run
+      # them against its own manifest, which is a workspace of one.
+      - name: native_bot (fmt + clippy + test)
+        run: |
+          cargo fmt --all --manifest-path native_bot/Cargo.toml -- --check
+          cargo clippy --manifest-path native_bot/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path native_bot/Cargo.toml --all-targets
+
   # Compile-only on the other two release targets. No tests, no packaging — the
   # point is purely "does this platform's cfg path still build", which is the
   # one thing the Linux gate above structurally cannot tell us. `macos-14` is

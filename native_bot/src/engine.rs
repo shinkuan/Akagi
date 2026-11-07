@@ -139,12 +139,8 @@ impl Engine {
     pub fn reset(&mut self) {
         let rule = GameRule::default_tenhou();
         match &mut self.backend {
-            Backend::Four { state, .. } => {
-                *state = Box::new(GameState::new(0, true, None, 0, rule))
-            }
-            Backend::Three { state, .. } => {
-                *state = Box::new(GameState3P::new(0, true, None, 0, rule))
-            }
+            Backend::Four { state, .. } => **state = GameState::new(0, true, None, 0, rule),
+            Backend::Three { state, .. } => **state = GameState3P::new(0, true, None, 0, rule),
         }
     }
 

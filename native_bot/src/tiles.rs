@@ -104,9 +104,9 @@ mod tests {
     #[test]
     fn compact_map_drops_manzu_2_to_8() {
         assert_eq!(TILE34_TO_COMPACT[0], Some(0)); // 1m
-        for t in 1..=7 {
-            assert_eq!(TILE34_TO_COMPACT[t], None); // 2m-8m gone in sanma
-        }
+
+        // 2m-8m gone in sanma: every position between the ones that remain.
+        assert!((1..=7).all(|t| TILE34_TO_COMPACT[t].is_none()));
         assert_eq!(TILE34_TO_COMPACT[8], Some(1)); // 9m
         assert_eq!(TILE34_TO_COMPACT[9], Some(2)); // 1p
         assert_eq!(TILE34_TO_COMPACT[13], Some(6)); // 5p
