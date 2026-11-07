@@ -10,6 +10,7 @@
 
 use riichienv_core::hand_evaluator::HandEvaluator;
 use riichienv_core::types::{Conditions, Meld as RiMeld, MeldType as RiMeldType, Wind};
+use riichienv_core::yaku;
 
 use super::hand::{Meld34, Meld34Kind, PlayerInfo34};
 use super::tile::{Tile34, HONOR_BASE};
@@ -24,6 +25,10 @@ pub struct ScoreEstimate {
     pub riichi_point: f64,
     /// Yaku ids encountered across all waits (union, deduplicated).
     pub yaku_ids: Vec<u32>,
+    /// Japanese yaku names matching `yaku_ids`.
+    pub yaku_names: Vec<String>,
+    /// English yaku names matching `yaku_ids`.
+    pub yaku_names_en: Vec<String>,
     /// Whether at least one wait produces a valid (≥1 han) winning hand.
     pub has_yaku: bool,
 }
@@ -210,10 +215,30 @@ pub fn expectation(info: &PlayerInfo34, waits: &Waits, allow_riichi: bool) -> Sc
         return ScoreEstimate::default();
     }
 
+    let yaku_ids: Vec<u32> = yaku_set.into_iter().collect();
+    let yaku_names: Vec<String> = yaku_ids
+        .iter()
+        .map(|&id| {
+            yaku::get_yaku_by_id(id)
+                .map(|y| y.name)
+                .unwrap_or_else(|| format!("Yaku #{id}"))
+        })
+        .collect();
+    let yaku_names_en: Vec<String> = yaku_ids
+        .iter()
+        .map(|&id| {
+            yaku::get_yaku_by_id(id)
+                .map(|y| y.name_en)
+                .unwrap_or_else(|| format!("Yaku #{id}"))
+        })
+        .collect();
+
     ScoreEstimate {
         dama_point: sum_dama / total_w as f64,
         riichi_point: sum_riichi / total_w as f64,
-        yaku_ids: yaku_set.into_iter().collect(),
+        yaku_ids,
+        yaku_names,
+        yaku_names_en,
         has_yaku,
     }
 }
