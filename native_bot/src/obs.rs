@@ -271,13 +271,13 @@ impl EncInput {
 
         // --- round wind (one-hot on honor position) ---
         // wind i lives at tile34 27+i; encode via tile id (27+i)*4.
-        if let Some(idx) = tile_index((27 + self.round_wind.min(3)) as u8 * 4, np) {
+        if let Some(idx) = tile_index((27 + self.round_wind.min(3)) * 4, np) {
             set!(ch, idx, 1.0);
         }
         ch += 1;
 
         // --- self seat wind (one-hot on honor position) ---
-        if let Some(idx) = tile_index((27 + self.seat_wind.min(3)) as u8 * 4, np) {
+        if let Some(idx) = tile_index((27 + self.seat_wind.min(3)) * 4, np) {
             set!(ch, idx, 1.0);
         }
         ch += 1;
