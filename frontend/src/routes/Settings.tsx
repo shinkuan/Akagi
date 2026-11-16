@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { NextGameCard } from '@/components/NextGameCard'
 import { Link, useBlocker } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getVersion } from '@tauri-apps/api/app'
@@ -172,6 +173,8 @@ export function Settings() {
           {err}
         </div>
       )}
+
+      <NextGameCard canStart={stored?.platform.kind === 'Majsoul' && stored?.capture.mode === 'chromium' && !!stored?.autoplay.enabled} />
 
       <Card>
         <CardHeader>

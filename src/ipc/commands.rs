@@ -1776,6 +1776,8 @@ fn persist_config(config: &AppConfig, path: &Path) -> std::io::Result<()> {
 macro_rules! ipc_handlers {
     () => {
         ::tauri::generate_handler![
+            $crate::next_game::get_next_game_status,
+            $crate::next_game::control_next_game,
             $crate::ipc::commands::get_config,
             $crate::ipc::commands::update_config,
             $crate::ipc::commands::set_overlay_enabled,

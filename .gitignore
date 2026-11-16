@@ -66,3 +66,8 @@ native_bot/out/
 
 # ZCode session artifacts
 .zcode/
+
+# Bundled local continuation runtime and worker diagnostics.
+next-game/runtime/
+next-game/activity.log
+next-game/current-screen.png

@@ -12,6 +12,7 @@ pub mod history;
 pub mod inspector;
 pub mod ipc;
 pub mod logger;
+pub mod next_game;
 pub mod platform;
 pub mod proxy;
 pub mod schema;
@@ -148,6 +149,7 @@ pub fn run() {
             // binaries live under `<resource_dir>/runtime/...` and that
             // path is only resolvable once the AppHandle exists.
             move |app| {
+                app.manage(next_game::NextGameService::start(&config_path, &log_dir));
                 let resource_dir = app.path().resource_dir().ok();
                 let runtime = bot::PythonRuntime::locate(resource_dir.as_deref()).ok();
                 match &runtime {
@@ -209,6 +211,7 @@ pub fn run() {
                     let handle = app.handle().clone();
                     main.on_window_event(move |event| {
                         if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                            handle.state::<next_game::NextGameService>().stop();
                             if let Err(e) = ipc::overlay::close(&handle) {
                                 warn!("overlay: could not close with the main window: {e}");
                             }
