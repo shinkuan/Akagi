@@ -1,6 +1,6 @@
 /* BoardTile — 2D top-down mahjong table.
  *
- * Layout strategy (see claude_plan / issue): the hero sits at the bottom; the
+ * Layout strategy: the hero sits at the bottom; the
  * other seats are drawn into a full-square layer that is rotated 90/180/270°
  * about the board center. CSS `transform: rotate()` is paint-only, so each
  * seat's mahgen container reports its pre-rotation (axis-aligned) clientWidth —

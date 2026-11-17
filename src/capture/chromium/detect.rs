@@ -237,7 +237,7 @@ mod tests {
     /// Hermetic regression for the dedup bug surfaced by CI: probes emit in
     /// priority order, so a duplicate path can be non-adjacent — the case
     /// `Vec::dedup_by` misses. `dedup_by_path` must drop it and keep the
-    /// first (higher-priority) occurrence. Fake paths per CLAUDE.md #8.
+    /// first (higher-priority) occurrence. Paths are fake.
     #[test]
     fn dedup_by_path_keeps_first_nonadjacent_occurrence() {
         use BrowserKind::*;

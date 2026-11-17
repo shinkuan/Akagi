@@ -42,11 +42,11 @@ In `lib.rs::run`, append a `LogTarget` to the slice passed to `logger::init`:
 ```rust
 &[
     logger::LogTarget::new("proxy", "akagi::proxy"),
-    logger::LogTarget::new("ai",    "akagi::ai"),
+    logger::LogTarget::new("bridge", "akagi::bridge"),
 ]
 ```
 
-`prefix` is matched against each event's tracing target (longest-prefix). Module path is the default target, so any `tracing::info!` inside `src/ai/` lands in `ai.log`.
+`prefix` is matched against each event's tracing target (longest-prefix). Module path is the default target, so any `tracing::info!` inside `src/bridge/` lands in `bridge.log`.
 
 ## Binary logging
 
