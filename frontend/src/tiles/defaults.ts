@@ -54,7 +54,6 @@ const LG_LAYOUT: LayoutItem[] = [
   { i: 'bot-action',      x: 0, y: 3,  w: 4,  h: 4, minW: 3, minH: 2 },
   { i: 'notifications',   x: 0, y: 7,  w: 4,  h: 4, minW: 2, minH: 3 },
   { i: 'bot-show',        x: 4, y: 3,  w: 5,  h: 8, minW: 2, minH: 4 },
-//{ i: 'recommendations', x: 4, y: 3,  w: 5,  h: 8, minW: 2, minH: 4 },
   { i: 'bot-responses',   x: 9, y: 3,  w: 3,  h: 4, minW: 2, minH: 3 },
   { i: 'events',          x: 9, y: 7,  w: 3,  h: 4, minW: 2, minH: 3 },
   { i: 'player-0',        x: 0, y: 11, w: 3,  h: 8, minW: 2, minH: 6 },
@@ -65,6 +64,7 @@ const LG_LAYOUT: LayoutItem[] = [
   { i: 'opponents',       x: 3, y: 19, w: 3,  h: 6, minW: 2, minH: 4 },
   { i: 'proxy-control',   x: 6, y: 19, w: 6,  h: 6, minW: 2, minH: 2, maxH: 6 },
   { i: 'board',           x: 0, y: 25, w: 6,  h: 14, minW: 4, minH: 8 },
+  { i: 'recommendations', x: 6, y: 25, w: 6,  h: 8, minW: 2, minH: 4 },
 ]
 
 const MD_LAYOUT: LayoutItem[] = [
@@ -72,7 +72,6 @@ const MD_LAYOUT: LayoutItem[] = [
   { i: 'self-hand',       x: 5, y: 0,  w: 5,  h: 3, minW: 5, minH: 2, maxH: 6 },
   { i: 'bot-action',      x: 0, y: 3,  w: 5,  h: 4, minW: 3, minH: 2 },
   { i: 'bot-show',        x: 5, y: 3,  w: 5,  h: 8, minW: 2, minH: 4 },
-//{ i: 'recommendations', x: 5, y: 3,  w: 5,  h: 8, minW: 2, minH: 4 },
   { i: 'opponents',       x: 0, y: 7,  w: 5,  h: 5, minW: 2, minH: 4 },
   { i: 'events',          x: 0, y: 12, w: 5,  h: 6, minW: 2, minH: 3 },
   { i: 'bot-responses',   x: 5, y: 11, w: 5,  h: 4, minW: 2, minH: 3 },
@@ -84,6 +83,7 @@ const MD_LAYOUT: LayoutItem[] = [
   { i: 'player-3',        x: 8, y: 18, w: 2,  h: 8, minW: 2, minH: 6 },
   { i: 'proxy-control',   x: 0, y: 26, w: 10, h: 4, minW: 2, minH: 2, maxH: 6 },
   { i: 'board',           x: 0, y: 30, w: 6,  h: 14, minW: 4, minH: 8 },
+  { i: 'recommendations', x: 6, y: 30, w: 4,  h: 8, minW: 2, minH: 4 },
 ]
 
 const SM_LAYOUT: LayoutItem[] = [
@@ -91,7 +91,7 @@ const SM_LAYOUT: LayoutItem[] = [
   { i: 'player-0',        x: 0, y: 2,  w: 3, h: 8, minW: 2, minH: 6 },
   { i: 'player-1',        x: 3, y: 2,  w: 3, h: 8, minW: 2, minH: 6 },
   { i: 'player-3',        x: 0, y: 10, w: 3, h: 8, minW: 2, minH: 6 },
-//{ i: 'recommendations', x: 3, y: 10, w: 3, h: 8, minW: 2, minH: 4 },
+  { i: 'recommendations', x: 3, y: 10, w: 3, h: 8, minW: 2, minH: 4 },
   { i: 'player-2',        x: 0, y: 18, w: 6, h: 6, minW: 2, minH: 6 },
   { i: 'risk-chart',      x: 0, y: 24, w: 3, h: 6, minW: 2, minH: 4 },
   { i: 'opponents',       x: 3, y: 24, w: 3, h: 6, minW: 2, minH: 4 },
@@ -179,7 +179,7 @@ const SM_LAYOUT_3P: LayoutItem[] = [
   { i: 'bot-responses',   x: 3, y: 38, w: 3, h: 5, minW: 2, minH: 3 },
   { i: 'bot-action',      x: 0, y: 43, w: 6, h: 3, minW: 3, minH: 2 },
   { i: 'bot-show',        x: 0, y: 46, w: 6, h: 5, minW: 2, minH: 3 },
-//{ i: 'recommendations', x: 0, y: 10, w: 6, h: 8, minW: 2, minH: 4 },
+  { i: 'recommendations', x: 0, y: 10, w: 6, h: 8, minW: 2, minH: 4 },
   { i: 'board',           x: 0, y: 51, w: 6, h: 16, minW: 4, minH: 8 },
 ]
 
