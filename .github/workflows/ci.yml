@@ -3,8 +3,7 @@ name: CI
 # Fast PR gate: lint + test on Linux, plus a compile-only check on the other
 # two release targets. The full cross-platform build and packaging still lives
 # in release.yml (tag-triggered). The goal here is to catch fmt / clippy /
-# compile / test / frontend breakage before merge — `cargo test --lib` alone
-# misses integration-test compile breaks, so we also compile every test target.
+# compile / test / frontend breakage before merge.
 #
 # The macOS/Windows check exists because Linux alone is not enough to prove the
 # code compiles: an API can be `cfg`'d out on another platform and still build
@@ -68,14 +67,9 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: test (lib)
-        run: cargo test --lib
-
-      # Compile every test target (integration tests, benches) without
-      # running them. This is the check that would have caught the
-      # spawn_with_command arity break in tests/example_bot.rs.
-      - name: build all test targets
-        run: cargo test --no-run --all-targets
+      # Integration tests that need uv, python or a browser skip or are #[ignore]d.
+      - name: test
+        run: cargo test
 
       # clippy and test above only cover the root package.
       - name: native_bot (clippy + test)
@@ -135,6 +129,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Test
+        run: npm test
 
       # `npm run build` is `tsc -b && vite build` — type-checks too.
       - name: Build

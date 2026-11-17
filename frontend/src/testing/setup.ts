@@ -5,6 +5,15 @@ import { cleanup } from '@testing-library/react'
 // hooks a global `afterEach`) never registers. Do it explicitly.
 afterEach(cleanup)
 
+// Node ≥25's own Web Storage globals shadow jsdom's and are undefined without
+// `--localstorage-file`; put jsdom's back.
+for (const name of ['localStorage', 'sessionStorage'] as const) {
+  if (globalThis[name] === undefined) {
+    const { window } = (globalThis as unknown as { jsdom: { window: Window } }).jsdom
+    Object.defineProperty(globalThis, name, { value: window[name], configurable: true })
+  }
+}
+
 // jsdom ships no ResizeObserver, which Radix's ScrollArea constructs on mount.
 if (!('ResizeObserver' in globalThis)) {
   globalThis.ResizeObserver = class {
