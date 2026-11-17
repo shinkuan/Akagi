@@ -132,6 +132,11 @@ fn generate_ca() -> Result<(String, String, Vec<u8>, Vec<u8>)> {
 /// MITMing a server reached by raw IP (Riichi City's game server connects to
 /// `<ip>:443`) would otherwise fail the handshake.
 fn leaf_params(host: &str) -> CertificateParams {
+    // `Authority::host()` keeps the brackets around an IPv6 literal.
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
     let mut params = CertificateParams::default();
     params.serial_number = Some(rng().random::<u64>().into());
 
@@ -240,6 +245,20 @@ mod tests {
             p.subject_alt_names.as_slice(),
             [SanType::IpAddress(_)]
         ));
+    }
+
+    #[test]
+    fn bracketed_ipv6_from_authority_gets_ip_san() {
+        // Regression: `gen_server_config` passes `Authority::host()`, which is
+        // `[2001:db8::1]` for an IPv6 CONNECT, and that used to become a DnsName SAN.
+        let authority: Authority = "[2001:db8::1]:443".parse().unwrap();
+        let p = leaf_params(authority.host());
+        let expected: IpAddr = "2001:db8::1".parse().unwrap();
+        assert!(
+            matches!(p.subject_alt_names.as_slice(), [SanType::IpAddress(ip)] if *ip == expected),
+            "bracketed IPv6 host must get an iPAddress SAN, got {:?}",
+            p.subject_alt_names
+        );
     }
 
     #[test]
