@@ -133,16 +133,11 @@ async fn tracker_snapshot_emits_mahgen_view() {
 
     // Self (seat 0) sees real tiles; others see backs.
     assert!(view.players[0].hand.contains('m') || view.players[0].hand.contains('p'));
-    for op in 1..4 {
-        assert!(
-            view.players[op].hand.ends_with('z'),
-            "op{op} hand should be backs"
-        );
+    assert_eq!(view.players.len(), 4);
+    for (op, p) in view.players.iter().enumerate().skip(1) {
+        assert!(p.hand.ends_with('z'), "op{op} hand should be backs");
         // Hand of N tile-backs renders as N zeros + 'z'.
-        assert!(
-            view.players[op].hand.starts_with('0'),
-            "op{op} hand should start with 0"
-        );
+        assert!(p.hand.starts_with('0'), "op{op} hand should start with 0");
     }
     // Dora indicator string non-empty.
     assert!(!view.dora_indicators.is_empty());
