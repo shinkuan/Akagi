@@ -148,9 +148,12 @@ may decline. The bridge's later own-seat `reach` echo is dropped from the
 runner's view (`drop_next_own_reach`) so a stateful bot never applies
 `reach` twice. See issue #257.
 
-If that resolution fails (the bot answers with something other than a
-dahai, or the follow-up errors), the plan still sees a bare `reach` and
-declines the declaration whole rather than pressing the button half:
+If the follow-up errors (a timeout, say), the reaction fails the same way a
+failed first `react` does and the runner is dropped until the next game: its
+late reply would otherwise be read as the answer to the next decision. If
+the bot answers with something other than a dahai, the plan still sees a
+bare `reach` and declines the declaration whole rather than pressing the
+button half:
 pressing it without a tile to follow is worse than not pressing it, because
 at clock expiry the *client* completes the riichi itself by throwing the
 drawn tile, committing the hand to a wait the bot never chose. The same
