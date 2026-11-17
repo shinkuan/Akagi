@@ -306,16 +306,7 @@ impl BotManager {
         let started = Instant::now();
         let mut resp = match runner.react(&batch).await {
             Ok(r) => r,
-            Err(e) => {
-                let err_str = format!("{e:#}");
-                let bot = self.active_name.clone();
-                self.emit_status(BotStatus::Error {
-                    bot: bot.clone(),
-                    error: err_str.clone(),
-                });
-                self.emit_notify(Notification::error("Bot reaction failed").body(err_str));
-                return Err(e).context("bot react failed");
-            }
+            Err(e) => return Err(self.react_failed(e)),
         };
         let reaction_ms = started.elapsed().as_millis() as u64;
 
@@ -357,10 +348,9 @@ impl BotManager {
                                  leaving the reach unresolved (autoplay will decline it)"
                             ),
                         },
-                        Err(e) => warn!(
-                            "bot manager: reach follow-up react failed ({e:#}); \
-                             leaving the reach unresolved"
-                        ),
+                        // A reply that arrives after a timeout would be read as
+                        // the answer to the next decision.
+                        Err(e) => return Err(self.react_failed(e.context("reach follow-up"))),
                     }
                 }
             }
@@ -667,6 +657,18 @@ impl BotManager {
         self.emit_notify(Notification::error(title.to_owned()).body(error.to_owned()));
     }
 
+    /// Report a failed `react` and return the error, which makes `run` drop
+    /// the runner until the next `start_game`.
+    fn react_failed(&self, e: anyhow::Error) -> anyhow::Error {
+        let err_str = format!("{e:#}");
+        self.emit_status(BotStatus::Error {
+            bot: self.active_name.clone(),
+            error: err_str.clone(),
+        });
+        self.emit_notify(Notification::error("Bot reaction failed").body(err_str));
+        e.context("bot react failed")
+    }
+
     fn emit_status(&self, s: BotStatus) {
         let _ = self.status_tx.send(s);
     }
@@ -763,6 +765,8 @@ mod tests {
         next: Arc<Mutex<Vec<BotResponse>>>,
         /// If set, react() returns this error instead of consuming `next`.
         fail_with: Arc<Mutex<Option<String>>>,
+        /// Fail only the call with this 0-based index, with this error.
+        fail_at: Option<(usize, String)>,
     }
 
     impl MockBotRunner {
@@ -772,6 +776,7 @@ mod tests {
                 calls: calls.clone(),
                 next: Arc::new(Mutex::new(replies)),
                 fail_with: Arc::new(Mutex::new(None)),
+                fail_at: None,
             };
             (r, calls)
         }
@@ -781,6 +786,7 @@ mod tests {
                 calls: Arc::new(Mutex::new(Vec::new())),
                 next: Arc::new(Mutex::new(Vec::new())),
                 fail_with: Arc::new(Mutex::new(Some(err.into()))),
+                fail_at: None,
             }
         }
     }
@@ -788,9 +794,18 @@ mod tests {
     #[async_trait]
     impl BotRunner for MockBotRunner {
         async fn react(&mut self, events: &[MjaiEvent]) -> Result<BotResponse> {
-            self.calls.lock().await.push(events.to_vec());
+            let index = {
+                let mut calls = self.calls.lock().await;
+                calls.push(events.to_vec());
+                calls.len() - 1
+            };
             if let Some(err) = self.fail_with.lock().await.as_deref() {
                 bail!(err.to_string());
+            }
+            if let Some((at, err)) = &self.fail_at {
+                if *at == index {
+                    bail!(err.clone());
+                }
             }
             let mut q = self.next.lock().await;
             if q.is_empty() {
@@ -1857,6 +1872,61 @@ mod tests {
             !mgr.drop_next_own_reach,
             "no follow-up ran, so the bridge echo must still reach the runner"
         );
+    }
+
+    /// Regression: a follow-up that timed out left the runner in place. The
+    /// bot's late dahai stayed in its stdout and was read as the answer to the
+    /// next decision, and every reply after it was one decision behind. A
+    /// failed follow-up now fails the reaction like a failed first react, and
+    /// `run` drops the runner.
+    #[tokio::test]
+    async fn a_failed_reach_followup_fails_the_reaction_and_drops_the_runner() {
+        let events = crate::event_bus::post_tracker_bus();
+        let rx = events.subscribe();
+        let (mut mgr, _, mut resp_rx, mut status_rx, mut notify_rx) = manager_with_mock(vec![]);
+        mgr.config.write().await.autoplay.enabled = true;
+        // The queued dahai stands in for the late reply to the timed-out call.
+        let (mut mock, calls) = MockBotRunner::new(vec![reach_none(2), dahai_reply(2, "3p")]);
+        mock.fail_at = Some((1, "bot mock react() timed out after 5s".into()));
+        mgr.runner = Some(Box::new(mock));
+
+        let handle = tokio::spawn(async move { mgr.run(rx).await });
+        for event in [our_tsumo(), dahai(0)] {
+            events
+                .send(crate::event_bus::TrackedEvent {
+                    event,
+                    can_act: None,
+                })
+                .unwrap();
+        }
+        drop(events);
+        tokio::time::timeout(std::time::Duration::from_secs(1), handle)
+            .await
+            .expect("manager exited")
+            .expect("join")
+            .expect("Ok");
+
+        assert_eq!(
+            calls.lock().await.len(),
+            2,
+            "the next decision must not reach the runner that timed out"
+        );
+        assert!(
+            resp_rx.try_recv().is_err(),
+            "neither the bare reach nor the late dahai may be published"
+        );
+        let error = std::iter::from_fn(|| status_rx.try_recv().ok())
+            .find_map(|s| match s {
+                BotStatus::Error { error, .. } => Some(error),
+                _ => None,
+            })
+            .expect("an Error status");
+        assert!(
+            error.contains("reach follow-up") && error.contains("timed out"),
+            "got: {error}"
+        );
+        let n = notify_rx.try_recv().expect("a notification");
+        assert!(n.title.contains("Bot reaction failed"));
     }
 
     /// Leak guard: a declaration whose reach press is lost never produces the
