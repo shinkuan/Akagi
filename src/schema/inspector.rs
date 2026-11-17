@@ -42,6 +42,8 @@ pub enum FrameDirection {
 pub enum FrameRaw {
     Text(String),
     Binary(String),
+    /// Left out of the shareable log; the full frame is under `sensitive/`.
+    Withheld,
 }
 
 /// Bridge's structured view of a parsed frame.
@@ -212,6 +214,84 @@ pub enum InspectorEntry {
         #[serde(flatten)]
         exchange: HttpExchange,
     },
+}
+
+/// Stand-in for content the shareable logs leave out.
+pub const WITHHELD: &str = "<withheld>";
+
+/// Annotation kinds starting with this are Akagi's notes about its own
+/// handling (`akagi_bypass`, `akagi_unpaired`, …), not a reading of content.
+pub const AKAGI_NOTE_PREFIX: &str = "akagi_";
+
+/// Header names whose values are credentials by definition.
+const CREDENTIAL_HEADERS: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+];
+
+impl InspectorEntry {
+    /// This entry as the shareable log may hold it: a frame keeps only its
+    /// direction, size and method, and an HTTP exchange is dropped.
+    pub fn withheld(&self) -> Option<InspectorEntry> {
+        match self {
+            InspectorEntry::WsFrame {
+                ts_ms,
+                direction,
+                flow_id,
+                size,
+                parsed,
+                emitted,
+                ..
+            } => Some(InspectorEntry::WsFrame {
+                ts_ms: *ts_ms,
+                direction: *direction,
+                flow_id: flow_id.clone(),
+                size: *size,
+                raw: FrameRaw::Withheld,
+                parsed: parsed.as_ref().map(|p| ParsedFrame {
+                    method: p.method.clone(),
+                    args: serde_json::Value::Null,
+                }),
+                emitted: *emitted,
+            }),
+            InspectorEntry::Http { .. } => None,
+            other => Some(other.clone()),
+        }
+    }
+
+    /// This entry as the shareable log may hold it. An exchange a content
+    /// recognizer annotated keeps its content minus credential header values.
+    /// One carrying only Akagi's own notes (`akagi_*`) says nothing about what
+    /// is inside it, so its URL query, header values and body are withheld.
+    pub fn redacted_http(&self) -> InspectorEntry {
+        let mut entry = self.clone();
+        if let InspectorEntry::Http { exchange, .. } = &mut entry {
+            let recognized = exchange
+                .annotations
+                .iter()
+                .any(|a| !a.kind.starts_with(AKAGI_NOTE_PREFIX));
+            for h in &mut exchange.headers {
+                if !recognized
+                    || CREDENTIAL_HEADERS
+                        .iter()
+                        .any(|c| h.name.eq_ignore_ascii_case(c))
+                {
+                    h.value = WITHHELD.to_string();
+                }
+            }
+            if !recognized {
+                exchange.url = crate::util::redact_query(&exchange.url).into_owned();
+                if let Some(body) = &mut exchange.body {
+                    if body.text.take().is_some() {
+                        body.skipped = Some(WITHHELD.to_string());
+                    }
+                }
+            }
+        }
+        entry
+    }
 }
 
 #[cfg(test)]

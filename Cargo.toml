@@ -53,11 +53,12 @@ base64 = "0.22"
 riichienv-core = "0.4.8"
 native_bot = { path = "native_bot" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "http2", "charset", "socks"] }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate", "aes-crypto"] }
 # Gzip for `POST /v3/review` bodies: a whole-game mjai log is hundreds of KB
 # raw, and the review endpoint prefers (and auto-detects) gzipped uploads.
 flate2 = "1"
 globset = "0.4"
+walkdir = "2.5"
 tempfile = "3"
 futures-util = "0.3"
 dirs = "6"

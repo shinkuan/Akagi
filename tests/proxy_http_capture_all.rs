@@ -22,7 +22,12 @@ async fn record_all_captures_both_halves_and_pairs_them() {
     let res = get_through_proxy(h.proxy_port, &routes, &h.host()).await;
     assert!(res.contains(UPSTREAM_BODY), "forwarded body was altered");
 
-    let entries = h.finish().await;
+    let (shareable, entries) = h.finish_both().await;
+    // Unrecognized exchanges can carry cookies and tokens: full copy only.
+    assert!(
+        shareable.iter().all(|e| e["kind"] != "http"),
+        "unrecognized HTTP leaked into the shareable file: {shareable:?}"
+    );
     let http: Vec<&serde_json::Value> = entries.iter().filter(|e| e["kind"] == "http").collect();
 
     let req = http

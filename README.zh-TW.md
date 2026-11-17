@@ -289,10 +289,12 @@ PT 規則與過濾條件會持久化於 `localStorage`。Bridge 啟動
 <log_dir>/<session>/
 ├── all.log                       # 所有 tracing 輸出彙整
 ├── <target>.log                  # 依模組過濾的紀錄
-├── proxy.binlog                  # 原始 WS 二進位訊框
 ├── majsoul/<flow_id>.log         # 每條 WebSocket flow 的 JSON 紀錄
 ├── majsoul/<flow_id>.mjai.jsonl  # 每場對局的 mjai 事件流
-└── inspector.jsonl               # Inspector 看到的訊框
+├── inspector.jsonl               # Inspector 時間軸，含機密的訊框已略去
+└── sensitive/                    # 完整 WS 訊框，可能含帳號機密資訊
+    ├── proxy.binlog              # 原始 WS 二進位訊框
+    └── inspector.jsonl           # 完整的 Inspector 時間軸
 ```
 
 前端 **Logs** 路由有兩個頁籤：
@@ -353,9 +355,10 @@ minisign -Vm akagi-<version>-<platform>.zip -p minisign.pub
 ## 疑難排解
 
 > [!TIP]
-> 重現問題後，存下 `<log_dir>/<session>/` 整個 session
-> 資料夾 — 內含應用紀錄、原始訊框、mjai 事件、bot meta，
-> 是回報有用 bug 報告所需的所有資訊。
+> 重現問題後，用 **Logs → 打包日誌** 把 session 打包成 zip，
+> 附在 bug 回報中。不要直接公開 session 資料夾：其中的 `sensitive/`
+> 可能含有登入 token。打包日誌預設不放入這部分，或用你設定的密碼
+> 加密，密碼再私下交給開發者。
 
 - **MITM 模式抓不到封包。** 確認 `./ca/akagi-ca.crt`
   已在系統憑證庫中信任。確認 proxy 已啟動：

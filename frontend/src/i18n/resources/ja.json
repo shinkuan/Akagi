@@ -217,7 +217,30 @@
     "detail_target": "ターゲット",
     "detail_location": "ソース位置",
     "detail_message": "メッセージ",
-    "detail_fields": "フィールド"
+    "detail_fields": "フィールド",
+    "pack": {
+      "button": "ログをまとめる",
+      "title": "ログをまとめる",
+      "description": "選んだセッションを 1 つの zip にまとめ、不具合報告に添付できるようにします。",
+      "all": "すべてのセッション（{{count}}）",
+      "choose": "セッションを選ぶ",
+      "legacy": "旧形式",
+      "include_full": "完全な情報を含める",
+      "full_warning": "完全な情報とは、キャプチャしたすべての WebSocket フレームです。ログイン用トークンなどのアカウントの機密情報が含まれることがあります。開発者に個別に渡す場合だけにしてください。",
+      "password": "パスワード（推奨）",
+      "toggle_password": "パスワードを表示／非表示",
+      "password_hint": "このパスワードで暗号化されるのは完全な情報だけで、zip 内のほかのファイルはそのまま開けます。必要なときは開発者から個別にパスワードを尋ねます。",
+      "no_password": "パスワードがない場合、完全な情報は暗号化されずに zip に入ります。",
+      "legacy_note": "選んだうち {{count}} 件は旧形式のセッションです。完全な情報を分けて保存する前に記録されたため、完全な情報を含めるときだけ zip に入ります。",
+      "save_title": "ログの保存先",
+      "submit": "まとめる…",
+      "packing": "まとめています…",
+      "done": "ログをまとめました",
+      "done_withheld": "完全な情報は含めていません。",
+      "done_encrypted": "完全な情報はパスワードで暗号化しました。",
+      "done_plain": "完全な情報を暗号化せずに含めました。",
+      "failed": "ログをまとめられませんでした"
+    }
   },
   "inspector": {
     "kind": "表示",
@@ -260,7 +283,8 @@
     "detail_url": "完全な URL",
     "invalid_base64": "（不正な base64）",
     "bytes_truncated": "… 残り {{count}} バイトを切り捨て",
-    "binary": "（バイナリ）"
+    "binary": "（バイナリ）",
+    "withheld": "この内容は共有用のログに書き出していません。"
   },
   "sidebar": {
     "collapse": "サイドバーを閉じる",

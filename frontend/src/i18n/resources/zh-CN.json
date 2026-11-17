@@ -217,7 +217,30 @@
     "detail_target": "模块",
     "detail_location": "源位置",
     "detail_message": "消息",
-    "detail_fields": "字段"
+    "detail_fields": "字段",
+    "pack": {
+      "button": "打包日志",
+      "title": "打包日志",
+      "description": "把选中的运行记录打包成一个 zip，附在问题反馈中。",
+      "all": "全部运行记录（{{count}}）",
+      "choose": "选择运行记录",
+      "legacy": "旧格式",
+      "include_full": "包含完整信息",
+      "full_warning": "完整信息是所有捕获到的 WebSocket frame，可能含有登录 token 等账号机密信息。只能私下交给开发者。",
+      "password": "密码（建议设置）",
+      "toggle_password": "显示或隐藏密码",
+      "password_hint": "只有完整信息会用这个密码加密，zip 里的其他文件仍可直接打开。开发者需要时会私下向你索取密码。",
+      "no_password": "未设置密码时，完整信息会以未加密的形式放进 zip。",
+      "legacy_note": "选中了 {{count}} 条旧运行记录。它们录制于完整信息单独保存之前，只有在包含完整信息时才会放进 zip。",
+      "save_title": "保存日志包",
+      "submit": "打包…",
+      "packing": "打包中…",
+      "done": "日志已打包",
+      "done_withheld": "未包含完整信息。",
+      "done_encrypted": "完整信息已用你的密码加密。",
+      "done_plain": "完整信息未加密。",
+      "failed": "无法打包日志"
+    }
   },
   "inspector": {
     "kind": "显示",
@@ -260,7 +283,8 @@
     "detail_url": "完整 URL",
     "invalid_base64": "(无效的 base64)",
     "bytes_truncated": "… 已截断后续 {{count}} 个字节",
-    "binary": "(二进制)"
+    "binary": "(二进制)",
+    "withheld": "此内容未写入可分享的日志。"
   },
   "sidebar": {
     "collapse": "收起侧栏",

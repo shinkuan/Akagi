@@ -1346,6 +1346,7 @@ impl Bridge for TenhouBridge {
                     method: "<heartbeat>".into(),
                     args: serde_json::Value::Null,
                 }),
+                shareable: true,
             };
         }
         let msg: JsonValue = match serde_json::from_slice(content) {
@@ -1366,6 +1367,7 @@ impl Bridge for TenhouBridge {
             .and_then(|v| v.as_str())
             .unwrap_or("?")
             .to_string();
+        let shareable = is_shareable(&tag);
         let parsed = Some(ParsedFrame {
             method: tag,
             args: msg.clone(),
@@ -1379,7 +1381,11 @@ impl Bridge for TenhouBridge {
         // dispatched frame, not just the ones that produced mjai events: a
         // frame that only closes the decision window still has to be seen.
         self.publish();
-        ParseResult { events, parsed }
+        ParseResult {
+            events,
+            parsed,
+            shareable,
+        }
     }
 
     /// Encode a bot action as the Tenhou client frame that performs it.
@@ -1393,9 +1399,82 @@ impl Bridge for TenhouBridge {
     }
 }
 
+#[cfg(test)]
+mod shareable_tests {
+    use super::*;
+
+    fn parse(frame: &str) -> ParseResult {
+        TenhouBridge::new(None, None).parse(Direction::Down, frame.as_bytes())
+    }
+
+    /// Regression: every server frame, the login handshake included, used to
+    /// reach the shareable inspector file in full.
+    #[test]
+    fn the_login_handshake_is_withheld() {
+        assert!(!parse(r#"{"tag":"HELO","uname":"fake","auth":"fake-auth"}"#).shareable);
+        assert!(
+            !parse(r#"{"tag":"LN","n":"1"}"#).shareable,
+            "unknown tags too"
+        );
+    }
+
+    #[test]
+    fn game_tags_and_the_heartbeat_are_shareable() {
+        for tag in [
+            "INIT",
+            "T12",
+            "d34",
+            "N",
+            "REACH",
+            "AGARI",
+            "RYUUKYOKU",
+            "UN",
+        ] {
+            assert!(is_shareable(tag), "{tag}");
+        }
+        assert!(parse(r#"{"tag":"GO","type":"9"}"#).shareable);
+        assert!(
+            TenhouBridge::new(None, None)
+                .parse(Direction::Down, HEARTBEAT)
+                .shareable
+        );
+    }
+
+    #[test]
+    fn client_and_non_json_frames_are_withheld() {
+        let mut b = TenhouBridge::new(None, None);
+        assert!(
+            !b.parse(Direction::Up, br#"{"tag":"HELO","name":"fake-id"}"#)
+                .shareable
+        );
+        assert!(!b.parse(Direction::Down, b"not json").shareable);
+    }
+}
+
 // ============================================================================
 // Tag parsing helpers
 // ============================================================================
+
+/// Server tags whose content may go into the shareable logs: the ones the
+/// bridge reads, plus `SAIKAI`. Check a tag carries no credentials before
+/// adding it; `HELO` is the login handshake and stays out. Client frames are
+/// never parsed, so nothing the client sends gets here.
+fn is_shareable(tag: &str) -> bool {
+    matches!(
+        tag,
+        "GO" | "UN"
+            | "TAIKYOKU"
+            | "INIT"
+            | "REINIT"
+            | "SAIKAI"
+            | "N"
+            | "REACH"
+            | "DORA"
+            | "AGARI"
+            | "RYUUKYOKU"
+    ) || tsumo_actor(tag).is_some()
+        || dahai_actor(tag).is_some()
+}
 
 /// Tsumo tags are `T<n>` / `U<n>` / `V<n>` / `W<n>` for relative seats 0..=3.
 fn tsumo_actor(tag: &str) -> Option<u8> {

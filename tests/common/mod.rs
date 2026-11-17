@@ -206,16 +206,31 @@ impl Harness {
         format!("127.0.0.1:{}", self.upstream_port)
     }
 
-    /// Stop the proxy and read back the recorded timeline.
-    pub async fn finish(mut self) -> Vec<serde_json::Value> {
+    /// Stop the proxy and read back the shareable timeline.
+    pub async fn finish(self) -> Vec<serde_json::Value> {
+        self.finish_both().await.0
+    }
+
+    /// Stop the proxy and read back the shareable and the full timeline.
+    pub async fn finish_both(mut self) -> (Vec<serde_json::Value>, Vec<serde_json::Value>) {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
         let _ = tokio::time::timeout(TIMEOUT, self.task).await;
-        let body = std::fs::read_to_string(&self.inspector).unwrap_or_default();
-        body.lines()
-            .filter(|l| !l.trim().is_empty())
-            .map(|l| serde_json::from_str(l).expect("inspector line must be valid JSON"))
-            .collect()
+        let read = |path: &std::path::Path| -> Vec<serde_json::Value> {
+            std::fs::read_to_string(path)
+                .unwrap_or_default()
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| serde_json::from_str(l).expect("inspector line must be valid JSON"))
+                .collect()
+        };
+        let full = self
+            .inspector
+            .parent()
+            .unwrap()
+            .join("sensitive")
+            .join("inspector.jsonl");
+        (read(&self.inspector), read(&full))
     }
 }

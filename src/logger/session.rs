@@ -92,6 +92,13 @@ impl LogTarget {
     }
 }
 
+const SENSITIVE_README: &str = "\
+Files in this folder hold every captured WebSocket frame in full, which can
+include login tokens and other account credentials. Do not post them
+publicly. Use Logs > Pack logs to share a session: it leaves this folder out,
+or encrypts it with a password you choose.
+";
+
 /// Active logging session. Holds the session directory, registered binary
 /// loggers, and tracing-appender worker guards (must stay alive for log
 /// flushing).
@@ -187,9 +194,14 @@ impl Session {
         // (frames, mjai events, bot reactions), not application logs —
         // and conflating them would multiply file size and complicate
         // filtering on either side.
+        let sensitive = dir.join(super::SENSITIVE_DIR);
+        std::fs::create_dir_all(&sensitive)
+            .with_context(|| format!("Failed to create {}", sensitive.display()))?;
+        let _ = std::fs::write(sensitive.join("README.txt"), SENSITIVE_README);
         let inspector_path = dir.join("inspector.jsonl");
-        let (inspector_writer, inspector_bus) = InspectorWriter::open(&inspector_path, 1024)
-            .with_context(|| format!("Failed to open {}", inspector_path.display()))?;
+        let (inspector_writer, inspector_bus) =
+            InspectorWriter::open(&inspector_path, &sensitive.join("inspector.jsonl"), 1024)
+                .with_context(|| format!("Failed to open {}", inspector_path.display()))?;
 
         // Per-target files.
         for t in targets {
@@ -284,7 +296,7 @@ impl Session {
     }
 
     /// Get-or-create a binary logger by name. The file lives at
-    /// `<session>/<name>.binlog`.
+    /// `<session>/sensitive/<name>.binlog`: it holds every frame verbatim.
     pub fn binary_logger(&self, name: &str) -> Result<Arc<BinaryLogger>> {
         if let Some(existing) = self
             .binary_loggers
@@ -301,7 +313,10 @@ impl Session {
         if let Some(existing) = w.get(name) {
             return Ok(existing.clone());
         }
-        let logger = Arc::new(BinaryLogger::new(&self.dir, name)?);
+        let logger = Arc::new(BinaryLogger::new(
+            &self.dir.join(super::SENSITIVE_DIR),
+            name,
+        )?);
         w.insert(name.to_string(), logger.clone());
         Ok(logger)
     }

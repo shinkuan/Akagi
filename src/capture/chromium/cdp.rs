@@ -41,6 +41,7 @@ use crate::schema::{
     CaptureSource, FrameDirection, FrameRaw, HttpAnnotation, HttpBody, HttpExchange, HttpHeader,
     HttpPhase, InspectorEntry,
 };
+use crate::util::redact_query;
 use anyhow::{anyhow, Context, Result};
 use base64::Engine;
 use chromiumoxide::page::Page;
@@ -484,7 +485,7 @@ async fn rewrite_paused_script(
             // is deliberately loose enough to catch the client whatever
             // version it is served under, so it also catches its neighbours;
             // that is expected, not a fault.
-            debug!("CDP: no body for {url}: {e:#}");
+            debug!("CDP: no body for {}: {e:#}", redact_query(url));
             None
         }
     };
@@ -494,7 +495,10 @@ async fn rewrite_paused_script(
         // Not the client at all — the URL pattern matches its neighbours
         // too (`inflate_min.js`, the `latest.js` redirect). Nothing to say.
         Some(Err(inject::InjectError::NoDiscardHandler)) => {
-            debug!("CDP: {url} is not the Tenhou client; passing through");
+            debug!(
+                "CDP: {} is not the Tenhou client; passing through",
+                redact_query(url)
+            );
             None
         }
         // It *is* the client — it registers a discard handler — but the
@@ -502,7 +506,10 @@ async fn rewrite_paused_script(
         // shape, which is the one failure here that cannot be diagnosed from
         // logs alone, so ask for a report.
         Some(Err(e)) => {
-            warn!("CDP: cannot instrument the Tenhou client ({url}): {e}");
+            warn!(
+                "CDP: cannot instrument the Tenhou client ({}): {e}",
+                redact_query(url)
+            );
             let _ = notify.send(
                 crate::schema::Notification::warn("Tenhou autoplay unavailable")
                     .body(format!(
@@ -540,7 +547,7 @@ async fn rewrite_paused_script(
                         warn!("CDP: could not serve the instrumented client: {e:#}");
                         false
                     } else {
-                        info!("CDP: Tenhou client instrumented ({url})");
+                        info!("CDP: Tenhou client instrumented ({})", redact_query(url));
                         true
                     }
                 }
@@ -666,10 +673,11 @@ async fn attach_page(
                         target: target_id.clone(),
                         request: ev.request_id.inner().clone(),
                     };
-                    let label = format!("ws {}", ev.url);
-                    let slug = slugify(&ev.url);
+                    let shown_url = redact_query(&ev.url);
+                    let label = format!("ws {shown_url}");
+                    let slug = slugify(ev.url.split(['?', '#']).next().unwrap_or_default());
                     let _ = bridges.acquire(key, &slug, &label);
-                    debug!("ws created: {} (target {target_id} request {})", ev.url, ev.request_id.inner());
+                    debug!("ws created: {shown_url} (target {target_id} request {})", ev.request_id.inner());
 
                     // If this is the platform's WS (Majsoul), capture
                     // the owning page so autoplay can dispatch input
@@ -691,8 +699,7 @@ async fn attach_page(
                                 // tab; refreshing the handle is a no-op and
                                 // must not spam warnings.
                                 debug!(
-                                    "autoplay: page handle refreshed on new WS for target {target_id} ({})",
-                                    ev.url
+                                    "autoplay: page handle refreshed on new WS for target {target_id} ({shown_url})"
                                 );
                             } else {
                                 if let Some(prev) = &prev_target {
@@ -706,8 +713,7 @@ async fn attach_page(
                                     *ctx.canvas_rect.write().await = None;
                                 }
                                 info!(
-                                    "autoplay: page handle bound to target {target_id} via WS {}",
-                                    ev.url
+                                    "autoplay: page handle bound to target {target_id} via WS {shown_url}"
                                 );
                             }
                         }
@@ -829,10 +835,11 @@ async fn attach_page(
                             "recognized {} {}", a.kind, a.summary,
                         );
                     }
-                    if !http_cfg.record_all && annotations.is_empty() {
+                    let recognized = !annotations.is_empty();
+                    if !http_cfg.record_all && !recognized {
                         continue;
                     }
-                    inspector.record(InspectorEntry::Http {
+                    inspector.record_as(InspectorEntry::Http {
                         ts_ms: Local::now().timestamp_millis(),
                         source: CaptureSource::Chromium,
                         exchange: HttpExchange {
@@ -849,7 +856,7 @@ async fn attach_page(
                             body: None,
                             annotations,
                         },
-                    });
+                    }, recognized);
                 }
                 Some(ev) = on_response.next() => {
                     if !http_cfg.record_all {
@@ -858,7 +865,7 @@ async fn attach_page(
                     if is_static_asset(Some(&ev.r#type)) && !http_cfg.static_assets {
                         continue;
                     }
-                    inspector.record(InspectorEntry::Http {
+                    inspector.record_sensitive(InspectorEntry::Http {
                         ts_ms: Local::now().timestamp_millis(),
                         source: CaptureSource::Chromium,
                         exchange: HttpExchange {
@@ -966,15 +973,18 @@ fn record_frame(
     } else {
         FrameRaw::Binary(payload_data.to_string())
     };
-    inspector.record(InspectorEntry::WsFrame {
-        ts_ms: Local::now().timestamp_millis(),
-        direction,
-        flow_id,
-        size: payload.len(),
-        raw,
-        parsed: result.parsed.clone(),
-        emitted: result.events.len(),
-    });
+    inspector.record_as(
+        InspectorEntry::WsFrame {
+            ts_ms: Local::now().timestamp_millis(),
+            direction,
+            flow_id,
+            size: payload.len(),
+            raw,
+            parsed: result.parsed.clone(),
+            emitted: result.events.len(),
+        },
+        result.shareable,
+    );
 }
 
 #[cfg(test)]

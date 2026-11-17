@@ -8,12 +8,14 @@ consumed by AI bots.
 
 ```rust
 pub trait Bridge: Send {
-    fn parse(&mut self, content: &[u8]) -> Vec<MjaiEvent>;
+    fn parse(&mut self, direction: Direction, content: &[u8]) -> ParseResult;
     fn build(&mut self, command: &MjaiEvent) -> Option<Vec<u8>>;
 }
 ```
 
-- `parse` — raw inbound WS binary frame → zero or more `MjaiEvent`s.
+- `parse` — raw WS frame → `ParseResult { events, parsed, shareable }`: zero or
+  more `MjaiEvent`s, the bridge's decoded view for the Inspector, and whether
+  the frame may go into the shareable logs.
 - `build` — outbound mjai command (also `MjaiEvent`) → optional raw WS binary frame (autoplay).
 
 ## mjai types
@@ -57,6 +59,25 @@ list of every constructor between here and the capture backend.
    `for_platform`.
 4. If the platform will support autoplay and its planner needs something only
    the parser sees, add a field to `BridgeHooks` rather than a new parameter.
+5. Give it an allowlist and set `ParseResult::shareable` (see below).
+
+## Shareable frames
+
+A session's logs outside `sensitive/` are meant to be shared in bug reports,
+and nobody can know in advance which frames a platform puts credentials in.
+So a frame's content reaches them only when the bridge says so:
+`ParseResult::shareable` is `false` by default, and each bridge sets it from an
+explicit allowlist (`is_shareable` in `majsoul/`, `tenhou/`, `riichi_city/`).
+Everything else is logged as method, direction and size; the full frame is
+still recorded under `sensitive/`.
+
+To allow a message, check it carries no credentials (tokens, passwords, login
+handshakes) in either direction, then add it. A message the bridge reads can
+still stay off the list: Majsoul's `authGame` request is read for the account
+id but carries the game token, and Riichi City's `CMD_AUTH` is read for the uid.
+A new message the bridge starts reading is withheld until someone adds it.
+Bridges must not log payloads of frames off the list themselves; see
+`bridge::shown`.
 
 ## Existing bridges
 

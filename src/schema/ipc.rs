@@ -266,6 +266,21 @@ pub struct LogSessionInfo {
     pub size_bytes: u64,
     pub mtime_ms: i64,
     pub is_active: bool,
+    /// Recorded before the `sensitive/` split, so every file holds frame
+    /// content and the whole session counts as sensitive when packed.
+    #[serde(default)]
+    pub legacy_layout: bool,
+}
+
+/// `pack_logs` arguments. No `Debug`: it carries the password.
+#[derive(Clone, Deserialize)]
+pub struct PackLogsRequest {
+    pub sessions: Vec<String>,
+    pub include_sensitive: bool,
+    #[serde(default)]
+    pub password: Option<String>,
+    /// Zip path picked in the save dialog.
+    pub dest: PathBuf,
 }
 
 /// Filtered, paginated read against a single session's `all.jsonl`.

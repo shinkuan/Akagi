@@ -302,6 +302,46 @@ fn wtf_decode(data: &mut [u8]) {
     }
 }
 
+/// Encode a liqi frame as the client or server would send it. `type_name` is
+/// the inner message (`lq.ReqAuthGame`); a response's wrapper name is empty.
+#[cfg(test)]
+pub(crate) fn encode_frame(
+    kind: MessageType,
+    msg_id: u16,
+    method: &str,
+    type_name: &str,
+    payload: JsonValue,
+) -> Vec<u8> {
+    #[derive(::prost::Message)]
+    struct Raw {
+        #[prost(string, tag = "1")]
+        name: ::prost::alloc::string::String,
+        #[prost(bytes = "vec", tag = "2")]
+        data: ::prost::alloc::vec::Vec<u8>,
+    }
+    let desc = POOL.get_message_by_name(type_name).expect("known type");
+    let inner = DynamicMessage::deserialize(desc, payload).expect("payload fits the type");
+    let name = if kind == MessageType::Response {
+        String::new()
+    } else {
+        method.to_string()
+    };
+    let wrapper = Raw {
+        name,
+        data: inner.encode_to_vec(),
+    };
+    let mut out = match kind {
+        MessageType::Notify => vec![1],
+        MessageType::Request => vec![2],
+        MessageType::Response => vec![3],
+    };
+    if kind != MessageType::Notify {
+        out.extend(msg_id.to_le_bytes());
+    }
+    out.extend(wrapper.encode_to_vec());
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

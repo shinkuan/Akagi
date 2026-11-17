@@ -217,7 +217,30 @@
     "detail_target": "Target",
     "detail_location": "Location",
     "detail_message": "Message",
-    "detail_fields": "Fields"
+    "detail_fields": "Fields",
+    "pack": {
+      "button": "Pack logs",
+      "title": "Pack logs",
+      "description": "Bundle log runs into one zip to attach to a bug report.",
+      "all": "All runs ({{count}})",
+      "choose": "Choose runs",
+      "legacy": "older format",
+      "include_full": "Include full information",
+      "full_warning": "Full information is every captured WebSocket frame, which can include login tokens and other account credentials. Only give it to the developer privately.",
+      "password": "Password (recommended)",
+      "toggle_password": "Show or hide the password",
+      "password_hint": "Only the full information is encrypted with it; the rest of the zip stays readable. The developer will ask you for the password privately if they need it.",
+      "no_password": "Without a password, the full information goes into the zip unencrypted.",
+      "legacy_note": "Older runs chosen: {{count}}. They were recorded before full information was kept separately, so they only go into the zip when full information is included.",
+      "save_title": "Save log pack",
+      "submit": "Pack…",
+      "packing": "Packing…",
+      "done": "Logs packed",
+      "done_withheld": "Full information left out.",
+      "done_encrypted": "Full information encrypted with your password.",
+      "done_plain": "Full information included unencrypted.",
+      "failed": "Could not pack logs"
+    }
   },
   "inspector": {
     "kind": "Show",
@@ -260,7 +283,8 @@
     "detail_url": "Full URL",
     "invalid_base64": "(invalid base64)",
     "bytes_truncated": "… {{count}} more bytes truncated",
-    "binary": "(binary)"
+    "binary": "(binary)",
+    "withheld": "Content left out of the shareable log."
   },
   "sidebar": {
     "collapse": "Collapse sidebar",
