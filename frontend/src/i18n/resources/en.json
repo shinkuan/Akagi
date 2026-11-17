@@ -229,7 +229,7 @@
       "full_warning": "Full information is every captured WebSocket frame, which can include login tokens and other account credentials. Only give it to the developer privately.",
       "password": "Password (recommended)",
       "toggle_password": "Show or hide the password",
-      "password_hint": "Only the full information is encrypted with it; the rest of the zip stays readable. The developer will ask you for the password privately if they need it.",
+      "password_hint": "The full information goes into sensitive.zip inside the pack, encrypted with this password; everything else extracts without one. The developer will ask you for the password privately if they need it.",
       "no_password": "Without a password, the full information goes into the zip unencrypted.",
       "legacy_note": "Older runs chosen: {{count}}. They were recorded before full information was kept separately, so they only go into the zip when full information is included.",
       "save_title": "Save log pack",
@@ -237,7 +237,7 @@
       "packing": "Packing…",
       "done": "Logs packed",
       "done_withheld": "Full information left out.",
-      "done_encrypted": "Full information encrypted with your password.",
+      "done_encrypted": "Full information is in sensitive.zip, encrypted with your password.",
       "done_plain": "Full information included unencrypted.",
       "failed": "Could not pack logs"
     }

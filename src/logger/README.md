@@ -42,8 +42,10 @@ size. Two rules keep it that way when you add logging:
   (or `record_sensitive`). `record` is only for content known to be safe.
 
 `pack::pack` copies the shareable part as is. The `sensitive/` part goes in
-only when asked, AES-256 encrypted when a password is given. A session without
-a `sensitive/` directory predates the split, so all of it counts as sensitive.
+only when asked. With a password it goes into an AES-256 encrypted
+`sensitive.zip` stored inside the pack, so the pack itself extracts without a
+password; its entries keep their `<session>/...` paths. A session without a
+`sensitive/` directory predates the split, so all of it counts as sensitive.
 
 `log_root` resolution mirrors `ca_dir` (see `src/proxy/README.md`): exe-adjacent first, then CWD, else create.
 

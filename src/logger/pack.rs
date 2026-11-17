@@ -1,22 +1,29 @@
 //! Bundle log sessions into one zip for a bug report.
 //!
 //! Everything outside a session's `sensitive/` directory goes in as is. The
-//! `sensitive/` part is left out unless asked for, and AES-256 encrypted when
-//! a password is given. A session recorded before `sensitive/` existed kept
-//! frame content in every file, so all of it counts as sensitive.
+//! `sensitive/` part is left out unless asked for. With a password it goes
+//! into an AES-256 encrypted [`SENSITIVE_ARCHIVE`] stored inside the pack, so
+//! the pack itself extracts without one. A session recorded before
+//! `sensitive/` existed kept frame content in every file, so all of it counts
+//! as sensitive.
 
 use super::SENSITIVE_DIR;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
+use tempfile::NamedTempFile;
 use walkdir::WalkDir;
-use zip::write::SimpleFileOptions;
+use zip::write::{FileOptions, SimpleFileOptions};
 use zip::{AesMode, CompressionMethod, ZipWriter};
 
-/// Prefix of the temp file a pack is written to before it is renamed into
-/// place; skipped if the destination sits inside a session being packed.
+/// Prefix of the temp files a pack is built in; skipped if the destination
+/// sits inside a session being packed.
 const TEMP_PREFIX: &str = ".akagi-pack-";
+
+/// The encrypted inner archive at the top of a pack. Its entries keep their
+/// `<session>/...` paths, so extracting it next to the rest fills the sessions in.
+pub const SENSITIVE_ARCHIVE: &str = "sensitive.zip";
 
 /// No `Debug`: it carries the password.
 #[derive(Clone, Default)]
@@ -35,6 +42,7 @@ pub struct PackSummary {
     pub sensitive_files: usize,
     /// Sensitive files left out.
     pub withheld_files: usize,
+    /// The sensitive files are in an encrypted [`SENSITIVE_ARCHIVE`].
     pub encrypted: bool,
 }
 
@@ -49,17 +57,26 @@ pub fn pack(
     if sessions.is_empty() {
         bail!("no sessions to pack");
     }
-    let password = opts.password.as_deref().filter(|p| !p.is_empty());
+    let password = opts
+        .password
+        .as_deref()
+        .filter(|p| opts.include_sensitive && !p.is_empty());
     let parent = dest
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let tmp = tempfile::Builder::new()
-        .prefix(TEMP_PREFIX)
-        .suffix(".zip")
-        .tempfile_in(parent)
-        .with_context(|| format!("create a temp file in {}", parent.display()))?;
-    let mut zip = ZipWriter::new(tmp);
+    let temp_file = || {
+        tempfile::Builder::new()
+            .prefix(TEMP_PREFIX)
+            .suffix(".zip")
+            .tempfile_in(parent)
+            .with_context(|| format!("create a temp file in {}", parent.display()))
+    };
+    let mut zip = ZipWriter::new(temp_file()?);
+    let mut inner = match password {
+        Some(_) => Some(ZipWriter::new(temp_file()?)),
+        None => None,
+    };
     let mut summary = PackSummary {
         path: dest.to_path_buf(),
         sessions: sessions.len(),
@@ -89,27 +106,41 @@ pub fn pack(
                 summary.withheld_files += 1;
                 continue;
             }
-            let mut options = SimpleFileOptions::default()
+            let options = SimpleFileOptions::default()
                 .compression_method(CompressionMethod::Deflated)
                 .large_file(entry.metadata()?.len() >= u64::from(u32::MAX));
-            if sensitive {
-                summary.sensitive_files += 1;
-                if let Some(pw) = password {
-                    options = options.with_aes_encryption(AesMode::Aes256, pw);
-                    summary.encrypted = true;
-                }
-            }
             let archive_name = std::iter::once(name.clone())
                 .chain(rel.iter().map(|c| c.to_string_lossy().into_owned()))
                 .collect::<Vec<_>>()
                 .join("/");
-            zip.start_file(archive_name, options)?;
-            let mut src = std::fs::File::open(entry.path())
-                .with_context(|| format!("open {}", entry.path().display()))?;
-            std::io::copy(&mut src, &mut zip)
-                .with_context(|| format!("pack {}", entry.path().display()))?;
+            match (&mut inner, password) {
+                (Some(inner), Some(pw)) if sensitive => add_file(
+                    inner,
+                    &archive_name,
+                    options.with_aes_encryption(AesMode::Aes256, pw),
+                    entry.path(),
+                )?,
+                _ => add_file(&mut zip, &archive_name, options, entry.path())?,
+            }
             summary.files += 1;
+            if sensitive {
+                summary.sensitive_files += 1;
+            }
         }
+    }
+
+    if let Some(inner) = inner.filter(|_| summary.sensitive_files > 0) {
+        let mut inner = inner.finish().context("finish the sensitive zip")?;
+        inner.flush()?;
+        inner.seek(SeekFrom::Start(0))?;
+        let len = inner.as_file().metadata()?.len();
+        // Encrypted data does not compress.
+        let options = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .large_file(len >= u64::from(u32::MAX));
+        zip.start_file(SENSITIVE_ARCHIVE, options)?;
+        std::io::copy(&mut inner, &mut zip).context("pack the sensitive zip")?;
+        summary.encrypted = true;
     }
 
     let mut tmp = zip.finish().context("finish zip")?;
@@ -117,6 +148,18 @@ pub fn pack(
     tmp.persist(dest)
         .with_context(|| format!("write {}", dest.display()))?;
     Ok(summary)
+}
+
+fn add_file(
+    zip: &mut ZipWriter<NamedTempFile>,
+    name: &str,
+    options: FileOptions<'_, ()>,
+    path: &Path,
+) -> Result<()> {
+    zip.start_file(name, options)?;
+    let mut src = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    std::io::copy(&mut src, zip).with_context(|| format!("pack {}", path.display()))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -184,8 +227,10 @@ mod tests {
         assert!(!s.encrypted);
     }
 
+    /// The pack itself must extract without a password; only the inner
+    /// sensitive zip asks for one.
     #[test]
-    fn encrypts_only_the_sensitive_part_with_a_password() {
+    fn encrypts_the_sensitive_part_into_an_inner_zip() {
         let root = sessions();
         let dest = root.path().join("out.zip");
         let opts = PackOptions {
@@ -203,21 +248,52 @@ mod tests {
         assert!(s.encrypted);
 
         assert_eq!(
-            read(&dest, "20260101-000000/all.log", None).unwrap(),
-            "app log"
+            names(&dest),
+            [
+                "20260101-000000/all.log",
+                "20260101-000000/inspector.jsonl",
+                "20260101-000000/majsoul/000001-gateway.log",
+                "sensitive.zip",
+            ]
         );
-        for name in [
-            "20260101-000000/sensitive/proxy.binlog",
-            "20250101-000000/all.log",
-            "20250101-000000/proxy.binlog",
-        ] {
+        let mut outer = ZipArchive::new(std::fs::File::open(&dest).unwrap()).unwrap();
+        for i in 0..outer.len() {
             assert!(
-                read(&dest, name, None).is_err(),
+                !outer.by_index(i).unwrap().encrypted(),
+                "outer entry {i} is encrypted"
+            );
+        }
+        let mut inner_bytes = Vec::new();
+        outer
+            .by_name(SENSITIVE_ARCHIVE)
+            .unwrap()
+            .read_to_end(&mut inner_bytes)
+            .unwrap();
+        let inner = root.path().join("inner.zip");
+        std::fs::write(&inner, inner_bytes).unwrap();
+
+        assert_eq!(
+            names(&inner),
+            [
+                "20250101-000000/all.log",
+                "20250101-000000/proxy.binlog",
+                "20260101-000000/sensitive/inspector.jsonl",
+                "20260101-000000/sensitive/proxy.binlog",
+            ]
+        );
+        for name in names(&inner) {
+            assert!(
+                read(&inner, &name, None).is_err(),
                 "{name} must need the password"
             );
         }
         assert_eq!(
-            read(&dest, "20260101-000000/sensitive/proxy.binlog", Some(b"pw")).unwrap(),
+            read(
+                &inner,
+                "20260101-000000/sensitive/proxy.binlog",
+                Some(b"pw")
+            )
+            .unwrap(),
             "fake-token"
         );
     }

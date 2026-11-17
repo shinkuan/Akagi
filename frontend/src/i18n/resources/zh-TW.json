@@ -229,7 +229,7 @@
       "full_warning": "完整資訊是所有擷取到的 WebSocket frame，可能含有登入 token 等帳號機密資訊。只能私下交給開發者。",
       "password": "密碼（建議設定）",
       "toggle_password": "顯示或隱藏密碼",
-      "password_hint": "只有完整資訊會用這組密碼加密，zip 裡的其他檔案仍可直接開啟。開發者需要時會私下向你索取密碼。",
+      "password_hint": "完整資訊會放進壓縮檔裡的 sensitive.zip，並用這組密碼加密；其他檔案解壓不需要密碼。開發者需要時會私下向你索取密碼。",
       "no_password": "未設定密碼時，完整資訊會以未加密的形式放進 zip。",
       "legacy_note": "選取了 {{count}} 筆舊執行紀錄。它們錄製於完整資訊分開保存之前，只有在包含完整資訊時才會放進 zip。",
       "save_title": "儲存日誌包",
@@ -237,7 +237,7 @@
       "packing": "打包中…",
       "done": "日誌已打包",
       "done_withheld": "未包含完整資訊。",
-      "done_encrypted": "完整資訊已用你的密碼加密。",
+      "done_encrypted": "完整資訊已放進 sensitive.zip，並用你的密碼加密。",
       "done_plain": "完整資訊未加密。",
       "failed": "無法打包日誌"
     }
