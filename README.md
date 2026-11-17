@@ -316,10 +316,12 @@ Per-session logs land under `<log_dir>/<YYYYMMDD-HHMMSS>/`:
 <log_dir>/<session>/
 ├── all.log                       # combined tracing output
 ├── <target>.log                  # per-module filtered logs
-├── proxy.binlog                  # raw binary WS frames
 ├── majsoul/<flow_id>.log         # per-WebSocket flow JSON log
 ├── majsoul/<flow_id>.mjai.jsonl  # per-game mjai event stream
-└── inspector.jsonl               # frames seen by the Inspector
+├── inspector.jsonl               # Inspector timeline, credential-bearing frames left out
+└── sensitive/                    # full WS frames; may contain account credentials
+    ├── proxy.binlog              # raw binary WS frames
+    └── inspector.jsonl           # full Inspector timeline
 ```
 
 The frontend's **Logs** route has two tabs:
@@ -349,9 +351,10 @@ Useful when debugging a bot or a bridge issue.
 ## Troubleshooting
 
 > [!TIP]
-> Reproduce the problem, then save the session folder under
-> `<log_dir>/<session>/` — it has everything (app log, raw frames,
-> mjai events, bot meta) needed to file a useful bug report.
+> Reproduce the problem, then use **Logs → Pack logs** to zip the session
+> for a bug report. Don't post the session folder itself: its `sensitive/`
+> part can contain login tokens. Pack logs leaves that part out, or
+> encrypts it with a password you give the developer privately.
 
 - **Capture not working in MITM mode.** Make sure the CA at
   `./ca/akagi-ca.crt` is trusted in your OS store. Verify the proxy is

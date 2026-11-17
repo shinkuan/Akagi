@@ -41,9 +41,11 @@ fn cfg_with(active_4p: &str) -> Arc<RwLock<AppConfig>> {
 }
 
 fn dummy_inspector() -> InspectorWriter {
-    let tmp = tempfile::NamedTempFile::new().unwrap();
-    let path = tmp.into_temp_path().keep().unwrap();
-    InspectorWriter::open(&path, 8).unwrap().0
+    let keep = || {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        tmp.into_temp_path().keep().unwrap()
+    };
+    InspectorWriter::open(&keep(), &keep(), 8).unwrap().0
 }
 
 fn bin(name: &str) -> Option<PathBuf> {

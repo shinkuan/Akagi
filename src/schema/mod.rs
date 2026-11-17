@@ -15,11 +15,11 @@ pub use history::{
 };
 pub use inspector::{
     BotReaction, CaptureSource, FrameDirection, FrameRaw, HttpAnnotation, HttpBody, HttpExchange,
-    HttpHeader, HttpPhase, InspectorEntry, ParsedFrame,
+    HttpHeader, HttpPhase, InspectorEntry, ParsedFrame, WITHHELD,
 };
 pub use ipc::{
     BotInfo, BotSettings, BotStatus, CaptureKind, CaptureStatus, HoraScoreInfo, LoadStage,
-    LogEntry, LogSessionInfo, Notification, NotifyLevel, ReadInspectorRequest,
+    LogEntry, LogSessionInfo, Notification, NotifyLevel, PackLogsRequest, ReadInspectorRequest,
     ReadInspectorResponse, ReadLogRequest, ReadLogResponse, Snapshot,
 };
 pub use mjai::{GameEndReason, GameMeta, MjaiEvent};

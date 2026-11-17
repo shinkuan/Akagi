@@ -824,12 +824,15 @@ pub async fn list_log_sessions(state: State<'_, AppState>) -> CmdResult<Vec<LogS
             // for the UI it's enough to be a rough indicator, and a
             // recursive walk on a session with thousands of game files
             // would block the picker.
+            let sensitive = path.join(crate::logger::SENSITIVE_DIR);
             let mut size_bytes: u64 = 0;
-            if let Ok(rd2) = std::fs::read_dir(&path) {
-                for f in rd2.flatten() {
-                    if let Ok(m) = f.metadata() {
-                        if m.is_file() {
-                            size_bytes += m.len();
+            for dir in [&path, &sensitive] {
+                if let Ok(rd2) = std::fs::read_dir(dir) {
+                    for f in rd2.flatten() {
+                        if let Ok(m) = f.metadata() {
+                            if m.is_file() {
+                                size_bytes += m.len();
+                            }
                         }
                     }
                 }
@@ -848,6 +851,7 @@ pub async fn list_log_sessions(state: State<'_, AppState>) -> CmdResult<Vec<LogS
                 size_bytes,
                 mtime_ms,
                 is_active,
+                legacy_layout: !sensitive.is_dir(),
             });
         }
         out.sort_by(|a, b| b.name.cmp(&a.name));
@@ -954,6 +958,42 @@ pub async fn read_log_session(
     .map_err(|e| format!("read_log_session join: {e}"))?
 }
 
+/// The full inspector file under `sensitive/`, or the session's only one if
+/// it was recorded before the split. The Inspector tab is local, so it shows
+/// everything.
+fn inspector_path(session_dir: &Path) -> PathBuf {
+    let full = session_dir
+        .join(crate::logger::SENSITIVE_DIR)
+        .join("inspector.jsonl");
+    if full.is_file() {
+        full
+    } else {
+        session_dir.join("inspector.jsonl")
+    }
+}
+
+/// Bundle log sessions into a zip for a bug report. See `logger::pack`.
+#[tauri::command]
+pub async fn pack_logs(
+    req: crate::schema::PackLogsRequest,
+    state: State<'_, AppState>,
+) -> CmdResult<crate::logger::pack::PackSummary> {
+    if let Some(bad) = req.sessions.iter().find(|s| !is_session_name(s)) {
+        return Err(format!("invalid session name {bad:?}"));
+    }
+    let root = state.log_session.root().to_path_buf();
+    let opts = crate::logger::pack::PackOptions {
+        include_sensitive: req.include_sensitive,
+        password: req.password,
+    };
+    tokio::task::spawn_blocking(move || {
+        crate::logger::pack::pack(&root, &req.sessions, &opts, &req.dest)
+    })
+    .await
+    .map_err(|e| format!("pack_logs join: {e}"))?
+    .map_err(|e| format!("{e:#}"))
+}
+
 /// Read filtered, paginated entries from a session's `inspector.jsonl`.
 /// Same line-oriented, fault-tolerant reader as `read_log_session` —
 /// malformed lines bumped under `skipped_malformed`, `limit` capped at
@@ -970,7 +1010,7 @@ pub async fn read_inspector(
     let root = state.log_session.root().to_path_buf();
 
     tokio::task::spawn_blocking(move || -> Result<ReadInspectorResponse, String> {
-        let path = root.join(&req.session).join("inspector.jsonl");
+        let path = inspector_path(&root.join(&req.session));
         let file = match std::fs::File::open(&path) {
             Ok(f) => f,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -1086,6 +1126,7 @@ fn inspector_matches(
                 let mut buf = match raw {
                     crate::schema::FrameRaw::Text(t) => t.to_lowercase(),
                     crate::schema::FrameRaw::Binary(b) => b.to_lowercase(),
+                    crate::schema::FrameRaw::Withheld => String::new(),
                 };
                 if let Some(p) = parsed {
                     buf.push(' ');
@@ -1806,6 +1847,7 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::read_log_session,
             $crate::ipc::commands::subscribe_log_events,
             $crate::ipc::commands::read_inspector,
+            $crate::ipc::commands::pack_logs,
             $crate::ipc::commands::subscribe_inspector,
             $crate::ipc::commands::get_analysis,
             $crate::ipc::commands::get_game_snapshot,

@@ -8,6 +8,7 @@ Structured text + binary logging built on [`tracing`](https://crates.io/crates/t
 - `session.rs` — `Session` (active log session + binary logger registry) and `LogTarget`.
 - `binary.rs` — `BinaryLogger` for raw byte streams (e.g. captured WS frames).
 - `flow.rs` — `FlowLogger` for one text log file per logical "flow" (e.g. one Majsoul WS connection).
+- `pack.rs` — `pack()` bundles sessions into one zip for a bug report (the Logs page's "Pack logs").
 
 ## Session layout
 
@@ -17,13 +18,34 @@ Structured text + binary logging built on [`tracing`](https://crates.io/crates/t
 <log_root>/<YYYYMMDD-HHMMSS>/
 ├── all.log              # every event from every target
 ├── proxy.log            # one file per LogTarget (filtered by tracing target prefix)
-├── proxy.binlog         # binary frames written via BinaryLogger
+├── inspector.jsonl      # shareable Inspector timeline (see below)
 ├── majsoul/             # one subdir per platform (FlowLogger)
 │   ├── 000001-gateway.log                # one file per WS flow: <id:06>-<uri-slug>.log
 │   ├── 000002-game-gateway.log
 │   └── majsoul_<ts>.mjai.jsonl          # one file per game: emitted MjaiEvents
-└── ...
+└── sensitive/           # may hold account credentials (SENSITIVE_DIR)
+    ├── proxy.binlog     # every frame verbatim, via BinaryLogger
+    └── inspector.jsonl  # full Inspector timeline; what the Inspector tab reads
 ```
+
+## Shareable vs. sensitive
+
+Everything outside `sensitive/` is meant to be shareable. Frame content gets
+there only for frames on the bridge's allowlist (see "Shareable frames" in
+`src/bridge/README.md`); any other frame is written as method, direction and
+size. Two rules keep it that way when you add logging:
+
+- Don't log a frame payload, a URL query or an HTTP header value unless the
+  bridge marked the frame shareable. Use `bridge::shown(shareable, &payload)`
+  for payloads and `util::redact_query` for URLs.
+- Record inspector entries with `InspectorWriter::record_as(entry, shareable)`
+  (or `record_sensitive`). `record` is only for content known to be safe.
+
+`pack::pack` copies the shareable part as is. The `sensitive/` part goes in
+only when asked. With a password it goes into an AES-256 encrypted
+`sensitive.zip` stored inside the pack, so the pack itself extracts without a
+password; its entries keep their `<session>/...` paths. A session without a
+`sensitive/` directory predates the split, so all of it counts as sensitive.
 
 `log_root` resolution mirrors `ca_dir` (see `src/proxy/README.md`): exe-adjacent first, then CWD, else create.
 
@@ -51,7 +73,7 @@ In `lib.rs::run`, append a `LogTarget` to the slice passed to `logger::init`:
 ## Binary logging
 
 ```rust
-let bin = session.binary_logger("proxy")?;     // get-or-create proxy.binlog
+let bin = session.binary_logger("proxy")?;     // get-or-create sensitive/proxy.binlog
 bin.write(0, &bytes);                           // tag 0 = upstream, 1 = downstream (caller convention)
 ```
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Circle, FolderOpen, Pause, Play, RefreshCw } from 'lucide-react'
+import { Circle, FolderOpen, Package, Pause, Play, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +21,7 @@ import type {
   ReadInspectorResponse,
   ReadLogResponse,
 } from '@/types'
+import { PackLogsDialog } from '@/components/PackLogsDialog'
 import { DiagnosticView } from './DiagnosticView'
 import { InspectorView } from './InspectorView'
 
@@ -66,6 +67,7 @@ export function Logs() {
 
   const [tab, setTab] = useState<TabValue>('diagnostic')
   const [busy, setBusy] = useState(false)
+  const [packOpen, setPackOpen] = useState(false)
 
   const loadSession = async (name: string) => {
     setBusy(true)
@@ -143,6 +145,15 @@ export function Logs() {
     }
   }
 
+  const onOpenPack = async () => {
+    try {
+      setSessions(await invoke<LogSessionInfo[]>('list_log_sessions'))
+    } catch {
+      /* keep the list we have */
+    }
+    setPackOpen(true)
+  }
+
   const isViewingActive = currentSession != null && currentSession === activeSession
   const liveOnDiagnostic = tab === 'diagnostic' && isViewingActive && isLive
   const liveOnInspector = tab === 'inspector' && isViewingActive && isLive
@@ -200,6 +211,10 @@ export function Logs() {
           >
             <RefreshCw className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
             {t('common.refresh')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onOpenPack} className="gap-1.5">
+            <Package className="h-4 w-4" />
+            {t('logs.pack.button')}
           </Button>
           <Button size="sm" onClick={onOpenFolder} className="gap-1.5">
             <FolderOpen className="h-4 w-4" />
@@ -260,6 +275,15 @@ export function Logs() {
           />
         </TabsContent>
       </Tabs>
+
+      {packOpen && (
+        <PackLogsDialog
+          open={packOpen}
+          onOpenChange={setPackOpen}
+          sessions={sessions}
+          current={currentSession}
+        />
+      )}
     </div>
   )
 }

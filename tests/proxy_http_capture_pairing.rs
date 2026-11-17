@@ -38,7 +38,8 @@ async fn a_failed_forward_does_not_misattribute_later_responses() {
         "the second request must still be served"
     );
 
-    let entries = h.finish().await;
+    // `record_all` traffic is in the full copy under `sensitive/`.
+    let entries = h.finish_both().await.1;
     let http: Vec<&serde_json::Value> = entries.iter().filter(|e| e["kind"] == "http").collect();
 
     // The failure is on the timeline rather than being a silent gap: the

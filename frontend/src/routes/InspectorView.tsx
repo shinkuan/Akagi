@@ -116,7 +116,7 @@ export function InspectorView({ liveEnabled, autoScroll, onUserScrolledAway }: I
         // on JSON.stringify is fast enough since the strings are small.
         const hay =
           e.kind === 'ws_frame'
-            ? `${e.raw.data} ${e.parsed?.method ?? ''}`
+            ? `${e.raw.format === 'withheld' ? '' : e.raw.data} ${e.parsed?.method ?? ''}`
             : e.kind === 'mjai_event'
               ? JSON.stringify(e.event)
               : e.kind === 'http'
@@ -320,7 +320,9 @@ function RowSummary({ entry }: { entry: InspectorEntry }) {
         ? entry.parsed.method
         : entry.raw.format === 'text'
           ? entry.raw.data.slice(0, 80)
-          : t('inspector.binary')
+          : entry.raw.format === 'withheld'
+            ? t('inspector.withheld')
+            : t('inspector.binary')
     return (
       <span className="flex-1 break-all whitespace-pre-wrap">
         <span className="text-muted-foreground">
@@ -407,14 +409,18 @@ function DetailPanel({ entry }: { entry: InspectorEntry }) {
             </div>
           </>
         )}
-        <div>
-          <div className="text-muted-foreground mb-1">
-            {entry.raw.format === 'text' ? t('inspector.detail_raw_text') : t('inspector.detail_raw_hex')}
+        {entry.raw.format === 'withheld' ? (
+          <div className="text-muted-foreground italic">{t('inspector.withheld')}</div>
+        ) : (
+          <div>
+            <div className="text-muted-foreground mb-1">
+              {entry.raw.format === 'text' ? t('inspector.detail_raw_text') : t('inspector.detail_raw_hex')}
+            </div>
+            <pre className="font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2 text-[11px]">
+              {entry.raw.format === 'text' ? entry.raw.data : hexDump(entry.raw.data, t)}
+            </pre>
           </div>
-          <pre className="font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2 text-[11px]">
-            {entry.raw.format === 'text' ? entry.raw.data : hexDump(entry.raw.data, t)}
-          </pre>
-        </div>
+        )}
       </>
     )
   }

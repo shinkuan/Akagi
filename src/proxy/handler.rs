@@ -1,3 +1,4 @@
+use crate::util::redact_query;
 use crate::{
     bridge::{self, Bridge, Direction},
     capture::{
@@ -193,17 +194,22 @@ impl ProxyHandler {
     ///
     /// `record_all` off keeps only exchanges a recognizer understood, so
     /// the default session file holds the interesting traffic without
-    /// accumulating every credential the client sends. See
+    /// accumulating every credential the client sends. With it on, the rest
+    /// is recorded under `sensitive/` only. See
     /// [`crate::config::HttpCaptureConfig`].
     fn record_http(&self, exchange: HttpExchange) {
-        if !self.http_policy.record_all && exchange.annotations.is_empty() {
+        let recognized = !exchange.annotations.is_empty();
+        if !self.http_policy.record_all && !recognized {
             return;
         }
-        self.inspector.record(InspectorEntry::Http {
-            ts_ms: Local::now().timestamp_millis(),
-            source: CaptureSource::Mitm,
-            exchange,
-        });
+        self.inspector.record_as(
+            InspectorEntry::Http {
+                ts_ms: Local::now().timestamp_millis(),
+                source: CaptureSource::Mitm,
+                exchange,
+            },
+            recognized,
+        );
     }
 
     /// Drop a telemetry request instead of forwarding it, and record the
@@ -405,7 +411,12 @@ impl ProxyHandler {
                 let flow_id = self.next_flow_id.fetch_add(1, Ordering::Relaxed);
                 let path = uri_path_slug(uri);
                 let file_name = format!("{flow_id:06}-{path}.log");
-                let label = format!("{} {} {}", self.platform.subdir(), client, uri);
+                let label = format!(
+                    "{} {} {}",
+                    self.platform.subdir(),
+                    client,
+                    redact_query(&uri.to_string())
+                );
                 let flow_log =
                     match self
                         .session
@@ -481,7 +492,7 @@ impl HttpHandler for ProxyHandler {
             req.method(),
             req.uri().host().unwrap_or("-"),
             host_hdr,
-            req.uri(),
+            redact_query(&req.uri().to_string()),
             req.version(),
             ctx.client_addr,
         );
@@ -897,7 +908,10 @@ impl WebSocketHandler for ProxyHandler {
                         debug!("inject: not in a game on {client}; dropping injected gameplay frame");
                         continue;
                     }
-                    info!("inject: forwarding injected frame to {server_uri}");
+                    info!(
+                        "inject: forwarding injected frame to {}",
+                        redact_query(&server_uri.to_string())
+                    );
                     match sink.send(Message::Binary(frame.bytes.clone().into())).await {
                         Ok(()) => {
                             // Injected frames bypass the client socket, so
@@ -982,13 +996,13 @@ impl ProxyHandler {
                 TAG_SERVER_TO_CLIENT,
                 Direction::Down,
                 '\u{2193}',
-                src.to_string(),
+                redact_query(&src.to_string()).into_owned(),
             ),
             WebSocketContext::ClientToServer { dst, .. } => (
                 TAG_CLIENT_TO_SERVER,
                 Direction::Up,
                 '\u{2191}',
-                dst.to_string(),
+                redact_query(&dst.to_string()).into_owned(),
             ),
         };
 
@@ -1056,15 +1070,18 @@ impl ProxyHandler {
             Direction::Down => FrameDirection::Down,
             Direction::Up => FrameDirection::Up,
         };
-        self.inspector.record(InspectorEntry::WsFrame {
-            ts_ms: Local::now().timestamp_millis(),
-            direction,
-            flow_id: self.inspector_flow_id(client),
-            size,
-            raw,
-            parsed: result.parsed.clone(),
-            emitted: result.events.len(),
-        });
+        self.inspector.record_as(
+            InspectorEntry::WsFrame {
+                ts_ms: Local::now().timestamp_millis(),
+                direction,
+                flow_id: self.inspector_flow_id(client),
+                size,
+                raw,
+                parsed: result.parsed.clone(),
+                emitted: result.events.len(),
+            },
+            result.shareable,
+        );
     }
 }
 

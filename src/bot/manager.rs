@@ -854,9 +854,11 @@ mod tests {
     /// for the test duration (the OS reaps it on process exit) — keeps
     /// the constructor a one-liner without per-test cleanup boilerplate.
     fn dummy_inspector() -> InspectorWriter {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let path = tmp.into_temp_path().keep().unwrap();
-        InspectorWriter::open(&path, 8).unwrap().0
+        let keep = || {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            tmp.into_temp_path().keep().unwrap()
+        };
+        InspectorWriter::open(&keep(), &keep(), 8).unwrap().0
     }
 
     // Test-only helper; the 5-tuple return groups the manager with the

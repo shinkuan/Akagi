@@ -1,7 +1,13 @@
 mod binary;
 mod flow;
+pub mod pack;
 mod session;
 mod stream;
+
+/// Session subdirectory for everything that may hold account credentials:
+/// the full WS frames (`*.binlog`, the full `inspector.jsonl`). The rest of
+/// a session is shareable. [`pack`] encrypts this part on request.
+pub const SENSITIVE_DIR: &str = "sensitive";
 
 pub use binary::BinaryLogger;
 pub use flow::FlowLogger;

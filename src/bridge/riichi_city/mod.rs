@@ -715,6 +715,33 @@ impl RiichiCityBridge {
     }
 }
 
+/// Packets whose content may go into the shareable logs: the gameplay
+/// commands the bridge reads plus the two Akagi's autoplay sends. Check a
+/// command carries no credentials before adding it; the binary `CMD_AUTH`
+/// login handshake never qualifies.
+fn is_shareable(pkt: &WPacket) -> bool {
+    if pkt.cmd == CMD_AUTH {
+        return false;
+    }
+    matches!(
+        pkt.body.get("cmd").and_then(JsonValue::as_str),
+        Some(
+            "cmd_enter_room"
+                | "cmd_game_start"
+                | "cmd_in_card_brc"
+                | "cmd_send_current_action"
+                | "cmd_send_other_action"
+                | "cmd_game_action_brc"
+                | "cmd_gang_bao_brc"
+                | "cmd_game_end"
+                | "cmd_room_end"
+                | "rsp_game_action"
+                | "req_game_action"
+                | "req_user_prepare"
+        )
+    )
+}
+
 impl Bridge for RiichiCityBridge {
     fn parse(&mut self, direction: Direction, content: &[u8]) -> ParseResult {
         // Both directions are parsed: the CMDAuth uid is client→server, gameplay
@@ -736,12 +763,17 @@ impl Bridge for RiichiCityBridge {
             method: packets[0].method_label(),
             args: packets[0].body.clone(),
         });
+        let shareable = packets.iter().all(is_shareable);
         let mut events = Vec::new();
         for pkt in &packets {
             events.extend(self.dispatch(pkt));
         }
         self.write_mjai(&events);
-        ParseResult { events, parsed }
+        ParseResult {
+            events,
+            parsed,
+            shareable,
+        }
     }
 
     fn build(&mut self, command: &MjaiEvent) -> Option<Vec<u8>> {
@@ -879,6 +911,43 @@ mod tests {
 
     // Fake ids, not values from a real capture.
     const ME: i64 = 1001;
+
+    fn packet(cmd: u16, body: Value) -> Vec<u8> {
+        WPacket::encode(0, cmd, &body)
+    }
+
+    /// Regression: the auth handshake used to reach the shareable inspector
+    /// file in full.
+    #[test]
+    fn the_auth_handshake_is_consumed_but_withheld() {
+        let mut b = RiichiCityBridge::new(None, None);
+        let r = b.parse(
+            Direction::Up,
+            &packet(
+                CMD_AUTH,
+                json!({ "uid": ME.to_string(), "token": "fake-token" }),
+            ),
+        );
+        assert!(!r.shareable);
+        assert_eq!(b.uid, ME, "the bridge still reads it");
+    }
+
+    #[test]
+    fn gameplay_packets_are_shareable_and_others_are_not() {
+        let mut b = RiichiCityBridge::new(None, None);
+        let game = |cmd: &str| packet(2, json!({ "cmd": cmd, "data": {} }));
+        assert!(b.parse(Direction::Down, &game("cmd_room_end")).shareable);
+        assert!(
+            !b.parse(Direction::Down, &game("cmd_unknown_lobby"))
+                .shareable
+        );
+        let mut mixed = game("cmd_room_end");
+        mixed.extend(packet(CMD_AUTH, json!({ "uid": ME.to_string() })));
+        assert!(
+            !b.parse(Direction::Down, &mixed).shareable,
+            "one bad packet withholds the frame"
+        );
+    }
 
     fn auth(b: &mut RiichiCityBridge) {
         feed(b, CMD_AUTH, json!({ "uid": ME.to_string() }));

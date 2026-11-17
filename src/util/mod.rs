@@ -91,6 +91,15 @@ impl NoConsoleWindow for std::process::Command {
     }
 }
 
+/// `url` without its query string and fragment, for log lines: queries can
+/// carry tokens (OAuth codes, session ids) and logs get shared.
+pub fn redact_query(url: &str) -> std::borrow::Cow<'_, str> {
+    match url.find(['?', '#']) {
+        Some(i) => format!("{}?{}", &url[..i], crate::schema::WITHHELD).into(),
+        None => url.into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,5 +150,18 @@ mod tests {
         let s = resolved.to_string_lossy();
         assert!(!s.contains("/./"), "got: {s}");
         assert!(!s.contains("\\.\\"), "got: {s}");
+    }
+
+    #[test]
+    fn redact_query_keeps_only_scheme_host_and_path() {
+        assert_eq!(
+            redact_query("https://example.invalid/cb?code=fake&state=x#frag"),
+            "https://example.invalid/cb?<withheld>"
+        );
+        assert_eq!(
+            redact_query("wss://example.invalid/gateway"),
+            "wss://example.invalid/gateway"
+        );
+        assert_eq!(redact_query("example.invalid:443"), "example.invalid:443");
     }
 }
