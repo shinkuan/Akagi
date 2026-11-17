@@ -246,8 +246,8 @@ mod tests {
         assert!(is_newer("v3.0.11", "v3.0.12"));
     }
 
-    /// Per CLAUDE.md memory `feedback_version_format.md`, V3's
-    /// pre-release tags stay numeric (`3.0.0-1`, `3.0.0-2`, …). Semver's
+    /// V3's pre-release tags stay numeric (`3.0.0-1`, `3.0.0-2`, …), since
+    /// alphabetic ones break MSI bundling. Semver's
     /// numeric identifier ordering must order these correctly — string
     /// comparison would put `3.0.0-10` *before* `3.0.0-2`.
     #[test]

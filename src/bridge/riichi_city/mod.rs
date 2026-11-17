@@ -877,7 +877,7 @@ mod tests {
         bridge.parse(Direction::Down, &buf).events
     }
 
-    // Fake ids per CLAUDE.md rule 8.
+    // Fake ids, not values from a real capture.
     const ME: i64 = 1001;
 
     fn auth(b: &mut RiichiCityBridge) {

@@ -59,7 +59,7 @@ When a non-Majsoul bridge lands (Tenhou, RiichiCity, ...):
 1. Add the field to `crate::schema::history::GameStats` (default-initialised
    to keep deserialisation backward-compatible with old index lines).
 2. Update `aggregator.rs` to populate it.
-3. Mirror in the frontend `types/history.ts`, `lib/ptCalc.ts` (if it affects
+3. Mirror in the frontend `GameStats` type in `types.ts`, `lib/ptCalc.ts` (if it affects
    PT), and `components/history/StatsTable.tsx` (display).
 4. Older `index.jsonl` lines will deserialise with the new field defaulting;
    no migration step is required so long as the new field has a `Default`.
