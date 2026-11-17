@@ -7,51 +7,43 @@
 //!
 //! There are two fixups, and they run at different stages:
 //!
-//! - [`normalize_line`] rewrites the event **before** serde sees it. It has to:
-//!   riichienv's `MjaiEvent` knows only `kita` and carries a `#[serde(other)]`
-//!   catch-all, so a Tenhou sanma log's `nukidora` would deserialize into
-//!   `MjaiEvent::Other` and be dropped on the floor — no error, just a nukidora
-//!   the engine never sees.
+//! - The nukidora rename happens on the parsed JSON **value**, before it becomes
+//!   an event. It has to happen somewhere: riichienv's `MjaiEvent` knows only
+//!   `kita` and carries a `#[serde(other)]` catch-all, so a Tenhou sanma log's
+//!   `nukidora` would deserialize into `MjaiEvent::Other` and be dropped on the
+//!   floor — no error, just a nukidora the engine never sees.
 //! - [`sanitize_3p`] truncates 4-seat arrays **after** parsing.
 //!
 //! [`parse_line`] is the single door that applies both in the right order.
 
-use std::borrow::Cow;
-
 use riichienv_core::replay::MjaiEvent;
-
-/// Tenhou sanma logs spell nukidora `nukidora`; riichienv's `MjaiEvent` only
-/// knows `kita`. Rename before parsing, or serde folds the event into
-/// `MjaiEvent::Other` and it is silently lost.
-///
-/// Matches only the `type` field's value, so a player literally named
-/// "nukidora" in `start_game.names` is left alone. Harmless on 4p logs, which
-/// contain no nukidora at all. Borrows unless a rename is actually needed.
-pub fn normalize_line(line: &str) -> Cow<'_, str> {
-    const COMPACT: &str = r#""type":"nukidora""#;
-    const SPACED: &str = r#""type": "nukidora""#;
-    if line.contains(COMPACT) {
-        Cow::Owned(line.replace(COMPACT, r#""type":"kita""#))
-    } else if line.contains(SPACED) {
-        Cow::Owned(line.replace(SPACED, r#""type": "kita""#))
-    } else {
-        Cow::Borrowed(line)
-    }
-}
 
 /// Parse one line of an mjai JSONL log into a riichienv event, applying both
 /// compatibility fixups. `None` for blank lines, malformed JSON, and event types
 /// riichienv doesn't model (`MjaiEvent::Other`) — all of which callers skip.
 ///
 /// This is the only correct way to turn raw log text into an event: parsing with
-/// `serde_json` directly loses sanma nukidora (see [`normalize_line`]) and can
-/// panic a `GameState3P` on a 4-seat `start_kyoku` (see [`sanitize_3p`]).
+/// `serde_json` directly loses sanma nukidora and can panic a `GameState3P` on a
+/// 4-seat `start_kyoku` (see [`sanitize_3p`]).
 pub fn parse_line(line: &str, num_players: u8) -> Option<MjaiEvent> {
     let line = line.trim();
     if line.is_empty() {
         return None;
     }
-    let mut ev: MjaiEvent = serde_json::from_str(&normalize_line(line)).ok()?;
+    // Tenhou sanma logs spell nukidora `nukidora`; riichienv's `MjaiEvent` only
+    // knows `kita`. The rename is decided on the parsed value rather than on the
+    // raw text: JSON allows any whitespace around `:`, and a missed rename is
+    // not an error — the event folds into `MjaiEvent::Other` and evaporates,
+    // which is indistinguishable from a blank line to every caller. Scoping it
+    // to the `type` field also leaves a player named "nukidora" alone. Harmless
+    // on 4p logs, which contain no nukidora at all.
+    let mut value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if let Some(obj) = value.as_object_mut() {
+        if obj.get("type").and_then(serde_json::Value::as_str) == Some("nukidora") {
+            obj.insert("type".to_owned(), "kita".into());
+        }
+    }
+    let mut ev: MjaiEvent = serde_json::from_value(value).ok()?;
     if matches!(ev, MjaiEvent::Other) {
         return None;
     }
@@ -219,10 +211,41 @@ mod tests {
     /// The rename is scoped to the `type` field: a player named "nukidora"
     /// must not be rewritten.
     #[test]
-    fn normalize_line_only_touches_the_type_field() {
-        let names = r#"{"type":"start_game","names":["nukidora","b","c",""]}"#;
-        assert!(matches!(normalize_line(names), Cow::Borrowed(_)));
-        assert!(normalize_line(names).contains(r#""nukidora""#));
+    fn the_rename_only_touches_the_type_field() {
+        let e = parse_line(
+            r#"{"type":"start_game","names":["nukidora","b","c",""]}"#,
+            4,
+        )
+        .expect("start_game parses");
+        match e {
+            MjaiEvent::StartGame { names, .. } => {
+                assert_eq!(names.expect("names present")[0], "nukidora");
+            }
+            _ => panic!("expected start_game"),
+        }
+    }
+
+    /// Regression: the rename used to be a byte-wise rewrite of two exact
+    /// spellings (`"type":"nukidora"` and `"type": "nukidora"`), so any log that
+    /// formatted the object differently — spaces around the colon, a tab, a
+    /// pretty-printed line — kept `nukidora`, and the event then folded into
+    /// `MjaiEvent::Other` and was dropped exactly like a blank line.
+    #[test]
+    fn nukidora_survives_any_spacing() {
+        let lines = [
+            r#"{"type":"nukidora","actor":1}"#,
+            r#"{"type": "nukidora", "actor": 1}"#,
+            r#"{ "type" : "nukidora", "actor" : 1 }"#,
+            r#"{"type"  :  "nukidora",  "actor":  1}"#,
+            "{\"type\"\t:\t\"nukidora\",\t\"actor\":1}",
+            "{\n  \"type\": \"nukidora\",\n  \"actor\": 1\n}",
+        ];
+        for line in lines {
+            assert!(
+                matches!(parse_line(line, 3), Some(MjaiEvent::Kita { actor: 1 })),
+                "nukidora lost for {line:?}"
+            );
+        }
     }
 
     /// `parse_line` also applies the sanma truncation, and skips the lines every
