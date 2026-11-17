@@ -102,6 +102,10 @@ pub struct Hand13Result {
     pub mixed_round_point: f64,
     /// Yaku ids encountered across waits (riichienv yaku ids).
     pub yaku_ids: Vec<u32>,
+    /// Japanese yaku names matching `yaku_ids`.
+    pub yaku_names: Vec<String>,
+    /// English yaku names matching `yaku_ids`.
+    pub yaku_names_en: Vec<String>,
 }
 
 /// One discard option from a 14-tile state.

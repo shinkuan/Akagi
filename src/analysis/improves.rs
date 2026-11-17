@@ -248,6 +248,8 @@ pub fn analyze_13(info: &PlayerInfo34) -> Hand13Result {
     let mut dama_point = 0.0;
     let mut riichi_point = 0.0;
     let mut yaku_ids: Vec<u32> = Vec::new();
+    let mut yaku_names: Vec<String> = Vec::new();
+    let mut yaku_names_en: Vec<String> = Vec::new();
     if cur_shanten == 0 && !current_waits.is_empty() {
         // Compute dora set from indicators.
         let dora: Vec<_> = info.dora_indicators.iter().map(|d| d.dora_next()).collect();
@@ -259,6 +261,8 @@ pub fn analyze_13(info: &PlayerInfo34) -> Hand13Result {
         dama_point = est.dama_point;
         riichi_point = est.riichi_point;
         yaku_ids = est.yaku_ids;
+        yaku_names = est.yaku_names;
+        yaku_names_en = est.yaku_names_en;
         if !est.has_yaku && is_open {
             // Open & yakuless: cannot win → zero out point expectation.
             avg_agari_rate = 0.0;
@@ -318,6 +322,8 @@ pub fn analyze_13(info: &PlayerInfo34) -> Hand13Result {
         riichi_point,
         mixed_round_point,
         yaku_ids,
+        yaku_names,
+        yaku_names_en,
     }
 }
 
