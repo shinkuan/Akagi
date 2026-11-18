@@ -162,6 +162,7 @@ message AccountActivityUpdate {
     repeated .lq.ActivityChooseGroupData choose_group_up_data = 21;
     repeated .lq.ActivityMMODataChanges mmo_data = 22;
     .lq.AccountActivityUpdate.ActivityBuffDataArrayDirty activity_buff = 23;
+    repeated .lq.ActivityMajWorkshopChanges work_shop_data = 24;
 }
 
 message AccountCacheView {
@@ -1245,6 +1246,79 @@ message ActivityMajClubUpgradeDataChanges {
     .lq.ActivityMajClubRoomDataArrayDirty rooms = 1;
     .lq.ActivityMajClubCharacterDataArrayDirty characters = 2;
     .lq.UInt32Dirty wait_zone_level = 4;
+}
+
+message ActivityMajWorkshopChanges {
+    .lq.ActivityMajWorkshopGameDataChanges game = 1;
+    .lq.ActivityMajWorkshopIllustratedBookChanges illustrated_book = 2;
+    uint32 activity_id = 3;
+}
+
+message ActivityMajWorkshopCraft {
+    uint32 id = 1;
+    uint32 count = 2;
+}
+
+message ActivityMajWorkshopCraftArrayDirty {
+    bool dirty = 1;
+    repeated .lq.ActivityMajWorkshopCraft value = 2;
+}
+
+message ActivityMajWorkshopData {
+    uint32 activity_id = 1;
+    .lq.ActivityMajWorkshopGameData game = 2;
+    .lq.ActivityMajWorkshopIllustratedBook illustrated_book = 3;
+}
+
+message ActivityMajWorkshopGameData {
+    uint32 level = 1;
+    uint32 sell_bouns_count = 2;
+    repeated .lq.ActivityMajWorkshopCraft crafts = 3;
+    repeated .lq.ActivityMajWorkshopGarden gardens = 4;
+    repeated .lq.ActivityMajWorkshopOrder orders = 5;
+    uint32 last_sell_bouns_time = 7;
+    repeated uint32 understood_order_ids = 8;
+    uint32 selected_order_id = 9;
+}
+
+message ActivityMajWorkshopGameDataChanges {
+    .lq.UInt32Dirty level = 1;
+    .lq.UInt32Dirty sell_bouns_count = 2;
+    .lq.ActivityMajWorkshopCraftArrayDirty crafts = 3;
+    .lq.ActivityMajWorkshopGardenArrayDirty gardens = 4;
+    .lq.ActivityMajWorkshopOrderArrayDirty orders = 5;
+    .lq.UInt32Dirty selected_order_id = 6;
+}
+
+message ActivityMajWorkshopGarden {
+    uint32 id = 1;
+    uint32 last_collected_time = 2;
+}
+
+message ActivityMajWorkshopGardenArrayDirty {
+    bool dirty = 1;
+    repeated .lq.ActivityMajWorkshopGarden value = 2;
+}
+
+message ActivityMajWorkshopIllustratedBook {
+    repeated uint32 unlocked_craft_id = 1;
+    repeated uint32 have_read_craft_id = 2;
+}
+
+message ActivityMajWorkshopIllustratedBookChanges {
+    .lq.UInt32ArrayDirty unlocked_craft_id = 1;
+    .lq.UInt32ArrayDirty have_read_craft_id = 2;
+}
+
+message ActivityMajWorkshopOrder {
+    uint32 order_id = 1;
+    uint32 id = 2;
+    bool understood = 3;
+}
+
+message ActivityMajWorkshopOrderArrayDirty {
+    bool dirty = 1;
+    repeated .lq.ActivityMajWorkshopOrder value = 2;
 }
 
 message ActivityMarathonCheckData {
@@ -5441,6 +5515,76 @@ message ReqMajClubActivityUpgradeWaiting {
     uint32 activity_id = 1;
 }
 
+message ReqMajWorkshopActivityCollect {
+    uint32 activity_id = 1;
+    uint32 garden_id = 2;
+}
+
+message ReqMajWorkshopActivityCraft {
+    uint32 activity_id = 1;
+    repeated uint32 crafts = 2;
+}
+
+message ReqMajWorkshopActivityFetchData {
+    uint32 activity_id = 1;
+}
+
+message ReqMajWorkshopActivityGardenRestore {
+    uint32 activity_id = 1;
+    uint32 garden_id = 2;
+}
+
+message ReqMajWorkshopActivityGardenRestoreAndCollect {
+    uint32 activity_id = 1;
+    uint32 garden_id = 2;
+}
+
+message ReqMajWorkshopActivityQuickCraft {
+    message ActivityMajWorkshopCraftStep {
+        repeated .lq.ReqMajWorkshopActivityQuickCraft.CraftInput input = 1;
+        uint32 output_craft_id = 2;
+    }
+    message ActivityMajWorkshopGardenCollect {
+        uint32 garden_id = 1;
+        bool use_free_collect = 2;
+        uint32 cost = 3;
+    }
+    message CraftInput {
+        uint32 craft_id = 1;
+        uint32 from = 2;
+    }
+    uint32 activity_id = 1;
+    uint32 target_craft_id = 2;
+    repeated .lq.ReqMajWorkshopActivityQuickCraft.ActivityMajWorkshopGardenCollect garden_collects = 3;
+    repeated .lq.ReqMajWorkshopActivityQuickCraft.ActivityMajWorkshopCraftStep craft_steps = 4;
+}
+
+message ReqMajWorkshopActivityRead {
+    uint32 activity_id = 1;
+    repeated uint32 craft_id_list = 2;
+}
+
+message ReqMajWorkshopActivityRecovery {
+    uint32 activity_id = 1;
+    uint32 craft_id = 2;
+}
+
+message ReqMajWorkshopActivitySetSelectedOrder {
+    uint32 activity_id = 1;
+    uint32 id = 2;
+}
+
+message ReqMajWorkshopActivitySubmitOrder {
+    uint32 activity_id = 1;
+    uint32 order_id = 2;
+    uint32 craft_id = 3;
+}
+
+message ReqMajWorkshopActivityUnderstandOrder {
+    uint32 activity_id = 1;
+    uint32 order_id = 2;
+}
+
 message ReqMarathonActivityFinishRace {
     uint32 activity_id = 1;
     repeated .lq.ActivityMarathonCheckData race_data = 2;
@@ -5885,6 +6029,10 @@ message ReqSetFriendRoomRandomBotChar {
 
 message ReqSetHiddenCharacter {
     repeated uint32 chara_list = 1;
+}
+
+message ReqSetHiddenHandsView {
+    repeated uint32 hidden_hands_view = 1;
 }
 
 message ReqSetLoadingImage {
@@ -6488,6 +6636,7 @@ message ResCharacterInfo {
     repeated uint32 character_sort = 9;
     repeated uint32 hidden_characters = 10;
     repeated uint32 other_character_sort = 11;
+    repeated uint32 hidden_hands_view = 12;
 }
 
 message ResClientValue {
@@ -7692,6 +7841,66 @@ message ResMajClubActivityStartDay {
     repeated .lq.ActivityMajClubCustomerData customers = 3;
 }
 
+message ResMajWorkshopActivityCollect {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+}
+
+message ResMajWorkshopActivityCraft {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+    uint32 greate_craft_id = 3;
+    bool greate_success = 4;
+    repeated uint32 greate_success_craft = 5;
+}
+
+message ResMajWorkshopActivityFetchData {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopData data = 2;
+}
+
+message ResMajWorkshopActivityGardenRestore {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+}
+
+message ResMajWorkshopActivityGardenRestoreAndCollect {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+}
+
+message ResMajWorkshopActivityQuickCraft {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+}
+
+message ResMajWorkshopActivityRead {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+}
+
+message ResMajWorkshopActivityRecovery {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+    repeated .lq.ExecuteReward extra_reward = 3;
+}
+
+message ResMajWorkshopActivitySetSelectedOrder {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+}
+
+message ResMajWorkshopActivitySubmitOrder {
+    .lq.Error error = 1;
+    bool success = 2;
+    .lq.ActivityMajWorkshopChanges changes = 3;
+}
+
+message ResMajWorkshopActivityUnderstandOrder {
+    .lq.Error error = 1;
+    .lq.ActivityMajWorkshopChanges changes = 2;
+}
+
 message ResMarathonActivityFinishRace {
     .lq.Error error = 1;
     .lq.MarathonGameRecord highest_record = 2;
@@ -8112,6 +8321,11 @@ message ResServerTime {
 message ResSetHiddenCharacter {
     .lq.Error error = 1;
     repeated uint32 hidden_characters = 2;
+}
+
+message ResSetHiddenHandsView {
+    .lq.Error error = 1;
+    repeated uint32 hidden_hands_view = 2;
 }
 
 message ResSetVillageWorker {
@@ -8726,6 +8940,10 @@ message TingPaiInfo {
     bool yiman_zimo = 7;
     uint32 count_zimo = 8;
     uint32 fu_zimo = 9;
+    uint32 dora_count = 10;
+    uint32 li_dora_count = 11;
+    uint32 red_dora_count = 12;
+    uint32 ying_count = 13;
 }
 
 message TransparentData {
@@ -9112,6 +9330,17 @@ service Lobby {
     rpc majClubActivityUpgradeCharacterTag (ReqMajClubActivityUpgradeCharacterTag) returns (ResMajClubActivityCommon);
     rpc majClubActivityUpgradeRoomFee (ReqMajClubActivityUpgradeRoomFee) returns (ResMajClubActivityCommon);
     rpc majClubActivityUpgradeWaiting (ReqMajClubActivityUpgradeWaiting) returns (ResMajClubActivityCommon);
+    rpc majWorkshopActivityCollect (ReqMajWorkshopActivityCollect) returns (ResMajWorkshopActivityCollect);
+    rpc majWorkshopActivityCraft (ReqMajWorkshopActivityCraft) returns (ResMajWorkshopActivityCraft);
+    rpc majWorkshopActivityFetchData (ReqMajWorkshopActivityFetchData) returns (ResMajWorkshopActivityFetchData);
+    rpc majWorkshopActivityGardenRestore (ReqMajWorkshopActivityGardenRestore) returns (ResMajWorkshopActivityGardenRestore);
+    rpc majWorkshopActivityGardenRestoreAndCollect (ReqMajWorkshopActivityGardenRestoreAndCollect) returns (ResMajWorkshopActivityGardenRestoreAndCollect);
+    rpc majWorkshopActivityQuickCraft (ReqMajWorkshopActivityQuickCraft) returns (ResMajWorkshopActivityQuickCraft);
+    rpc majWorkshopActivityRead (ReqMajWorkshopActivityRead) returns (ResMajWorkshopActivityRead);
+    rpc majWorkshopActivityRecovery (ReqMajWorkshopActivityRecovery) returns (ResMajWorkshopActivityRecovery);
+    rpc majWorkshopActivitySetSelectedOrder (ReqMajWorkshopActivitySetSelectedOrder) returns (ResMajWorkshopActivitySetSelectedOrder);
+    rpc majWorkshopActivitySubmitOrder (ReqMajWorkshopActivitySubmitOrder) returns (ResMajWorkshopActivitySubmitOrder);
+    rpc majWorkshopActivityUnderstandOrder (ReqMajWorkshopActivityUnderstandOrder) returns (ResMajWorkshopActivityUnderstandOrder);
     rpc marathonActivityFinishRace (ReqMarathonActivityFinishRace) returns (ResMarathonActivityFinishRace);
     rpc marathonActivityStartRace (ReqMarathonActivityStartRace) returns (ResMarathonActivityStartRace);
     rpc matchGame (ReqJoinMatchQueue) returns (ResCommon);
@@ -9205,6 +9434,7 @@ service Lobby {
     rpc setActivityBuff (ReqSetActivityBuff) returns (ResActivityBuff);
     rpc setFriendRoomRandomBotChar (ReqSetFriendRoomRandomBotChar) returns (ResCommon);
     rpc setHiddenCharacter (ReqSetHiddenCharacter) returns (ResSetHiddenCharacter);
+    rpc setHiddenHandsView (ReqSetHiddenHandsView) returns (ResSetHiddenHandsView);
     rpc setLoadingImage (ReqSetLoadingImage) returns (ResCommon);
     rpc setRandomCharacter (ReqRandomCharacter) returns (ResCommon);
     rpc setVerifiedHidden (ReqSetVerifiedHidden) returns (ResCommon);
