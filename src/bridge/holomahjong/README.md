@@ -49,15 +49,23 @@ start at key 0. Each handler in `mod.rs` documents the layout it reads.
 | `OnPingju` | `ryukyoku` + `end_kyoku` |
 | `OnJieju` (result) | `end_game` with final scores and ranks |
 | `OnUpDateEndGameVote` (accepted) | `end_game` (terminated) |
+| `OnSystemCallEvent` (TerminateBattle) | `end_game` (terminated) |
 
 Client calls and responses are recorded for the Inspector but drive nothing.
+
+A kan's new dora (`OnAddBaopai`) is forwarded where the server sends it: right
+after a closed kan, and — with late kan-dora reveal, the ranked rule — just
+before the discard that follows an open or added kan. That is also where
+Mortal's own game simulator puts it.
 
 ## Notation
 
 Tiles, hands and melds use majiang-core's notation (see `tile.rs`): `m`/`p`/`s`/`z`
 plus a digit, `0` for the red five; a discard may carry `_` (tsumogiri) and `*`
-(riichi); in a meld the called tile's digit is followed by `+` (next seat), `=`
-(opposite) or `-` (previous seat), e.g. `p1-23`, `z444+`, `m5555=`, `m555=5`.
+(riichi) or `@` (open riichi), and a kita tile the same `_`; in a meld the
+called tile's digit is followed by `+` (next seat), `=` (opposite) or `-`
+(previous seat), e.g. `p1-23`, `z444+`, `m5505=` (open kan), `m555=5` (added
+kan), `m5550` (closed kan).
 
 ## Seats
 
@@ -80,8 +88,9 @@ the first also takes what is left over (honba and riichi sticks).
 ## Limitations
 
 - A reconnect restores seat and names from `OnZhunbeiChonglian`, but the
-  snapshot of the hand in progress (`OnChongxinLianjieChenggong`) is not
-  replayed: events resume at the next deal.
+  snapshot of the hand in progress (`OnChongxinLianjieChenggong`: field,
+  every player's score, river, kita tiles and riichi state, our hand and the
+  pending draw) is not replayed: events resume at the next deal.
 - Compressed gRPC messages are skipped (none observed).
 - No autoplay.
 

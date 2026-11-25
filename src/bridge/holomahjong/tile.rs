@@ -5,11 +5,13 @@
 //! (`m`/`p`/`s`/`z`) plus a digit, `0` being the red five, so `"m0"` is
 //! mjai `"5mr"` and `"z5"` is `"P"`. A hidden tile is `x1`. Around that:
 //!
-//! - **discard** — `"m3"`, with `_` for a tsumogiri and `*` for a riichi
-//!   declaration (`"z3_"`, `"m3*"`, `"m3_*"`).
+//! - **discard** — `"m3"`, with `_` for a tsumogiri and `*` (riichi) or `@`
+//!   (open riichi) for a declaration (`"z3_"`, `"m3*"`, `"m3_@"`). A kita
+//!   tile is marked the same way (`"z4_"`).
 //! - **hand** — either one suit letter per tile (`"s2z5m4…"`, the deal) or
 //!   one letter per run of digits (`"m2345677p678s123*"`, majiang-core's
-//!   `Shoupai` string); `*` marks riichi and melds follow after commas.
+//!   `Shoupai` string); `*`/`@` mark riichi, `_` stands for a hidden tile,
+//!   and melds and kita tiles follow after commas.
 //! - **meld** — the called tile's digit is followed by where it came from,
 //!   relative to the caller: `+` the next seat, `=` the opposite seat, `-`
 //!   the previous seat. `"p1-23"` chi, `"z444+"` pon, `"m5555="` open kan,
@@ -53,13 +55,13 @@ pub struct Discard {
 pub fn discard(s: &str) -> Option<Discard> {
     let pai = tile(s.get(..2)?)?;
     let rest = &s[2..];
-    if !rest.chars().all(|c| c == '_' || c == '*') {
+    if !matches!(rest, "" | "_" | "*" | "@" | "_*" | "_@") {
         return None;
     }
     Some(Discard {
         pai,
-        tsumogiri: rest.contains('_'),
-        riichi: rest.contains('*'),
+        tsumogiri: rest.starts_with('_'),
+        riichi: rest.ends_with(['*', '@']),
     })
 }
 
@@ -74,7 +76,7 @@ pub fn hand(s: &str) -> Option<Vec<Tile>> {
         match c {
             'm' | 'p' | 's' | 'z' => suit = Some(c),
             '0'..='9' => out.push(tile_of(suit?, c.to_digit(10)? as u8)?),
-            '*' | '_' => {}
+            '*' | '@' | '_' => {}
             _ => return None,
         }
     }
@@ -257,7 +259,25 @@ mod tests {
                 riichi: true
             }
         );
-        assert_eq!(discard("m3+"), None);
+        assert_eq!(
+            d("s7@"),
+            Discard {
+                pai: "7s".into(),
+                tsumogiri: false,
+                riichi: true
+            }
+        );
+        assert_eq!(
+            d("s7_@"),
+            Discard {
+                pai: "7s".into(),
+                tsumogiri: true,
+                riichi: true
+            }
+        );
+        for bad in ["m3+", "m3*_", "m3**", "m3*@"] {
+            assert_eq!(discard(bad), None, "{bad:?}");
+        }
     }
 
     #[test]
@@ -268,6 +288,10 @@ mod tests {
             t(&["2m", "4m", "5m", "8m", "1p", "3p", "3p", "7p", "6s", "9s"])
         );
         assert_eq!(hand("m11p0*").unwrap(), t(&["1m", "1m", "5pr"]));
+        assert_eq!(
+            hand("p55s123@,z4,z4").unwrap(),
+            t(&["5p", "5p", "1s", "2s", "3s"])
+        );
         assert_eq!(hand("x1x1x1"), None);
     }
 

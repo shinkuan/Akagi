@@ -1217,3 +1217,83 @@ fn a_three_player_mark_counts_four_seats() {
     assert_eq!(ev[0]["target"], json!(0));
     assert_eq!(ev[2]["target"], json!(0));
 }
+
+#[test]
+fn an_open_riichi_discard_declares_riichi() {
+    let mut b = bridge();
+    feed(
+        &mut b,
+        &[
+            kaiju(0),
+            qipai(
+                0,
+                field(0, 0, 0, 0, "m1"),
+                [0, 1, 2, 3],
+                [25000; 4],
+                MY_DEAL,
+            ),
+        ],
+    );
+    let ev = feed(
+        &mut b,
+        &[
+            zimo(2, ""),
+            push(
+                hub::ON_DAPAI,
+                json!([
+                    null,
+                    2,
+                    "s7_@",
+                    [],
+                    [],
+                    [],
+                    [0],
+                    "",
+                    3,
+                    "m123p456s789z11",
+                    TIMER
+                ]),
+            ),
+        ],
+    );
+    assert_eq!(ev[1], json!({"type": "reach", "actor": 2}));
+    assert_eq!(
+        ev[2],
+        json!({"type": "dahai", "actor": 2, "pai": "7s", "tsumogiri": true})
+    );
+}
+
+#[test]
+fn the_server_terminating_the_battle_ends_the_game() {
+    let mut b = bridge();
+    feed(
+        &mut b,
+        &[
+            kaiju(0),
+            qipai(
+                0,
+                field(0, 0, 0, 0, "m1"),
+                [0, 1, 2, 3],
+                [25000; 4],
+                MY_DEAL,
+            ),
+        ],
+    );
+    assert!(feed(
+        &mut b,
+        &[push(hub::ON_SYSTEM_CALL_EVENT, json!([2, "pause"]))]
+    )
+    .is_empty());
+    let r = b.parse(
+        Direction::Down,
+        &push(hub::ON_SYSTEM_CALL_EVENT, json!([1, "terminated"])),
+    );
+    assert!(matches!(
+        &r.events[..],
+        [MjaiEvent::EndGame {
+            reason: GameEndReason::Terminated,
+            ..
+        }]
+    ));
+    assert!(feed(&mut b, &[zimo(0, "m1")]).is_empty());
+}

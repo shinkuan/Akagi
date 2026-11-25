@@ -117,6 +117,7 @@ impl HoloMahjongBridge {
             hub::ON_PINGJU if self.kyoku_open => self.on_pingju(b),
             hub::ON_JIEJU if self.game_open => self.on_jieju(b),
             hub::ON_UPDATE_END_GAME_VOTE if self.game_open => Some(self.on_end_game_vote(b)),
+            hub::ON_SYSTEM_CALL_EVENT if self.game_open => Some(self.on_system_call(b)),
             _ => Some(Vec::new()),
         };
         events.unwrap_or_else(|| {
@@ -501,6 +502,17 @@ impl HoloMahjongBridge {
         vec![end_game(GameEndReason::Terminated)]
     }
 
+    /// SystemCallEvent `[type, message]` (a struct, so keys start at 0); type
+    /// 1 is TerminateBattle, the server ending the game.
+    fn on_system_call(&mut self, b: &JsonValue) -> Vec<MjaiEvent> {
+        if b.get(0).and_then(JsonValue::as_u64) != Some(1) {
+            return Vec::new();
+        }
+        self.game_open = false;
+        self.kyoku_open = false;
+        vec![end_game(GameEndReason::Terminated)]
+    }
+
     /// Open a fresh `holomahjong_<ts>.mjai.jsonl` per game. No-op without a
     /// session (tests).
     fn rotate_mjai_log(&mut self) {
@@ -589,6 +601,7 @@ fn is_shareable(msg: &HubMessage) -> bool {
             | hub::ON_ADD_BAOPAI
             | hub::ON_HUANG_PAI
             | hub::ON_BABEI
+            | hub::ON_SYSTEM_CALL_EVENT
             | hub::READY
             | hub::KAIJU_EVENT_COMPLETE
             | hub::QIPAI_EVENT_COMPLETE
