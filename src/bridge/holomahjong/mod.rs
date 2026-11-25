@@ -20,6 +20,7 @@
 //! the discard being called, not a reading of the meld's direction mark.
 
 pub mod hub;
+pub mod rebuild;
 pub mod tile;
 
 use super::{shown, Bridge, Direction, ParseResult};
@@ -102,10 +103,11 @@ impl HoloMahjongBridge {
         let b = &msg.body;
         let events = match msg.method {
             hub::ON_KAIJU => self.on_kaiju(b),
-            // A reconnect opens with the game's KaijuEvent; the hand in
-            // progress is not rebuilt, play resumes at the next deal.
+            // A reconnect opens with the game's KaijuEvent; the snapshot of
+            // the hand in progress follows (`on_resume`).
             hub::ON_ZHUNBEI_CHONGLIAN if !self.game_open => b.get(1).and_then(|k| self.on_kaiju(k)),
             hub::ON_QIPAI => self.on_qipai(b),
+            hub::ON_CHONGXIN_LIANJIE_CHENGGONG => self.on_resume(b),
             hub::ON_ZIMO if self.kyoku_open => self.on_zimo(b),
             hub::ON_DAPAI if self.kyoku_open => self.on_dapai(b),
             hub::ON_FULOU if self.kyoku_open => self.on_fulou(b),
@@ -179,9 +181,10 @@ impl HoloMahjongBridge {
     /// discards, wins, riichi, kita]`.
     fn on_qipai(&mut self, b: &JsonValue) -> Option<Vec<MjaiEvent>> {
         let players = b.get(5)?.as_array()?;
-        let n = self
-            .num_players
-            .unwrap_or(u8::try_from(players.len()).ok()?);
+        let n = match self.num_players {
+            Some(n) => n,
+            None => u8::try_from(players.len()).ok()?,
+        };
         if !(3..=4).contains(&n) {
             return Some(Vec::new());
         }
@@ -242,14 +245,8 @@ impl HoloMahjongBridge {
         self.last_discard = None;
         if !self.game_open {
             self.rotate_mjai_log();
-            let mut names = vec![String::new(); n as usize];
-            for (seat, actor) in actor_of.iter().enumerate() {
-                if let Some(a) = actor {
-                    names[*a as usize] = self.names[seat].clone();
-                }
-            }
             events.push(MjaiEvent::StartGame {
-                names,
+                names: self.names_by_actor(n),
                 kyoku_first: None,
                 aka_flag: None,
                 id: Some(my_actor),
@@ -273,6 +270,69 @@ impl HoloMahjongBridge {
         });
         self.kyoku_open = true;
         Some(events)
+    }
+
+    /// ChongxinLianjieChenggongEvent `[_, our_wind, server_time, field,
+    /// players, zimo, deadline]`: the hand in progress after a reconnect,
+    /// rebuilt as its history (see [`rebuild`]).
+    fn on_resume(&mut self, b: &JsonValue) -> Option<Vec<MjaiEvent>> {
+        if self.kyoku_open {
+            // This connection watched the hand; nothing is missing.
+            return Some(Vec::new());
+        }
+        let n = match self.num_players {
+            Some(n) => n,
+            None => u8::try_from(b.get(4)?.as_array()?.len()).ok()?,
+        };
+        if !(3..=4).contains(&n) {
+            return Some(Vec::new());
+        }
+        let r = match rebuild::rebuild(b, n) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(target: LOG, "reconnect: {e}; resuming at the next deal");
+                return Some(Vec::new());
+            }
+        };
+        let me = (0..4u8).find(|&seat| r.actor_of[seat as usize] == Some(r.my_actor))?;
+        let mut events = Vec::new();
+        self.my_seat = Some(me);
+        self.num_players = Some(n);
+        self.actor_of = r.actor_of;
+        self.hand_no = r.hand_no;
+        self.last_discard = r.last_discard_seat;
+        if !self.game_open {
+            self.rotate_mjai_log();
+            events.push(MjaiEvent::StartGame {
+                names: self.names_by_actor(n),
+                kyoku_first: None,
+                aka_flag: None,
+                id: Some(r.my_actor),
+                num_players: n,
+                game_meta: None,
+            });
+            self.game_open = true;
+        }
+        info!(
+            target: LOG,
+            "reconnect: rebuilt the hand in progress as {} event(s)",
+            r.events.len() - 1
+        );
+        events.extend(r.events);
+        self.kyoku_open = true;
+        Some(events)
+    }
+
+    fn names_by_actor(&self, n: u8) -> Vec<String> {
+        let mut names = vec![String::new(); n as usize];
+        for (seat, actor) in self.actor_of.iter().enumerate() {
+            if let Some(a) = actor {
+                if let Some(slot) = names.get_mut(*a as usize) {
+                    *slot = self.names[seat].clone();
+                }
+            }
+        }
+        names
     }
 
     /// ZimoEvent `[_, seat, tile, kan_offers, kita_offers, tsumo_offer,

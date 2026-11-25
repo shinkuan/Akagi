@@ -1297,3 +1297,222 @@ fn the_server_terminating_the_battle_ends_the_game() {
     ));
     assert!(feed(&mut b, &[zimo(0, "m1")]).is_empty());
 }
+
+/// `players` is `(seat, wind, score, hand, river, riichi_type, kita)`.
+#[allow(clippy::type_complexity)]
+fn snapshot(
+    our_wind: u8,
+    field: JsonValue,
+    players: &[(u8, u8, i32, &str, &[&str], u8, &[&str])],
+) -> Vec<u8> {
+    let players: Vec<JsonValue> = players
+        .iter()
+        .map(|&(seat, wind, score, hand, river, riichi, kita)| {
+            json!([null, seat, wind, score, null, hand, river, 0, riichi, kita])
+        })
+        .collect();
+    push(
+        hub::ON_CHONGXIN_LIANJIE_CHENGGONG,
+        json!([
+            null,
+            our_wind,
+            1_700_000_000_000i64,
+            field,
+            players,
+            null,
+            null
+        ]),
+    )
+}
+
+/// A hand with a pon, our chi, a riichi, an open kan on the riichi player's
+/// tsumogiri and our closed kan, cut after our discard.
+fn reconnect_4p() -> Vec<u8> {
+    let field = json!([
+        0,
+        0,
+        0,
+        [0, 0, 1, 0, 0],
+        ["m4", "p6", "s3"],
+        50,
+        null,
+        "h",
+        "s",
+        false
+    ]);
+    let x = |n: usize| "x1".repeat(n);
+    snapshot(
+        2,
+        field,
+        &[
+            (0, 0, 24000, &(x(13) + "*"), &["m1", "s1*", "z1_-"], 1, &[]),
+            (
+                1,
+                1,
+                25000,
+                &(x(10) + ",z1111-"),
+                &["z5=", "m3-", "m9"],
+                0,
+                &[],
+            ),
+            (2, 2, 25000, "m11s234z66,m3-45,p2222", &["p9", "s7"], 0, &[]),
+            (3, 3, 25000, &(x(10) + ",z555="), &["s9", "p1_"], 0, &[]),
+        ],
+    )
+}
+
+#[test]
+fn a_reconnect_rebuilds_the_hand_in_progress() {
+    let mut b = bridge();
+    let k = hub::decode(&kaiju(2)).unwrap().body;
+    feed(&mut b, &[push(hub::ON_ZHUNBEI_CHONGLIAN, json!([null, k]))]);
+    let ev = feed(&mut b, &[reconnect_4p()]);
+    assert_eq!(ev[0]["type"], json!("start_game"));
+    assert_eq!(ev[0]["id"], json!(2));
+    let start = &ev[1];
+    // The riichi stick goes back: start-of-hand scores, no sticks yet.
+    assert_eq!(start["scores"], json!([25000, 25000, 25000, 25000]));
+    assert_eq!(start["kyotaku"], json!(0));
+    assert_eq!(start["dora_marker"], json!("4m"));
+    let mut opening: Vec<String> = serde_json::from_value(start["tehais"][2].clone()).unwrap();
+    opening.sort();
+    assert_eq!(
+        opening,
+        ["1m", "1m", "2p", "2p", "2p", "2s", "3s", "4m", "4s", "5m", "9p", "F", "F"]
+    );
+    let history: Vec<JsonValue> = ev[2..].to_vec();
+    // Not our turn at the cut: the whole history is catch-up.
+    assert_eq!(
+        start["catch_up"],
+        JsonValue::Null,
+        "catch_up is not serialized"
+    );
+    let expected = vec![
+        json!({"type": "tsumo", "actor": 0, "pai": "?"}),
+        json!({"type": "dahai", "actor": 0, "pai": "1m", "tsumogiri": false}),
+        json!({"type": "tsumo", "actor": 1, "pai": "?"}),
+        json!({"type": "dahai", "actor": 1, "pai": "P", "tsumogiri": false}),
+        json!({"type": "pon", "actor": 3, "target": 1, "pai": "P", "consumed": ["P", "P"]}),
+        json!({"type": "dahai", "actor": 3, "pai": "9s", "tsumogiri": false}),
+        json!({"type": "tsumo", "actor": 0, "pai": "?"}),
+        json!({"type": "reach", "actor": 0}),
+        json!({"type": "dahai", "actor": 0, "pai": "1s", "tsumogiri": false}),
+        json!({"type": "reach_accepted", "actor": 0}),
+        json!({"type": "tsumo", "actor": 1, "pai": "?"}),
+        json!({"type": "dahai", "actor": 1, "pai": "3m", "tsumogiri": false}),
+        json!({"type": "chi", "actor": 2, "target": 1, "pai": "3m", "consumed": ["4m", "5m"]}),
+        json!({"type": "dahai", "actor": 2, "pai": "9p", "tsumogiri": false}),
+        json!({"type": "tsumo", "actor": 3, "pai": "?"}),
+        json!({"type": "dahai", "actor": 3, "pai": "1p", "tsumogiri": true}),
+        json!({"type": "tsumo", "actor": 0, "pai": "?"}),
+        json!({"type": "dahai", "actor": 0, "pai": "E", "tsumogiri": true}),
+        json!({"type": "daiminkan", "actor": 1, "target": 0, "pai": "E", "consumed": ["E", "E", "E"]}),
+        json!({"type": "tsumo", "actor": 1, "pai": "?"}),
+        json!({"type": "dora", "dora_marker": "6p"}),
+        json!({"type": "dahai", "actor": 1, "pai": "9m", "tsumogiri": false}),
+        json!({"type": "tsumo", "actor": 2, "pai": "2p"}),
+        json!({"type": "ankan", "actor": 2, "consumed": ["2p", "2p", "2p", "2p"]}),
+        json!({"type": "dora", "dora_marker": "3s"}),
+        json!({"type": "tsumo", "actor": 2, "pai": "7s"}),
+        json!({"type": "dahai", "actor": 2, "pai": "7s", "tsumogiri": false}),
+    ];
+    assert_eq!(history, expected);
+    // Live play picks up: a pon of our last discard targets us.
+    let ev = feed(&mut b, &[fulou(3, 2, "s777=")]);
+    assert_eq!(ev[0]["target"], json!(2));
+}
+
+#[test]
+fn a_reconnect_on_our_draw_leaves_that_draw_to_the_bot() {
+    let mut b = bridge();
+    let field = json!([0, 1, 0, [0, 0, 0, 0, 0], ["s1"], 40, null, "h", "s", false]);
+    let ev = feed(
+        &mut b,
+        &[snapshot(
+            2,
+            field,
+            &[
+                (0, 1, 35000, &"x1".repeat(13), &["m1", "p9"], 0, &[]),
+                (1, 2, 35000, "m1p24468s1346z255p0", &["s9_"], 0, &[]),
+                (
+                    2,
+                    0,
+                    35000,
+                    &("x1".repeat(13) + ",z4"),
+                    &["z6", "z7"],
+                    0,
+                    &["z4"],
+                ),
+            ],
+        )],
+    );
+    let history = &ev[2..];
+    // Dealer seat 2 sets a North aside in its first turn.
+    assert_eq!(history[0], json!({"type": "tsumo", "actor": 1, "pai": "?"}));
+    assert_eq!(history[1], json!({"type": "kita", "actor": 1, "pai": "N"}));
+    assert_eq!(
+        history.last().unwrap(),
+        &json!({"type": "tsumo", "actor": 0, "pai": "5pr"})
+    );
+    match &b
+        .parse(
+            Direction::Down,
+            &snapshot(1, json!([0, 1, 0, [0, 0, 0, 0, 0], ["s1"], 40]), &[]),
+        )
+        .events[..]
+    {
+        [] => {}
+        other => panic!("a second snapshot mid-hand is ignored: {other:?}"),
+    }
+}
+
+#[test]
+fn the_rebuilt_catch_up_count_leaves_our_pending_draw_out() {
+    let mut b = bridge();
+    let field = json!([0, 1, 0, [0, 0, 0, 0, 0], ["s1"], 40, null, "h", "s", false]);
+    let r = b.parse(
+        Direction::Down,
+        &snapshot(
+            2,
+            field,
+            &[
+                (0, 1, 35000, &"x1".repeat(13), &["m1", "p9"], 0, &[]),
+                (1, 2, 35000, "m1p24468s1346z255p0", &["s9_"], 0, &[]),
+                (2, 0, 35000, &"x1".repeat(13), &["z6", "z7"], 0, &[]),
+            ],
+        ),
+    );
+    let MjaiEvent::StartKyoku { catch_up, .. } = &r.events[1] else {
+        panic!()
+    };
+    let after = r.events.len() - 2;
+    assert_eq!(*catch_up, after - 1);
+}
+
+#[test]
+fn a_snapshot_no_history_fits_resumes_at_the_next_deal() {
+    let mut b = bridge();
+    feed(&mut b, &[kaiju(2)]);
+    let field = json!([0, 0, 0, [0, 0, 0, 0, 0], ["m4"], 50, null, "h", "s", false]);
+    // Seat 1's river says seat 2 chied it, but seat 2 shows no chi.
+    let bad = snapshot(
+        2,
+        field,
+        &[
+            (0, 0, 25000, &"x1".repeat(13), &["m1"], 0, &[]),
+            (1, 1, 25000, &"x1".repeat(13), &["m3-"], 0, &[]),
+            (2, 2, 25000, "m11s234z66p22229", &[], 0, &[]),
+            (3, 3, 25000, &"x1".repeat(13), &[], 0, &[]),
+        ],
+    );
+    assert!(feed(&mut b, &[bad, zimo(3, "")]).is_empty());
+    let ev = feed(
+        &mut b,
+        &[qipai(2, field_next(), [0, 1, 2, 3], [25000; 4], MY_DEAL)],
+    );
+    assert_eq!(ev[0]["type"], json!("start_game"));
+}
+
+fn field_next() -> JsonValue {
+    field(0, 1, 0, 0, "m1")
+}

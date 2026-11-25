@@ -50,6 +50,7 @@ start at key 0. Each handler in `mod.rs` documents the layout it reads.
 | `OnJieju` (result) | `end_game` with final scores and ranks |
 | `OnUpDateEndGameVote` (accepted) | `end_game` (terminated) |
 | `OnSystemCallEvent` (TerminateBattle) | `end_game` (terminated) |
+| `OnChongxinLianjieChenggong` (reconnect) | the hand so far, rebuilt — see below |
 
 Client calls and responses are recorded for the Inspector but drive nothing.
 
@@ -85,12 +86,30 @@ honba and map straight onto `hora.deltas`; with several winners the wire only
 has the combined result, so each `hora` gets its own hand value (`Defen`) and
 the first also takes what is left over (honba and riichi sticks).
 
+## Reconnects
+
+A reconnect opens a new battle connection, so a new bridge. It gets the game
+start again (`OnZhunbeiChonglian`: seat and names) and then, mid-hand, a
+snapshot (`OnChongxinLianjieChenggong`): the field, and per seat the score,
+the hand (ours in full, the others' as `x1` per tile), calls and kita tiles
+after commas, and the river. `rebuild.rs` turns that into the hand's history:
+`start_kyoku` with `catch_up` set, so the bot reads it as one batch, and the
+events since the deal.
+
+Each river entry is the discard as sent — `_` tsumogiri, `*`/`@` riichi — and
+a called discard stays in place with the caller's direction mark appended. So
+the turn order is read, not searched for: from the dealer, a seat discards its
+next river tile and the turn passes to the next seat, or to the caller, who
+makes the matching call. Made up: our draws (each turn draws what it then
+discards, kans or sets aside, and the opening hand is what makes that end at
+our hand now) and the turn in which a closed kan, added kan or kita happened
+(the seat's first possible draw). Start-of-hand scores and sticks are the
+snapshot's with this hand's riichi deposits undone. If no history reaches the
+snapshot exactly (a river tile or call left over, a tile count off), nothing
+is emitted and play resumes at the next deal.
+
 ## Limitations
 
-- A reconnect restores seat and names from `OnZhunbeiChonglian`, but the
-  snapshot of the hand in progress (`OnChongxinLianjieChenggong`: field,
-  every player's score, river, kita tiles and riichi state, our hand and the
-  pending draw) is not replayed: events resume at the next deal.
 - Compressed gRPC messages are skipped (none observed).
 - No autoplay.
 
