@@ -40,6 +40,9 @@
 //! - [`tenhou`] — the Tenhou implementation: press the client's own action
 //!   buttons, or call its discard handler with a tile index.
 //!   [`tenhou::inject`] is what makes that handler reachable.
+//! - [`riichi_city`] and [`holomahjong`] — the native clients, reached through
+//!   their protocol: the client's own frames (Riichi City) or hub calls
+//!   (HoloMahjong), sent by the MITM proxy. [`wire`] is what they share.
 //! - [`tenhou_state`] — the bridge-written slot holding Tenhou's hand at
 //!   tile-index resolution plus its current decision window, which is what
 //!   lets an mjai tile string name a physical copy at all.
@@ -67,6 +70,7 @@ pub mod budget;
 pub mod cdp_input;
 pub mod context;
 pub mod delay;
+pub mod holomahjong;
 pub mod inject;
 pub mod majsoul;
 pub mod manager;
@@ -76,6 +80,7 @@ pub mod table;
 pub mod tenhou;
 pub mod tenhou_state;
 pub mod verify;
+pub mod wire;
 
 pub use budget::{BudgetSource, SharedTimeBudget, TimeBudget};
 pub use context::{AutoplayContext, CanvasRect};

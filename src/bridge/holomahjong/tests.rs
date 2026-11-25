@@ -126,7 +126,7 @@ const MY_DEAL: &str = "s2z5m4p7m8m1p3p8m5p7s6z2s9";
 fn zimo(seat: u8, t: &str) -> Vec<u8> {
     push(
         hub::ON_ZIMO,
-        json!([null, seat, t, null, null, null, [0], TIMER]),
+        json!([null, seat, t, null, null, null, TIMER]),
     )
 }
 
@@ -1515,4 +1515,292 @@ fn a_snapshot_no_history_fits_resumes_at_the_next_deal() {
 
 fn field_next() -> JsonValue {
     field(0, 1, 0, 0, "m1")
+}
+
+// ---- autoplay's decision window ----
+
+use crate::autoplay::holomahjong::link::{HoloLink, SharedHoloLink, WindowKind};
+
+fn linked() -> (HoloMahjongBridge, SharedHoloLink) {
+    let link = Arc::new(HoloLink::new());
+    (bridge().with_link(Some(link.clone())), link)
+}
+
+/// We sit at seat 2 and the first hand has been dealt.
+fn dealt() -> (HoloMahjongBridge, SharedHoloLink) {
+    let (mut b, link) = linked();
+    feed(
+        &mut b,
+        &[
+            kaiju(2),
+            qipai(
+                2,
+                field(0, 0, 0, 0, "p5"),
+                [0, 1, 2, 3],
+                [25000; 4],
+                MY_DEAL,
+            ),
+        ],
+    );
+    (b, link)
+}
+
+/// MahjongHuleStruct for a win worth `points` (0: none on offer).
+fn win_offer(points: i64) -> JsonValue {
+    json!([
+        2,
+        null,
+        null,
+        null,
+        30,
+        0,
+        "1",
+        [],
+        points,
+        null,
+        null,
+        null
+    ])
+}
+
+fn offered_discard(
+    seat: u8,
+    d: &str,
+    chi: &[&str],
+    pon: &[&str],
+    kan: &[&str],
+    win: i64,
+) -> Vec<u8> {
+    push(
+        hub::ON_DAPAI,
+        json!([
+            null,
+            seat,
+            d,
+            chi,
+            pon,
+            kan,
+            win_offer(win),
+            "",
+            0,
+            "",
+            TIMER
+        ]),
+    )
+}
+
+#[test]
+fn our_draw_opens_a_turn_with_its_offers_and_time() {
+    let (mut b, link) = dealt();
+    assert_eq!(link.table().seat, Some(2));
+    assert!(link.table().window.is_none(), "the deal asks nothing yet");
+    feed(
+        &mut b,
+        &[push(
+            hub::ON_ZIMO,
+            json!([null, 2, "m0", ["m5550"], [], win_offer(8000), TIMER]),
+        )],
+    );
+    let w = link.table().window.expect("our turn");
+    assert_eq!(
+        w.kind,
+        WindowKind::Turn {
+            drawn: Some("5mr".into())
+        }
+    );
+    assert_eq!(w.kan, vec!["m5550"]);
+    assert!(w.can_win);
+    assert_eq!((w.base_ms, w.bank_ms, w.total_ms), (20000, 30000, 20000));
+    feed(&mut b, &[dapai(2, "m0_")]);
+    assert!(link.table().window.is_none(), "our discard answered it");
+}
+
+#[test]
+fn another_seats_discard_opens_a_claim_only_with_something_to_claim() {
+    let (mut b, link) = dealt();
+    feed(&mut b, &[zimo(1, ""), dapai(1, "z1")]);
+    assert!(link.table().window.is_none(), "nothing to claim");
+    feed(
+        &mut b,
+        &[
+            zimo(1, ""),
+            offered_discard(1, "p6", &["p56-7"], &["p666+"], &[], 0),
+        ],
+    );
+    let w = link.table().window.expect("a claim");
+    assert_eq!(w.kind, WindowKind::Claim);
+    assert_eq!(
+        (w.chi, w.pon),
+        (vec!["p56-7".to_string()], vec!["p666+".to_string()])
+    );
+    feed(&mut b, &[offered_discard(3, "s1", &[], &[], &[], 3900)]);
+    assert!(link.table().window.expect("a ron").can_win);
+    feed(&mut b, &[zimo(0, "")]);
+    assert!(link.table().window.is_none(), "play moved on");
+}
+
+#[test]
+fn our_call_opens_the_discard_it_owes() {
+    let (mut b, link) = dealt();
+    feed(
+        &mut b,
+        &[
+            zimo(1, ""),
+            offered_discard(1, "p1", &["p1-23"], &[], &[], 0),
+            fulou(2, 1, "p1-23"),
+        ],
+    );
+    let w = link.table().window.expect("a discard owed");
+    assert_eq!(w.kind, WindowKind::Turn { drawn: None });
+}
+
+#[test]
+fn robbing_a_kan_or_a_kita_is_a_claim() {
+    let (mut b, link) = dealt();
+    feed(
+        &mut b,
+        &[push(
+            hub::ON_AN_GANG_ADD_GANG,
+            json!([null, 1, 5, "m555=5", win_offer(2000), TIMER]),
+        )],
+    );
+    assert!(link.table().window.expect("chankan").can_win);
+    feed(
+        &mut b,
+        &[push(
+            hub::ON_BABEI,
+            json!([null, 3, "z4", win_offer(0), TIMER]),
+        )],
+    );
+    assert!(
+        link.table().window.is_none(),
+        "a kita with no ron asks nothing"
+    );
+}
+
+#[test]
+fn a_zero_deadline_asks_nothing() {
+    let (mut b, link) = dealt();
+    feed(
+        &mut b,
+        &[push(
+            hub::ON_ZIMO,
+            json!([
+                null,
+                2,
+                "m1",
+                [],
+                [],
+                win_offer(0),
+                [1_700_000_000_000i64, 0, 0, 0]
+            ]),
+        )],
+    );
+    assert!(link.table().window.is_none());
+}
+
+#[test]
+fn the_clients_own_answer_marks_the_window() {
+    let (mut b, link) = dealt();
+    feed(&mut b, &[zimo(2, "m1")]);
+    let id = link.window_id().expect("our turn");
+    assert!(link.awaits(id));
+    b.parse(
+        Direction::Up,
+        &push(hub::SELECT_DAPAI, json!([2, "m1_", 0])),
+    );
+    assert!(!link.awaits(id), "answered");
+    assert_eq!(link.window_id(), Some(id), "open until the server moves on");
+}
+
+#[test]
+fn the_end_of_a_hand_or_game_closes_the_window() {
+    let (mut b, link) = dealt();
+    feed(
+        &mut b,
+        &[zimo(1, ""), offered_discard(1, "s1", &[], &[], &[], 3900)],
+    );
+    assert!(link.table().window.is_some());
+    feed(
+        &mut b,
+        &[push(
+            hub::ON_PINGJU,
+            json!([
+                null,
+                1,
+                [
+                    [null, 0, 0, "", null],
+                    [null, 1, 0, "", null],
+                    [null, 2, 0, "", null],
+                    [null, 3, 0, "", null]
+                ],
+                TIMER
+            ]),
+        )],
+    );
+    assert!(link.table().window.is_none());
+    feed(
+        &mut b,
+        &[push(
+            hub::ON_UPDATE_END_GAME_VOTE,
+            json!([null, 0, [0, 0, 0, 0]]),
+        )],
+    );
+    assert_eq!(link.table().seat, None, "no game, no seat");
+}
+
+#[test]
+fn a_vote_that_has_not_ended_the_game_leaves_the_window_open() {
+    let (mut b, link) = dealt();
+    feed(&mut b, &[zimo(2, "m1")]);
+    let id = link.window_id().expect("our turn");
+    feed(
+        &mut b,
+        &[
+            push(
+                hub::ON_END_GAME_VOTE_START,
+                json!([null, 0, 1_700_000_000_000i64, [0, null, null, null]]),
+            ),
+            push(
+                hub::ON_UPDATE_END_GAME_VOTE,
+                json!([null, null, [0, null, null, null]]),
+            ),
+        ],
+    );
+    assert_eq!(link.window_id(), Some(id), "still ours to answer");
+    assert_eq!(link.table().seat, Some(2));
+}
+
+#[test]
+fn a_reconnect_on_our_draw_reopens_our_turn() {
+    let (mut b, link) = linked();
+    let field = json!([0, 1, 0, [0, 0, 0, 0, 0], ["s1"], 40, null, "h", "s", false]);
+    let snap = snapshot(
+        2,
+        field,
+        &[
+            (0, 1, 35000, &"x1".repeat(13), &["m1", "p9"], 0, &[]),
+            (1, 2, 35000, "m1p24468s1346z255p0", &["s9_"], 0, &[]),
+            (
+                2,
+                0,
+                35000,
+                &("x1".repeat(13) + ",z4"),
+                &["z6", "z7"],
+                0,
+                &["z4"],
+            ),
+        ],
+    );
+    let mut body = hub::decode(&snap).unwrap().body;
+    body[5] = json!([null, 1, "p0", [], [], win_offer(0), TIMER]);
+    feed(&mut b, &[push(hub::ON_CHONGXIN_LIANJIE_CHENGGONG, body)]);
+    assert_eq!(link.table().seat, Some(1));
+    let w = link.table().window.expect("our draw is still to answer");
+    assert_eq!(
+        w.kind,
+        WindowKind::Turn {
+            drawn: Some("5pr".into())
+        }
+    );
 }

@@ -50,6 +50,10 @@ pub struct AutoplayContext {
     /// Majsoul mouse calibration: page input, the client's per-kyoku report
     /// and the session. See `autoplay::majsoul::calibration`.
     pub majsoul_mouse: crate::autoplay::majsoul::calibration::MouseFeed,
+    /// HoloMahjong: the decision window its bridge reads off the hub and the
+    /// channel its h2c relay splices our calls from. See
+    /// `autoplay::holomahjong::link`.
+    pub holo: crate::autoplay::holomahjong::link::SharedHoloLink,
 }
 
 impl AutoplayContext {

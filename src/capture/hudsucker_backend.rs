@@ -53,9 +53,9 @@ impl CaptureBackend for HudsuckerBackend {
             Some(ctx.mjai_bus),
             Some(ctx.notify_bus),
             self.force_close,
-            // Riichi City autoplay injects frames through the relay; other
-            // platforms ignore the channel (their autoplay clicks a page).
-            ctx.autoplay.as_ref().map(|a| a.inject.clone()),
+            // Riichi City and HoloMahjong autoplay send through the relays;
+            // the click platforms' slots go unused here (no page).
+            ctx.autoplay.clone(),
             shutdown_fut,
         )
         .await

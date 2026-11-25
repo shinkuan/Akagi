@@ -223,6 +223,10 @@ impl AutoplayManager {
         // model — neither can alter the chosen action. `opened_at` is kept
         // as the window's identity for the post-sleep staleness check.
         let planned_budget = self.ctx.time_budget.read().ok().and_then(|g| *g);
+        // HoloMahjong's decision window, offers and time included; read
+        // once so the plan and its budget describe the same window.
+        let holo_table =
+            (platform_kind == crate::config::Platform::HoloMahjong).then(|| self.ctx.holo.table());
         let probs = crate::autoplay::delay::probs::normalize_meta(resp.meta.as_ref());
 
         // The delay script lives at a fixed path next to the config file.
@@ -302,11 +306,22 @@ impl AutoplayManager {
 
         // Elapsed is read after the second opinion, so the model step it
         // took counts against the window like the bot's own inference.
-        let budget = planned_budget.map(|b| crate::autoplay::delay::BudgetSnapshot {
-            fixed_ms: b.fixed_ms,
-            add_ms: b.add_ms,
-            elapsed_ms: b.elapsed_ms(),
-        });
+        let budget = match holo_table.as_ref() {
+            Some(t) => t
+                .window
+                .as_ref()
+                .map(|w| crate::autoplay::delay::BudgetSnapshot {
+                    fixed_ms: w.base_ms,
+                    add_ms: w.bank_ms,
+                    elapsed_ms: u32::try_from(w.opened_at.elapsed().as_millis())
+                        .unwrap_or(u32::MAX),
+                }),
+            None => planned_budget.map(|b| crate::autoplay::delay::BudgetSnapshot {
+                fixed_ms: b.fixed_ms,
+                add_ms: b.add_ms,
+                elapsed_ms: b.elapsed_ms(),
+            }),
+        };
 
         let action_ctx = ActionContext {
             action: &resp.action,
@@ -326,10 +341,26 @@ impl AutoplayManager {
             tenhou: tenhou_state.as_ref(),
         };
 
+        // HoloMahjong sends the client's own hub call, off the plan loop
+        // like Riichi City's frames, gated on the window it answers.
+        if let Some(table) = holo_table {
+            match crate::autoplay::holomahjong::plan(&action_ctx, &table) {
+                Ok(Some(plan)) => {
+                    let link = self.ctx.holo.clone();
+                    let action = resp.action.clone();
+                    tauri::async_runtime::spawn(async move {
+                        execute_holo(plan, action, link).await;
+                    });
+                }
+                Ok(None) => {}
+                Err(reason) => warn!("autoplay: not sending {:?}: {reason}", resp.action),
+            }
+            return;
+        }
+
         let platform: &dyn PlatformAutoplay = match platform_kind {
             crate::config::Platform::Tenhou => &self.tenhou,
             crate::config::Platform::RiichiCity => &self.riichi,
-            crate::config::Platform::HoloMahjong => return,
             _ => &self.majsoul,
         };
 
@@ -1322,6 +1353,55 @@ async fn execute_riichi_frame(
         }
     } else {
         warn!("autoplay: {action:?} was never answered by the server — the action did not happen");
+    }
+}
+
+/// Floor on a HoloMahjong think: the client has to show the decision first.
+const HOLO_MIN_THINK_MS: u32 = 300;
+/// How soon the server answers our turn by moving play on.
+const HOLO_TURN_ANSWER: Duration = Duration::from_secs(3);
+
+/// Send one HoloMahjong decision: hold the think time from the window's
+/// opening (never past its deadline), then send if the window is still the
+/// one planned against and nobody answered it meanwhile — the client's own
+/// input included. The server answers by moving play on; a turn it leaves
+/// open was not taken.
+async fn execute_holo(
+    plan: crate::autoplay::holomahjong::HoloPlan,
+    action: MjaiEvent,
+    link: crate::autoplay::holomahjong::link::SharedHoloLink,
+) {
+    let target = plan.think_ms.min(plan.limit_ms).max(HOLO_MIN_THINK_MS);
+    let target = Duration::from_millis(u64::from(target));
+    let elapsed = plan.window.elapsed();
+    if elapsed < target {
+        tokio::time::sleep(target - elapsed).await;
+    }
+    if !link.awaits(plan.window) {
+        debug!("autoplay: dropping {action:?} — its window was answered or moved on");
+        return;
+    }
+    if !link.send(plan.message) {
+        warn!("autoplay: no battle connection to send {action:?} on — is capture running?");
+        return;
+    }
+    info!(
+        "autoplay: sent {action:?} {} ms into its window",
+        plan.window.elapsed().as_millis()
+    );
+    if !plan.turn {
+        // A claim stays open while other seats decide theirs.
+        return;
+    }
+    let deadline = Instant::now() + HOLO_TURN_ANSWER;
+    while link.window_id() == Some(plan.window) {
+        if Instant::now() >= deadline {
+            warn!(
+                "autoplay: the server has not taken {action:?}; it will act for us at the deadline"
+            );
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 

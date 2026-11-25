@@ -1,7 +1,8 @@
 # HoloMahjong bridge
 
-ホロじゃん / HoloMahjong (Aiming). 4- and 3-player, observe-only, MITM only —
-the game is a native Windows client.
+ホロじゃん / HoloMahjong (Aiming). 4- and 3-player, MITM only — the game is a
+native Windows client. Autoplay sends the client's own hub calls (see
+"Decision windows and our calls").
 
 ## Transport
 
@@ -108,10 +109,56 @@ snapshot's with this hand's riichi deposits undone. If no history reaches the
 snapshot exactly (a river tile or call left over, a tile count off), nothing
 is emitted and play resumes at the next deal.
 
+## Decision windows and our calls
+
+With autoplay wired (`with_link`), every broadcast that moves play also
+updates `autoplay::holomahjong::link`: it closes the open window, and one that
+asks something of us opens the next. A window is
+
+- **a turn** — our `ZimoEvent` (offers: closed/added kans, kita, tsumo), our
+  `FulouEvent` (the discard owed after a call), or a reconnect snapshot whose
+  `[5]` is our draw;
+- **a claim** — another seat's `DapaiEvent` offering chi/pon/open kan or ron,
+  `AnGangAddGangEvent` offering a robbed kan, `BabeiEvent` offering ron on a
+  kita.
+
+Each carries `ResponseTimeOutStruct` `[server_time, deadline, base, bank]`; a
+zero deadline asks nothing (another seat's draw, our own discard). The window
+keeps the offers verbatim, the base and bank times, and whether the client has
+answered it already: any `Select*` going up marks it, ours or the client's.
+
+`build.rs` turns an mjai decision into the call the client itself makes for it
+— fire-and-forget `[method, body]`, byte for byte (MessagePack-CSharp writes
+the method id as the smallest int and bodies as positional arrays):
+
+| Decision | Call | Body |
+|---|---|---|
+| discard, riichi | `SelectDapai` | `[seat, tile, riichi_type]` |
+| chi, pon, open kan | `SelectFulou` | `[nil, meld]` |
+| closed / added kan | `SelectAnGangAddGang` | `[nil, meld]` |
+| tsumo, ron | `SelectHule` | `[nil, "-"]` |
+| kita | `SelectBabei` | `[seat, tile]` |
+| nine-terminal abort | `SelectDaopai` | `["-"]` |
+| pass | `SelectActionSkip` | `[]` |
+
+`seat` is the wire seat. A discard of the drawn tile carries `_` when the bot
+says tsumogiri or no other copy is held — the server's list of legal discards
+has only `"m3_"` then. Melds and kita tiles are never composed: the one offer
+made of the decision's tiles is sent back as it came, and a decision with no
+matching offer is refused. Riichi is sent as type 1 (normal).
+
+Checked against real games (local replay, not in the repo): every call the
+client sent itself went out while the bridge had a window of the right kind
+open, and `build.rs` makes the same bytes for it.
+
 ## Limitations
 
 - Compressed gRPC messages are skipped (none observed).
-- No autoplay.
+- A double riichi has not been seen sent; it goes out as type 1 like any
+  other, on the assumption that the server works out the double itself.
+- After a seat's time runs out, the server plays for it until the client sends
+  `ResumeControl`. Autoplay does not send that; it stays within the deadline
+  instead.
 
 ## Shareable frames
 

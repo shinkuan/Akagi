@@ -19,7 +19,7 @@ Tunneling that deadlocks. hudsucker's `process_connect` answers `200` and then b
 Tunneling it *correctly* is not an option either — libcurl's `socketpair()` emulation verifies that the address it accepted matches its connecting socket's local address, which a proxied hop breaks. So `handle_request` returns `403` immediately, which short-circuits hudsucker's `proxy()` before that blocking read is reached.
 
 The refusal also pushes a **sticky `warn` toast** (id `proxy-loopback-connect`) onto `NotifyBus` — nobody opens the log while staring at a game that never finishes loading. `ProxyHandler` latches on the first refusal (`loopback_notified`), so the toast fires once even though a misconfigured redirector produces one refused CONNECT per socket the game opens; the log keeps every occurrence (first at `WARN`, the rest at `DEBUG`). `start_proxy` takes the bus as `Option<NotifyBus>` — `None` in "log only" mode. The user-facing fix is to exclude loopback in the redirector. Covered by `tests/proxy_loopback_connect.rs`.
-- `h2c.rs` — Cleartext HTTP/2 tunnels: `H2Tap`, a passive frame parser fed both directions that yields complete gRPC messages, and `relay`, which forwards every chunk before tapping it. See "Taken-over tunnels" below.
+- `h2c.rs` — Cleartext HTTP/2 tunnels: `H2Tap`, a passive frame parser fed both directions that yields complete gRPC messages, and `relay`, which forwards them a whole frame at a time and can splice messages of its own into a client stream (`Splice`). See "Taken-over tunnels" below.
 - `upstream.rs` — Custom hyper-rustls connector used for the proxy → server leg. Skips server-cert validation (`NoVerify`) on purpose so we can talk to CDN IPs whose default cert covers only DNS hostnames, matching the game client's own loose validation. Replaces what hudsucker's `with_rustls_connector` would have given us. See the module-level doc for the threat-model justification.
 
 ## CA Certificate
@@ -164,8 +164,8 @@ when that platform is selected `handle_request` answers every `CONNECT` itself
   can no longer be a split HTTP/2 preface, the server speaks first, or 3 s
   pass.
 - A tunnel that opens with the HTTP/2 client preface goes through
-  `h2c::relay`: bytes are forwarded first and tapped after, each side is
-  half-closed at its peer's EOF as `copy_bidirectional` does, and each complete
+  `h2c::relay`: bytes are forwarded a whole frame at a time and tapped, each
+  side is half-closed at its peer's EOF as `copy_bidirectional` does, and each complete
   gRPC message goes to the platform bridge, the binlog and the Inspector like
   a WebSocket frame. Request `:path`s are logged under
   `akagi::proxy::forward`; header values are not (they carry the bearer
@@ -174,6 +174,27 @@ when that platform is selected `handle_request` answers every `CONNECT` itself
 - Any other tunnel, TLS included, is relayed untouched with an
   `akagi_bypass` note on the timeline. Nothing is MITM'd for this platform,
   so the game does not need to trust the CA.
+
+### Splicing autoplay's calls
+
+With autoplay wired, every h2c relay subscribes to
+`autoplay::holomahjong::link`'s channel through an `h2c::Splice`. The relay
+whose client most recently opened `/IMahjongHub/Connect` claims the link and is
+the only one that writes; it releases it when it closes. A message goes on that
+stream as one DATA frame:
+
+- between whole frames — each direction is cut at frame boundaries — and never
+  inside one of the client's gRPC messages or between a header block's frames;
+- only within the window the server granted (connection and stream, tracked
+  from SETTINGS, WINDOW_UPDATE and the client's DATA). The bytes are owed back:
+  they are taken out of the server's next WINDOW_UPDATEs before those reach the
+  client (shrunk, or dropped when fully owed), so the client never counts on
+  window that is gone.
+
+A message that cannot go out within 2 s, or on a connection the tap no longer
+follows, is dropped with a warning rather than sent late. Each one that goes
+out reaches the bridge as an uplink message and the Inspector as
+`<method> (injected)`.
 
 The loopback and telemetry `CONNECT` refusals above still run first.
 `stop_capture` ends taken-over tunnels through the same `force_close` signal

@@ -32,6 +32,20 @@ pub fn tile_of(suit: char, digit: u8) -> Option<Tile> {
     }
 }
 
+/// The wire notation of an mjai tile: `"5mr"` → `"m0"`, `"P"` → `"z5"`.
+pub fn to_wire(t: &str) -> Option<String> {
+    if let Some(i) = HONORS.iter().position(|h| *h == t) {
+        return Some(format!("z{}", i + 1));
+    }
+    match t.as_bytes() {
+        [b'5', s @ (b'm' | b'p' | b's'), b'r'] => Some(format!("{}0", *s as char)),
+        [d @ b'1'..=b'9', s @ (b'm' | b'p' | b's')] => {
+            Some(format!("{}{}", *s as char, *d as char))
+        }
+        _ => None,
+    }
+}
+
 /// A bare tile such as `"m3"` or `"z7"`.
 pub fn tile(s: &str) -> Option<Tile> {
     let mut chars = s.chars();

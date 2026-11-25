@@ -1,16 +1,18 @@
 # `src/autoplay/` — bot decisions → actions in the real client
 
 Translates the bot's chosen mjai action into something the game client
-actually does, dispatched over CDP. Only active when
-`autoplay.enabled = true` **and** the chromium capture backend is running
-(the MITM path has no page handle at all).
+actually does. Only active when `autoplay.enabled = true`; the click routes
+also need the chromium capture backend (the MITM path has no page handle at
+all), the protocol routes the MITM proxy.
 
-Two very different routes in, decided by `platform.kind`:
+The route is decided by `platform.kind`:
 
 | Platform | Route | Why |
 |---|---|---|
 | Mahjong Soul | synthesised mouse input at reconstructed coordinates, moved the way the user's own calibrated habits say (`majsoul/cursor/`, `majsoul/calibration/`) | The client renders to a canvas and exposes nothing to script. It also reports, per kyoku, how many frames its cursor moved. |
 | Tenhou | the client's own DOM buttons and discard handler | The client is HTML and script, so its input path can be driven directly. |
+| Riichi City | the client's own frames, injected on its WebSocket by the MITM proxy | A native client: no page to drive. |
+| HoloMahjong | the client's own hub calls, spliced onto its gRPC stream by the MITM proxy | A native client, and it already follows actions it did not send. |
 
 Almost everything intricate in this module — coordinate tables, candidate
 row index arithmetic, click verification, retries, page reloads — exists
@@ -32,7 +34,9 @@ bot answers is the most obvious tell there is.
 | `delay/` | The pre-click "thinking time" model. See below. |
 | `advisor.rs` | A second opinion for delay scripts: the built-in bot (`native_bot`, which imitates people) follows the game on the same events and says what share of players would make the active bot's move. 4p and 3p (its sanma model). Never consulted for the action; any failure turns it off for the game. |
 | `table.rs` | Two facts read off the table for a discard, for delay scripts: whether the tile is *loose* in the hand (no second copy, nothing of its suit within two — by its place, not its kind) and whether it is *safe* against every riichi (each has discarded it). |
-| `context.rs` | `AutoplayContext` — shared slots between the capture backend, the bridge and the manager (`page`, `canvas_rect`, `time_budget`, `input_watch`, `tenhou_state`, `majsoul_mouse`). |
+| `context.rs` | `AutoplayContext` — shared slots between the capture backend, the bridge and the manager (`page`, `canvas_rect`, `time_budget`, `input_watch`, `tenhou_state`, `inject`, `majsoul_mouse`, `holo`). |
+| `holomahjong/` | The HoloMahjong planner (`plan` → `HoloPlan`) and `link.rs`, the window the bridge keeps plus the channel the h2c relay splices from. See below. |
+| `wire.rs` | What the protocol routes share: which replies are ours to send, and the think time before one. |
 | `cdp_input.rs` | chromiumoxide wrappers: hover → press → hold → release click sequence (optionally with a mid-press cursor jiggle for retries), canvas rect query, and the Tenhou route's DOM helpers — action-button selectors, the readiness probe, and the call into the injected discard handler. |
 | `verify.rs` | Majsoul only. `InputWatch` — counts the client's own uplink input commands (`inputOperation` / `inputChiPengGang`, bumped by the Majsoul bridge). The manager takes a ticket before pressing; if the count never moves, the click was swallowed and the plan is pressed again (bounded by `click_retries`, gated on the decision window still being live). Repeated dead decisions trigger a page reload (`reload_after_failures`), which reconnects into the hand via the bridge's `GameRestore` path. |
 
@@ -169,6 +173,32 @@ named.
   chi where both the plain and red copy are held, two kans at once. The
   mapping is read off the client's builder rather than guessed, but no live
   hand has offered one yet.
+
+## The HoloMahjong route (`holomahjong/`)
+
+The battle server tells the client what it is waiting on: each draw of ours,
+each discard we may claim, comes with the calls it will accept and the time it
+allows. The bridge keeps that as the open window in `holomahjong::link`; see
+`src/bridge/holomahjong/README.md` → "Decision windows and our calls" for what
+opens and closes one, and for the calls themselves.
+
+`plan` answers the open window only, and only with what it allows: the reply
+must be ours, the window open and not answered by the client, and
+`bridge::holomahjong::build` must find the call among the offers. The think
+time is the shared delay model's, given the window's base and bank time as its
+budget. The manager runs the plan off its loop (`execute_holo`): it holds the
+think from the window's opening — at least 300 ms, never within 1.5 s of the
+deadline — and sends only if the window is still the one planned against and
+still unanswered, so a click of the user's own wins. The relay holding the hub
+stream puts the call on the wire (`proxy/README.md` → "Splicing autoplay's
+calls").
+
+Nothing is drawn on the client's side, and nothing needs to be: the client
+follows the server's broadcasts for our seat the same way it follows the
+server playing for a seat whose time ran out. Our turn is answered by the
+server at once, so a turn still open 3 s after sending is logged as not taken
+(the server then acts for us at its deadline). A claim stays open while other
+seats decide theirs and is not checked.
 
 ## The delay model (`delay/`)
 
