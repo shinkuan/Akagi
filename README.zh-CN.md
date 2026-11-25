@@ -144,7 +144,7 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 | **雀魂（Mahjong Soul / Majsoul）** | &check; | &check; | &check; |
 | **天凤（Tenhou）** | &check; | &check; | &check; |
 | **Riichi City** | &check; | &check; | &cross; |
-| **ホロじゃん (HoloMahjong)** | &check; | &cross; | &cross; |
+| **ホロじゃん (HoloMahjong)** | &check; | &check; | &cross; |
 | **Amatsuki** | （计划中） | （计划中） | &cross; |
 
 ---

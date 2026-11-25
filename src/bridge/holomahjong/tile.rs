@@ -93,14 +93,13 @@ pub enum Source {
 }
 
 impl Source {
-    /// The discarder's seat for a caller at `seat` (of `n` seats).
-    pub fn seat(self, seat: u8, n: u8) -> u8 {
-        let offset = match self {
+    /// Places after the caller in turn order, at a 4-player table.
+    pub fn offset(self, n: u8) -> u8 {
+        match self {
             Source::Next => 1,
-            Source::Opposite => 2,
+            Source::Opposite => 2 % n,
             Source::Previous => n - 1,
-        };
-        (seat + offset) % n
+        }
     }
 }
 
@@ -361,10 +360,10 @@ mod tests {
     }
 
     #[test]
-    fn called_from_resolves_to_the_discarder_seat() {
-        assert_eq!(Source::Next.seat(3, 4), 0);
-        assert_eq!(Source::Opposite.seat(1, 4), 3);
-        assert_eq!(Source::Previous.seat(0, 4), 3);
-        assert_eq!(Source::Previous.seat(0, 3), 2);
+    fn marks_are_turn_order_offsets() {
+        assert_eq!(Source::Next.offset(4), 1);
+        assert_eq!(Source::Opposite.offset(4), 2);
+        assert_eq!(Source::Previous.offset(4), 3);
+        assert_eq!(Source::Previous.offset(3), 2);
     }
 }

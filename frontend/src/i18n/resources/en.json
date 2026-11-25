@@ -845,7 +845,7 @@
     "riichi_city": "Riichi City",
     "riichi_city_desc": "Native client — MITM only · yonma + sanma",
     "holo_mahjong": "HoloMahjong",
-    "holo_mahjong_desc": "Native client — MITM only · yonma · observe-only",
+    "holo_mahjong_desc": "Native client — MITM only · yonma + sanma · observe-only",
     "mjai": "mjai"
   },
   "updates": {

@@ -267,7 +267,7 @@ fn seats_are_rotated_so_the_first_dealer_is_actor_zero() {
             qipai(
                 1,
                 field(0, 1, 2, 1, "z1"),
-                [2, 3, 1, 0],
+                [1, 2, 3, 0],
                 [20000, 30000, 26000, 23000],
                 MY_DEAL,
             ),
@@ -955,4 +955,200 @@ fn a_rejected_end_vote_changes_nothing() {
     )
     .is_empty());
     assert_eq!(feed(&mut b, &[zimo(2, "m1")]).len(), 1);
+}
+
+fn kaiju_seats(my_seat: u8, seats: &[u8]) -> Vec<u8> {
+    let players: Vec<JsonValue> = seats
+        .iter()
+        .map(|&seat| {
+            let me = seat == my_seat;
+            json!([0, [seat, null, ["", format!("Player{seat}"), 1], true, !me]])
+        })
+        .collect();
+    push(
+        hub::ON_KAIJU,
+        json!([
+            null,
+            [10000, null],
+            my_seat,
+            [null, seats.len(), 35000, 40000],
+            TIMER,
+            players,
+            {},
+            [0, 0, 0, [0, 0, 0, 0, 0], null, 108]
+        ]),
+    )
+}
+
+/// `players` is `(seat, wind, score)`; our hand goes to `me`.
+fn qipai_seats(me: u8, field: JsonValue, players: &[(u8, u8, i32)], my_hand: &str) -> Vec<u8> {
+    let players: Vec<JsonValue> = players
+        .iter()
+        .map(|&(seat, wind, score)| {
+            let hand = if seat == me {
+                my_hand.to_string()
+            } else {
+                "x1".repeat(13)
+            };
+            json!([null, seat, wind, score, null, hand, [], 0, 0, []])
+        })
+        .collect();
+    push(
+        hub::ON_QIPAI,
+        json!([null, me, 1_700_000_000_000i64, null, field, players, TIMER]),
+    )
+}
+
+#[test]
+fn a_three_player_hand_with_kita_a_pon_and_a_draw() {
+    let mut b = bridge();
+    let ev = feed(
+        &mut b,
+        &[
+            kaiju_seats(1, &[0, 1, 2]),
+            qipai_seats(
+                1,
+                field(0, 0, 0, 0, "m1"),
+                &[(0, 0, 35000), (1, 1, 35000), (2, 2, 35000)],
+                MY_DEAL,
+            ),
+            zimo(0, ""),
+            push(hub::ON_BABEI, json!([null, 0, "z4", null, TIMER])),
+            zimo(0, ""),
+            dapai(0, "p1"),
+            // The mark is not read: the pon takes seat 0's discard.
+            fulou(2, 2, "p111="),
+            dapai(2, "s9"),
+            push(
+                hub::ON_PINGJU,
+                json!([
+                    null,
+                    1,
+                    [
+                        [null, 0, -1000, "", null],
+                        [null, 1, 2000, "p123", null],
+                        [null, 2, -1000, "", null]
+                    ],
+                    TIMER
+                ]),
+            ),
+        ],
+    );
+    assert_eq!(
+        ev[0],
+        json!({"type": "start_game", "names": ["Player0", "Player1", "Player2"], "id": 1, "num_players": 3})
+    );
+    assert_eq!(ev[1]["num_players"], json!(3));
+    assert_eq!(ev[1]["scores"], json!([35000, 35000, 35000]));
+    assert_eq!(ev[1]["tehais"].as_array().unwrap().len(), 3);
+    assert_eq!(ev[1]["tehais"][1][0], json!("2s"));
+    assert_eq!(ev[3], json!({"type": "kita", "actor": 0, "pai": "N"}));
+    assert_eq!(
+        ev[6],
+        json!({"type": "pon", "actor": 2, "target": 0, "pai": "1p", "consumed": ["1p", "1p"]})
+    );
+    assert_eq!(
+        ev[8],
+        json!({"type": "ryukyoku", "deltas": [-1000, 2000, -1000]})
+    );
+    assert_eq!(ev[9], json!({"type": "end_kyoku"}));
+}
+
+/// Seat numbers need not be 0..n: actors come from the winds, so a
+/// 3-player table numbered like a 4-seat one with a gap still maps right.
+#[test]
+fn three_player_seats_follow_winds_whatever_their_numbers() {
+    let mut b = bridge();
+    // Second hand: seat 1 deals, then seat 3, then seat 0; seat 0 dealt first.
+    let ev = feed(
+        &mut b,
+        &[
+            qipai_seats(
+                3,
+                field(0, 1, 0, 0, "m1"),
+                &[(0, 2, 30000), (1, 0, 40000), (3, 1, 35000)],
+                MY_DEAL,
+            ),
+            zimo(3, ""),
+            dapai(3, "m9"),
+            fulou(0, 2, "m999-"),
+        ],
+    );
+    assert_eq!(ev[0]["num_players"], json!(3));
+    assert_eq!(ev[0]["id"], json!(2));
+    assert_eq!(ev[1]["oya"], json!(1));
+    assert_eq!(ev[1]["scores"], json!([30000, 40000, 35000]));
+    assert_eq!(ev[2], json!({"type": "tsumo", "actor": 2, "pai": "?"}));
+    assert_eq!(
+        ev[4],
+        json!({"type": "pon", "actor": 0, "target": 2, "pai": "9m", "consumed": ["9m", "9m"]})
+    );
+}
+
+#[test]
+fn a_three_player_result_ranks_three_actors() {
+    let mut b = bridge();
+    feed(
+        &mut b,
+        &[
+            kaiju_seats(0, &[0, 1, 2]),
+            qipai_seats(
+                0,
+                field(0, 0, 0, 0, "m1"),
+                &[(0, 0, 35000), (1, 1, 35000), (2, 2, 35000)],
+                MY_DEAL,
+            ),
+        ],
+    );
+    let player =
+        |seat: u8, rank: u8, score: i32| json!([null, seat, rank, score, "0.0", null, null, null]);
+    let r = b.parse(
+        Direction::Down,
+        &push(
+            hub::ON_JIEJU,
+            json!([
+                null,
+                [
+                    player(0, 2, 36000),
+                    player(1, 1, 50000),
+                    player(2, 3, 19000)
+                ],
+                [0, 0, 0, 0],
+                []
+            ]),
+        ),
+    );
+    match &r.events[..] {
+        [MjaiEvent::EndGame {
+            final_scores,
+            final_ranks,
+            ..
+        }] => {
+            assert_eq!(final_scores.as_deref(), Some(&[36000, 50000, 19000][..]));
+            assert_eq!(final_ranks.as_deref(), Some(&[2, 1, 3][..]));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// The call's target is whoever made the discard, even where the direction
+/// mark would say otherwise.
+#[test]
+fn a_call_targets_the_last_discarder() {
+    let mut b = bridge();
+    feed(
+        &mut b,
+        &[
+            kaiju(0),
+            qipai(
+                0,
+                field(0, 0, 0, 0, "m1"),
+                [0, 1, 2, 3],
+                [25000; 4],
+                MY_DEAL,
+            ),
+        ],
+    );
+    let ev = feed(&mut b, &[dapai(3, "m1"), fulou(1, 2, "m111+")]);
+    assert_eq!(ev[1]["target"], json!(3));
 }

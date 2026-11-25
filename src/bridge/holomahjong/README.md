@@ -1,7 +1,7 @@
 # HoloMahjong bridge
 
-ホロじゃん / HoloMahjong (Aiming). 4-player, observe-only, MITM only — the
-game is a native Windows client.
+ホロじゃん / HoloMahjong (Aiming). 4- and 3-player, observe-only, MITM only —
+the game is a native Windows client.
 
 ## Transport
 
@@ -43,6 +43,7 @@ start at key 0. Each handler in `mod.rs` documents the layout it reads.
 | `OnFulou` | `chi` / `pon` / `daiminkan` |
 | `OnAnGangAddGang` | `ankan` / `kakan` |
 | `OnAddBaopai` | `dora` |
+| `OnBabei` (3-player) | `kita` |
 | `OnLizhi` | `reach_accepted` |
 | `OnHule` | `hora` per winner + `end_kyoku` |
 | `OnPingju` | `ryukyoku` + `end_kyoku` |
@@ -60,17 +61,22 @@ plus a digit, `0` for the red five; a discard may carry `_` (tsumogiri) and `*`
 
 ## Seats
 
-Wire seats are fixed for the game. mjai actor 0 is the first dealer, so seats
-are rotated by that seat, recovered from every deal as `dealer seat − hand
-number` rather than assumed to be 0. `PingjuEvent` reports players by **wind**;
-the deal's wind→seat table resolves them. Win deltas include riichi sticks and
+Wire seats are fixed for the game, but nothing assumes how they are numbered
+(contiguous, or a 4-seat table with a gap at 3-player). mjai actor 0 is the
+first dealer and actors follow turn order, and so do winds, so every deal maps
+a seat to `(its wind + hand number) mod players`. `PingjuEvent` reports
+players by **wind**, which the same formula resolves.
+
+The target of a chi, pon or open kan is the seat that made the discard being
+called. The meld string's direction mark (`+ = -`) is only a fallback for a
+call whose discard we did not see: at a 3-player table it is not known whether
+the server counts it in turn order or by 4-seat geometry. Win deltas include riichi sticks and
 honba and map straight onto `hora.deltas`; with several winners the wire only
 has the combined result, so each `hora` gets its own hand value (`Defen`) and
 the first also takes what is left over (honba and riichi sticks).
 
 ## Limitations
 
-- 3-player games are recognized and ignored.
 - A reconnect restores seat and names from `OnZhunbeiChonglian`, but the
   snapshot of the hand in progress (`OnChongxinLianjieChenggong`) is not
   replayed: events resume at the next deal.

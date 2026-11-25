@@ -155,7 +155,7 @@ https://github.com/user-attachments/assets/d5bc6ff6-6560-4365-ae55-660c9a522790
 | **Mahjong Soul (Majsoul)** | &check; | &check; | &check; |
 | **Tenhou** | &check; | &check; | &check; |
 | **Riichi City** | &check; | &check; | &check; |
-| **HoloMahjong (ホロじゃん)** | &check; | &cross; | &cross; |
+| **HoloMahjong (ホロじゃん)** | &check; | &check; | &cross; |
 | **Amatsuki** | (planned) | (planned) | &cross; |
 
 ---
