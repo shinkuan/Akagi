@@ -121,8 +121,11 @@ impl HoloMahjongBridge {
     fn on_kaiju(&mut self, b: &JsonValue) -> Option<Vec<MjaiEvent>> {
         let mut events = Vec::new();
         if self.game_open {
-            // A game that ended without a result (the end-of-game vote).
-            events.push(end_game(GameEndReason::Terminated));
+            // A game that ended without a result. Logged here: the reset
+            // below drops that game's mjai log.
+            let end = end_game(GameEndReason::Terminated);
+            self.write_mjai(std::slice::from_ref(&end));
+            events.push(end);
         }
         let n = b
             .get(3)
@@ -166,67 +169,83 @@ impl HoloMahjongBridge {
             return Some(Vec::new());
         }
         let n = self.num_players;
+        // Read and check the whole deal before touching any state, so a deal
+        // we cannot read leaves the bridge exactly as it was.
         let field = b.get(4)?;
-        let round_wind = field.get(0)?.as_u64()? as usize;
-        let hand_no = field.get(1)?.as_u64()? as u8;
-        let honba = field.get(2)?.as_u64()? as u8;
+        let bakaze = BAKAZE
+            .get(usize::try_from(field.get(0)?.as_u64()?).ok()?)?
+            .to_string();
+        let hand_no = u8::try_from(field.get(1)?.as_u64()?)
+            .ok()
+            .filter(|&h| h < n)?;
+        let honba = u8::try_from(field.get(2)?.as_u64()?).ok()?;
         let kyotaku = kyotaku(field.get(3)?)?;
         let dora_marker = tile::tile(field.get(4)?.get(0)?.as_str()?)?;
-        let players = b.get(5)?.as_array()?;
-        let dealer = players
-            .iter()
-            .find(|p| p.get(2).and_then(JsonValue::as_u64) == Some(0))
-            .and_then(|p| seat_of(p.get(1)?))?;
-        let me = seat_of(b.get(1)?)?;
-        self.my_seat.get_or_insert(me);
-        let mut seat_by_wind = vec![0; n as usize];
-        for p in players {
-            let wind = p.get(2)?.as_u64()? as usize;
-            *seat_by_wind.get_mut(wind)? = seat_of(p.get(1)?)?;
+        let me = match self.my_seat {
+            Some(seat) => seat,
+            None => seat_of(b.get(1)?)?,
+        };
+        let mut seat_by_wind: Vec<Option<u8>> = vec![None; n as usize];
+        let mut seat_scores: Vec<Option<i32>> = vec![None; n as usize];
+        let mut my_hand = None;
+        for p in b.get(5)?.as_array()? {
+            let seat = seat_of(p.get(1)?).filter(|&s| s < n)?;
+            let wind = usize::try_from(p.get(2)?.as_u64()?).ok()?;
+            if seat_by_wind.get_mut(wind)?.replace(seat).is_some() {
+                return None;
+            }
+            seat_scores[seat as usize] = Some(i32::try_from(p.get(3)?.as_i64()?).ok()?);
+            if seat == me {
+                my_hand = Some(tile::hand(p.get(5)?.as_str()?).filter(|h| h.len() == HAND_SIZE)?);
+            }
         }
-        self.seat_by_wind = seat_by_wind;
-        self.qijia = Some((dealer + n - hand_no % n) % n);
+        let seat_by_wind: Vec<u8> = seat_by_wind.into_iter().collect::<Option<_>>()?;
+        let my_hand = my_hand?;
+        let dealer = seat_by_wind[0];
+        let qijia = (dealer + n - hand_no) % n;
+        let actor = |seat: u8| (seat + n - qijia) % n;
+        let mut scores = vec![0; n as usize];
+        for (seat, score) in seat_scores.into_iter().enumerate() {
+            scores[actor(seat as u8) as usize] = score?;
+        }
+        let mut tehais = vec![vec!["?".to_string(); HAND_SIZE]; n as usize];
+        tehais[actor(me) as usize] = my_hand;
 
         let mut events = Vec::new();
+        if self.kyoku_open {
+            // The last hand ended through something we could not read.
+            events.push(MjaiEvent::EndKyoku);
+        }
+        self.my_seat = Some(me);
+        self.qijia = Some(qijia);
+        self.seat_by_wind = seat_by_wind;
         if !self.game_open {
             self.rotate_mjai_log();
             let names = (0..n)
                 .map(|a| {
-                    let seat = ((a + self.qijia?) % n) as usize;
-                    Some(self.names.get(seat).cloned().unwrap_or_default())
+                    self.names
+                        .get(((a + qijia) % n) as usize)
+                        .cloned()
+                        .unwrap_or_default()
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect();
             events.push(MjaiEvent::StartGame {
                 names,
                 kyoku_first: None,
                 aka_flag: None,
-                id: self.actor(self.my_seat?),
+                id: Some(actor(me)),
                 num_players: n,
                 game_meta: None,
             });
             self.game_open = true;
         }
-        let mut scores = vec![0; n as usize];
-        let mut tehais = vec![vec!["?".to_string(); HAND_SIZE]; n as usize];
-        for p in players {
-            let seat = seat_of(p.get(1)?)?;
-            let a = self.actor(seat)? as usize;
-            scores[a] = i32::try_from(p.get(3)?.as_i64()?).ok()?;
-            if Some(seat) == self.my_seat {
-                let hand = tile::hand(p.get(5)?.as_str()?)?;
-                if hand.len() != HAND_SIZE {
-                    return None;
-                }
-                tehais[a] = hand;
-            }
-        }
         events.push(MjaiEvent::StartKyoku {
-            bakaze: BAKAZE.get(round_wind)?.to_string(),
+            bakaze,
             dora_marker,
             kyoku: hand_no + 1,
             honba,
             kyotaku,
-            oya: self.actor(dealer)?,
+            oya: actor(dealer),
             scores,
             tehais,
             num_players: n,
@@ -327,35 +346,57 @@ impl HoloMahjongBridge {
     /// ura_dora]` (`dealt_in_seat` nil on a tsumo) and scores `[[seat, delta,
     /// pao, chip], …]`, riichi sticks and honba included.
     fn on_hule(&mut self, b: &JsonValue) -> Option<Vec<MjaiEvent>> {
-        let deltas = self.by_actor(b.get(2)?, 0, 1)?;
-        let mut events = Vec::new();
-        for (k, h) in b.get(1)?.as_array()?.iter().enumerate() {
-            let ura: Vec<Tile> = h
-                .get(11)
-                .and_then(JsonValue::as_array)
-                .map(|v| v.iter().filter_map(|t| tile::tile(t.as_str()?)).collect())
-                .unwrap_or_default();
+        let n = self.num_players as usize;
+        let combined = self.by_actor(b.get(2)?, 0, 1)?;
+        let mut wins = Vec::new();
+        for h in b.get(1)?.as_array()? {
             let winner = seat_of(h.get(0)?)?;
             let dealt_in = match h.get(1)? {
                 JsonValue::Null => winner,
                 v => seat_of(v)?,
             };
-            events.push(MjaiEvent::Hora {
-                actor: self.actor(winner)?,
-                target: self.actor(dealt_in)?,
-                // The wire only carries the combined result; later winners
-                // get zeros so the per-hand total stays right.
-                deltas: Some(if k == 0 {
-                    deltas.clone()
-                } else {
-                    vec![0; deltas.len()]
-                }),
-                ura_markers: (!ura.is_empty()).then_some(ura),
-            });
+            let points = i32::try_from(h.get(8).and_then(JsonValue::as_i64).unwrap_or(0)).ok()?;
+            let ura: Vec<Tile> = h
+                .get(11)
+                .and_then(JsonValue::as_array)
+                .map(|v| v.iter().filter_map(|t| tile::tile(t.as_str()?)).collect())
+                .unwrap_or_default();
+            wins.push((self.actor(winner)?, self.actor(dealt_in)?, points, ura));
         }
-        if events.is_empty() {
+        if wins.is_empty() {
             return None;
         }
+        // The wire carries one combined result. With several winners, give
+        // each its own hand value and the first whatever is left over (honba
+        // and riichi sticks), so every hora is plausible and the total exact.
+        let mut deltas: Vec<Vec<i32>> = if wins.len() == 1 {
+            vec![combined.clone()]
+        } else {
+            wins.iter()
+                .map(|&(actor, target, points, _)| {
+                    let mut d = vec![0; n];
+                    d[actor as usize] += points;
+                    d[target as usize] -= points;
+                    d
+                })
+                .collect()
+        };
+        if wins.len() > 1 {
+            for a in 0..n {
+                let rest = combined[a] - deltas.iter().map(|d| d[a]).sum::<i32>();
+                deltas[0][a] += rest;
+            }
+        }
+        let mut events: Vec<MjaiEvent> = wins
+            .into_iter()
+            .zip(deltas)
+            .map(|((actor, target, _, ura), d)| MjaiEvent::Hora {
+                actor,
+                target,
+                deltas: Some(d),
+                ura_markers: (!ura.is_empty()).then_some(ura),
+            })
+            .collect();
         events.push(MjaiEvent::EndKyoku);
         self.kyoku_open = false;
         Some(events)
@@ -447,8 +488,11 @@ impl HoloMahjongBridge {
     }
 }
 
+/// A seat index; anything past a 4-player table is rejected.
 fn seat_of(v: &JsonValue) -> Option<u8> {
-    v.as_u64().and_then(|s| u8::try_from(s).ok())
+    v.as_u64()
+        .and_then(|s| u8::try_from(s).ok())
+        .filter(|&s| s < 4)
 }
 
 /// mjai `kyotaku` (1000-point sticks) from LizhiBangStruct, which counts
@@ -456,11 +500,9 @@ fn seat_of(v: &JsonValue) -> Option<u8> {
 fn kyotaku(sticks: &JsonValue) -> Option<u8> {
     const VALUES: [u64; 5] = [100, 500, 1000, 5000, 10000];
     let counts = sticks.as_array()?;
-    let points = VALUES
-        .iter()
-        .zip(counts)
-        .map(|(v, c)| c.as_u64().map(|c| c * v))
-        .sum::<Option<u64>>()?;
+    let points = VALUES.iter().zip(counts).try_fold(0u64, |sum, (v, c)| {
+        sum.checked_add(c.as_u64()?.checked_mul(*v)?)
+    })?;
     u8::try_from(points / 1000).ok()
 }
 

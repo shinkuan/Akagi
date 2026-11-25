@@ -22,6 +22,7 @@ pub const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 const FRAME_HEADER_LEN: usize = 9;
 const DATA: u8 = 0x0;
 const HEADERS: u8 = 0x1;
+const RST_STREAM: u8 = 0x3;
 const PUSH_PROMISE: u8 = 0x5;
 const CONTINUATION: u8 = 0x9;
 const FLAG_END_STREAM: u8 = 0x1;
@@ -32,6 +33,8 @@ const FLAG_PRIORITY: u8 = 0x20;
 const GRPC_PREFIX_LEN: usize = 5;
 /// A stream buffering more than this without completing a message is not gRPC.
 const MAX_MESSAGE_LEN: usize = 16 * 1024 * 1024;
+/// Ceiling on a header block spread over CONTINUATION frames.
+const MAX_HEADER_BLOCK: usize = 1024 * 1024;
 
 /// Whether a tunnel's first client bytes open an h2c connection. Needs at
 /// least the 4 bytes hudsucker itself peeks at.
@@ -133,24 +136,27 @@ impl H2Tap {
             side.buf.drain(..PREFACE.len());
             side.need_preface = false;
         }
+        // Frames are parsed from a cursor and the buffer drained once, so a
+        // read holding many small frames stays linear.
+        let mut pos = 0;
         loop {
             let side = match dir {
                 Direction::Up => &mut self.up,
                 Direction::Down => &mut self.down,
             };
-            if side.dead || side.buf.len() < FRAME_HEADER_LEN {
+            let avail = &side.buf[pos..];
+            if avail.len() < FRAME_HEADER_LEN {
                 break;
             }
-            let len = u32::from_be_bytes([0, side.buf[0], side.buf[1], side.buf[2]]) as usize;
-            if side.buf.len() < FRAME_HEADER_LEN + len {
+            let len = u32::from_be_bytes([0, avail[0], avail[1], avail[2]]) as usize;
+            if avail.len() < FRAME_HEADER_LEN + len {
                 break;
             }
-            let ftype = side.buf[3];
-            let flags = side.buf[4];
-            let stream = u32::from_be_bytes([side.buf[5], side.buf[6], side.buf[7], side.buf[8]])
-                & 0x7FFF_FFFF;
-            let payload: Vec<u8> = side.buf[FRAME_HEADER_LEN..FRAME_HEADER_LEN + len].to_vec();
-            side.buf.drain(..FRAME_HEADER_LEN + len);
+            let ftype = avail[3];
+            let flags = avail[4];
+            let stream = u32::from_be_bytes([avail[5], avail[6], avail[7], avail[8]]) & 0x7FFF_FFFF;
+            let payload: Vec<u8> = avail[FRAME_HEADER_LEN..FRAME_HEADER_LEN + len].to_vec();
+            pos += FRAME_HEADER_LEN + len;
             if let Err(reason) = self.frame(dir, ftype, flags, stream, &payload, &mut out) {
                 let side = match dir {
                     Direction::Up => &mut self.up,
@@ -159,6 +165,11 @@ impl H2Tap {
                 return desync(side, dir, &reason, out);
             }
         }
+        let side = match dir {
+            Direction::Up => &mut self.up,
+            Direction::Down => &mut self.down,
+        };
+        side.buf.drain(..pos);
         out
     }
 
@@ -205,7 +216,7 @@ impl H2Tap {
                     });
                 }
                 if flags & FLAG_END_STREAM != 0 {
-                    side.grpc.remove(&stream);
+                    self.end_stream(dir, stream);
                 }
             }
             HEADERS | PUSH_PROMISE => {
@@ -222,21 +233,46 @@ impl H2Tap {
                 } else {
                     side.block = Some((stream, frag.to_vec()));
                 }
+                if ftype == HEADERS && flags & FLAG_END_STREAM != 0 {
+                    self.end_stream(dir, stream);
+                }
             }
             CONTINUATION => {
                 let Some((_, mut block)) = side.block.take() else {
                     return Err("CONTINUATION without a header block".into());
                 };
                 block.extend_from_slice(payload);
+                if block.len() > MAX_HEADER_BLOCK {
+                    return Err(format!("header block over {MAX_HEADER_BLOCK} bytes"));
+                }
                 if flags & FLAG_END_HEADERS != 0 {
                     self.header_block(dir, stream, &block, out);
                 } else {
                     side.block = Some((stream, block));
                 }
             }
+            RST_STREAM => {
+                self.up.grpc.remove(&stream);
+                self.down.grpc.remove(&stream);
+                self.paths.remove(&stream);
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    /// One side finished a stream. The path is kept until the server's side
+    /// ends, since responses still need it.
+    fn end_stream(&mut self, dir: Direction, stream: u32) {
+        match dir {
+            Direction::Up => {
+                self.up.grpc.remove(&stream);
+            }
+            Direction::Down => {
+                self.down.grpc.remove(&stream);
+                self.paths.remove(&stream);
+            }
+        }
     }
 
     fn header_block(&mut self, dir: Direction, stream: u32, block: &[u8], out: &mut Vec<TapEvent>) {
@@ -297,6 +333,7 @@ fn desync(side: &mut Side, dir: Direction, reason: &str, mut out: Vec<TapEvent>)
     side.dead = true;
     side.buf.clear();
     side.grpc.clear();
+    side.block = None;
     out.push(TapEvent::Desync {
         dir,
         reason: reason.to_string(),
@@ -353,11 +390,9 @@ where
     let (sr, sw) = tokio::io::split(server);
     let up = pump(cr, sw, Direction::Up, tap.clone(), sink.clone());
     let down = pump(sr, cw, Direction::Down, tap, sink);
-    // Either side closing ends the tunnel; the other pump is dropped mid-read.
-    tokio::select! {
-        _ = up => {}
-        _ = down => {}
-    }
+    // Each pump half-closes its peer at EOF, like `copy_bidirectional`; the
+    // tunnel ends once both directions have.
+    tokio::join!(up, down);
     Ok(())
 }
 
@@ -517,6 +552,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn finished_and_reset_streams_are_forgotten() {
+        let mut enc = loona_hpack::Encoder::new();
+        let mut tap = H2Tap::new();
+        let mut up = PREFACE.to_vec();
+        up.extend(frame(
+            HEADERS,
+            FLAG_END_HEADERS,
+            1,
+            &request_headers(&mut enc, "/A/B"),
+        ));
+        up.extend(frame(
+            HEADERS,
+            FLAG_END_HEADERS,
+            3,
+            &request_headers(&mut enc, "/A/C"),
+        ));
+        up.extend(frame(DATA, 0, 3, &grpc(b"partial")[..4]));
+        tap.feed(Direction::Up, &up);
+        assert_eq!(tap.paths.len(), 2);
+        tap.feed(Direction::Down, &frame(DATA, FLAG_END_STREAM, 1, &[]));
+        tap.feed(Direction::Down, &frame(RST_STREAM, 0, 3, &[0, 0, 0, 8]));
+        assert!(tap.paths.is_empty());
+        assert!(tap.up.grpc.is_empty());
+    }
+
+    #[test]
+    fn an_endless_header_block_is_cut_off() {
+        let mut tap = H2Tap::new();
+        let mut up = PREFACE.to_vec();
+        up.extend(frame(HEADERS, 0, 1, &[0x82]));
+        let chunk = vec![0u8; 64 * 1024];
+        for _ in 0..(MAX_HEADER_BLOCK / chunk.len() + 1) {
+            up.extend(frame(CONTINUATION, 0, 1, &chunk));
+        }
+        let ev = tap.feed(Direction::Up, &up);
+        assert!(matches!(ev.last(), Some(TapEvent::Desync { .. })));
+        assert!(tap.up.dead && tap.up.block.is_none());
+    }
+
     #[tokio::test]
     async fn relay_forwards_bytes_untouched_and_taps_them() {
         let (client_app, client_proxy) = tokio::io::duplex(1024);
@@ -542,6 +617,7 @@ mod tests {
         assert_eq!(back, reply);
 
         drop(server_app);
+        drop(client_app);
         relay.await.unwrap().unwrap();
         let payloads: Vec<_> = messages(&seen.lock().unwrap())
             .into_iter()

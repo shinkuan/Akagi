@@ -844,8 +844,8 @@
     "tenhou_desc": "tenhou.net — yonma + sanma",
     "riichi_city": "Riichi City",
     "riichi_city_desc": "Native client — MITM only · yonma + sanma",
-    "holomahjong": "HoloMahjong",
-    "holomahjong_desc": "Native client — MITM only · yonma · observe-only",
+    "holo_mahjong": "HoloMahjong",
+    "holo_mahjong_desc": "Native client — MITM only · yonma · observe-only",
     "mjai": "mjai"
   },
   "updates": {

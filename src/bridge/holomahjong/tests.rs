@@ -345,7 +345,7 @@ fn an_exhaustive_draw_ends_the_hand_with_its_payments() {
 }
 
 #[test]
-fn a_double_ron_keeps_the_hand_total_on_the_first_hora() {
+fn a_double_ron_splits_the_result_per_winner() {
     let mut b = bridge();
     feed(
         &mut b,
@@ -353,7 +353,7 @@ fn a_double_ron_keeps_the_hand_total_on_the_first_hora() {
             kaiju(0),
             qipai(
                 0,
-                field(0, 0, 0, 0, "m1"),
+                field(0, 0, 1, 1, "m1"),
                 [0, 1, 2, 3],
                 [25000; 4],
                 MY_DEAL,
@@ -376,6 +376,8 @@ fn a_double_ron_keeps_the_hand_total_on_the_first_hora() {
             []
         ])
     };
+    // Combined: each winner 1000 from seat 0, plus honba 300 and one riichi
+    // stick to the first winner.
     let ev = feed(
         &mut b,
         &[push(
@@ -384,8 +386,8 @@ fn a_double_ron_keeps_the_hand_total_on_the_first_hora() {
                 null,
                 [winner(1), winner(2)],
                 [
-                    [0, -2000, false, null],
-                    [1, 1000, false, null],
+                    [0, -2300, false, null],
+                    [1, 2300, false, null],
                     [2, 1000, false, null],
                     [3, 0, false, null]
                 ],
@@ -395,13 +397,107 @@ fn a_double_ron_keeps_the_hand_total_on_the_first_hora() {
     );
     assert_eq!(
         ev[0],
-        json!({"type": "hora", "actor": 1, "target": 0, "deltas": [-2000, 1000, 1000, 0]})
+        json!({"type": "hora", "actor": 1, "target": 0, "deltas": [-1300, 2300, 0, 0]})
     );
     assert_eq!(
         ev[1],
-        json!({"type": "hora", "actor": 2, "target": 0, "deltas": [0, 0, 0, 0]})
+        json!({"type": "hora", "actor": 2, "target": 0, "deltas": [-1000, 0, 1000, 0]})
     );
     assert_eq!(ev[2], json!({"type": "end_kyoku"}));
+}
+
+/// Regression: a first deal that failed to parse used to open the game
+/// anyway, so the next deal went out without a `start_game`.
+#[test]
+fn an_unreadable_first_deal_leaves_the_game_unopened() {
+    let mut b = bridge();
+    feed(&mut b, &[kaiju(0)]);
+    // Our own hand hidden (a spectator's view): unreadable for us.
+    let hidden = qipai(
+        0,
+        field(0, 0, 0, 0, "m1"),
+        [0, 1, 2, 3],
+        [25000; 4],
+        &"x1".repeat(13),
+    );
+    assert!(feed(&mut b, &[hidden]).is_empty());
+    let ev = feed(
+        &mut b,
+        &[qipai(
+            0,
+            field(0, 0, 0, 0, "m1"),
+            [0, 1, 2, 3],
+            [25000; 4],
+            MY_DEAL,
+        )],
+    );
+    assert_eq!(ev[0]["type"], json!("start_game"));
+    assert_eq!(ev[1]["type"], json!("start_kyoku"));
+}
+
+#[test]
+fn a_deal_with_a_bad_seat_or_duplicate_wind_is_rejected() {
+    let mut b = bridge();
+    feed(&mut b, &[kaiju(0)]);
+    let mut deal = hub::decode(&qipai(
+        0,
+        field(0, 0, 0, 0, "m1"),
+        [0, 1, 2, 3],
+        [25000; 4],
+        MY_DEAL,
+    ))
+    .unwrap()
+    .body;
+    deal[5][3][1] = json!(255);
+    assert!(feed(&mut b, &[push(hub::ON_QIPAI, deal)]).is_empty());
+    assert!(feed(
+        &mut b,
+        &[qipai(
+            0,
+            field(0, 0, 0, 0, "m1"),
+            [0, 1, 1, 3],
+            [25000; 4],
+            MY_DEAL
+        )]
+    )
+    .is_empty());
+}
+
+/// A hand that ended through a message we could not read is closed before
+/// the next one starts, so consumers never see two open hands.
+#[test]
+fn a_new_deal_closes_a_hand_left_open() {
+    let mut b = bridge();
+    feed(
+        &mut b,
+        &[
+            kaiju(0),
+            qipai(
+                0,
+                field(0, 0, 0, 0, "m1"),
+                [0, 1, 2, 3],
+                [25000; 4],
+                MY_DEAL,
+            ),
+        ],
+    );
+    assert!(feed(
+        &mut b,
+        &[push(hub::ON_HULE, json!([null, [[9, 0]], [], TIMER]))]
+    )
+    .is_empty());
+    let ev = feed(
+        &mut b,
+        &[qipai(
+            0,
+            field(0, 1, 0, 0, "m1"),
+            [3, 0, 1, 2],
+            [25000; 4],
+            MY_DEAL,
+        )],
+    );
+    assert_eq!(ev[0], json!({"type": "end_kyoku"}));
+    assert_eq!(ev[1]["type"], json!("start_kyoku"));
 }
 
 #[test]

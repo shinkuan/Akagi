@@ -160,10 +160,12 @@ when that platform is selected `handle_request` answers every `CONNECT` itself
 (`take_over_connect`, the same `hyper::upgrade::on` + `200` hudsucker's own
 `process_connect` uses) and `serve_tunnel` relays it:
 
-- It reads the client's first bytes (up to 3 s; a client that stays silent is
-  assumed to wait for a server greeting) and dials the target.
+- It dials the target, then reads the client's first bytes — until they
+  can no longer be a split HTTP/2 preface, the server speaks first, or 3 s
+  pass.
 - A tunnel that opens with the HTTP/2 client preface goes through
-  `h2c::relay`: bytes are forwarded first and tapped after, and each complete
+  `h2c::relay`: bytes are forwarded first and tapped after, each side is
+  half-closed at its peer's EOF as `copy_bidirectional` does, and each complete
   gRPC message goes to the platform bridge, the binlog and the Inspector like
   a WebSocket frame. Request `:path`s are logged under
   `akagi::proxy::forward`; header values are not (they carry the bearer
@@ -175,7 +177,8 @@ when that platform is selected `handle_request` answers every `CONNECT` itself
 
 The loopback and telemetry `CONNECT` refusals above still run first.
 `stop_capture` ends taken-over tunnels through the same `force_close` signal
-as WebSocket flows. Covered by the `taken_over_tunnels_*` test in `handler.rs`
+as WebSocket flows; the waiter is registered before the dial, so a tunnel
+still peeking is closed too. Covered by the `taken_over_tunnels_*` test in `handler.rs`
 and the tap's own tests in `h2c.rs`.
 
 ## Adding traffic interception

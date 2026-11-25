@@ -188,7 +188,7 @@ fn timestamp_ms(data: &[u8]) -> Option<i64> {
         ),
         _ => return None,
     };
-    Some(secs * 1000 + nanos / 1_000_000)
+    secs.checked_mul(1000)?.checked_add(nanos / 1_000_000)
 }
 
 #[cfg(test)]

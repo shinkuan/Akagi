@@ -65,15 +65,15 @@ are rotated by that seat, recovered from every deal as `dealer seat − hand
 number` rather than assumed to be 0. `PingjuEvent` reports players by **wind**;
 the deal's wind→seat table resolves them. Win deltas include riichi sticks and
 honba and map straight onto `hora.deltas`; with several winners the wire only
-has the combined result, so it goes on the first `hora` and later ones carry
-zeros.
+has the combined result, so each `hora` gets its own hand value (`Defen`) and
+the first also takes what is left over (honba and riichi sticks).
 
 ## Limitations
 
 - 3-player games are recognized and ignored.
-- A reconnect (`OnZhunbeiChonglian` / `OnChongxinLianjieChenggong`) restores
-  seat and names, but the hand in progress is not rebuilt: events resume at
-  the next deal.
+- A reconnect restores seat and names from `OnZhunbeiChonglian`, but the
+  snapshot of the hand in progress (`OnChongxinLianjieChenggong`) is not
+  replayed: events resume at the next deal.
 - Compressed gRPC messages are skipped (none observed).
 - No autoplay.
 

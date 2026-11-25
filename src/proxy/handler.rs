@@ -1102,7 +1102,7 @@ impl ProxyHandler {
 }
 
 /// How long a taken-over tunnel waits for the client's first bytes before
-/// assuming a server-speaks-first protocol and relaying blind.
+/// relaying blind (a server that speaks first ends the wait at once).
 const TUNNEL_PEEK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 impl ProxyHandler {
@@ -1140,24 +1140,50 @@ impl ProxyHandler {
     where
         C: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
-        let mut first = vec![0u8; 4096];
-        let n = match tokio::time::timeout(TUNNEL_PEEK_TIMEOUT, client_io.read(&mut first)).await {
-            Ok(Ok(n)) => n,
-            Ok(Err(e)) => {
-                debug!(target: "akagi::proxy::forward", "tunnel to {authority}: client read failed: {e}");
-                return;
-            }
-            Err(_) => 0,
-        };
-        first.truncate(n);
-        let mut server = match TcpStream::connect(authority.as_str()).await {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(target: "akagi::proxy::forward", "tunnel to {authority}: connect failed: {e}");
-                return;
-            }
-        };
+        // Registered up front: `notify_waiters` only wakes waiters that
+        // already exist, and this one must cover the dial and the peek too.
         let force_close = self.force_close.clone();
+        let shutdown = force_close.notified();
+        tokio::pin!(shutdown);
+        shutdown.as_mut().enable();
+
+        let mut server = tokio::select! {
+            r = TcpStream::connect(authority.as_str()) => match r {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!(target: "akagi::proxy::forward", "tunnel to {authority}: connect failed: {e}");
+                    return;
+                }
+            },
+            _ = &mut shutdown => return,
+        };
+        // The client's first bytes decide the path. Keep reading while they
+        // could still be a preface split across reads; stop early if the
+        // server speaks first (then nothing here is HTTP/2) or nothing comes.
+        let mut first = Vec::new();
+        let peek = async {
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = client_io.read(&mut buf).await?;
+                if n == 0 {
+                    return Ok(());
+                }
+                first.extend_from_slice(&buf[..n]);
+                if first.len() >= h2c::PREFACE.len() || !h2c::PREFACE.starts_with(&first) {
+                    return Ok::<_, std::io::Error>(());
+                }
+            }
+        };
+        tokio::select! {
+            r = tokio::time::timeout(TUNNEL_PEEK_TIMEOUT, peek) => {
+                if let Ok(Err(e)) = r {
+                    debug!(target: "akagi::proxy::forward", "tunnel to {authority}: client read failed: {e}");
+                    return;
+                }
+            }
+            _ = server.readable() => {}
+            _ = &mut shutdown => return,
+        }
         if h2c::looks_like_h2c(&first) {
             info!(target: "akagi::proxy::forward", "tapping cleartext HTTP/2 tunnel to {authority}");
             let sink = {
@@ -1171,7 +1197,7 @@ impl ProxyHandler {
                         debug!(target: "akagi::proxy::forward", "h2c tunnel to {authority} ended: {e}");
                     }
                 }
-                _ = force_close.notified() => {}
+                _ = &mut shutdown => {}
             }
             self.forget_flow(client);
         } else {
@@ -1181,7 +1207,7 @@ impl ProxyHandler {
             }
             tokio::select! {
                 _ = tokio::io::copy_bidirectional(&mut client_io, &mut server) => {}
-                _ = force_close.notified() => {}
+                _ = &mut shutdown => {}
             }
         }
     }
@@ -1212,9 +1238,11 @@ impl ProxyHandler {
                         continue;
                     }
                     let path = path.unwrap_or_else(|| "/".to_string());
-                    let uri: Uri = match format!("http://{authority}{path}").parse() {
-                        Ok(u) => u,
-                        Err(_) => continue,
+                    let Ok(uri) = format!("http://{authority}{path}")
+                        .parse::<Uri>()
+                        .or_else(|_| format!("http://{authority}/").parse::<Uri>())
+                    else {
+                        continue;
                     };
                     let (tag, arrow) = match dir {
                         Direction::Up => (TAG_CLIENT_TO_SERVER, '\u{2191}'),
@@ -1426,12 +1454,13 @@ mod tests {
         let session =
             Arc::new(Session::init(&tmp.path().join("logs"), "info", "info", &[]).unwrap());
         let (mjai_tx, mut mjai_rx) = tokio::sync::broadcast::channel(64);
+        let force_close = Arc::new(Notify::new());
         let handler = super::ProxyHandler::new(
             session,
             Platform::HoloMahjong,
             Some(mjai_tx),
             None,
-            Arc::new(Notify::new()),
+            force_close.clone(),
             HttpCapturePolicy::default(),
             Arc::new(CertStore::default()),
             false,
@@ -1484,7 +1513,9 @@ mod tests {
 
         // No deal yet, so the draw drives no mjai event — but the bridge saw
         // it: its flow is registered, and a recorded frame names the method.
+        // The tunnel ends once both sides have closed.
         drop(server);
+        drop(game);
         tokio::time::timeout(std::time::Duration::from_secs(5), tunnel)
             .await
             .unwrap()
@@ -1542,6 +1573,23 @@ mod tests {
             read_timeline().contains("akagi_bypass"),
             "the uninspected tunnel is noted"
         );
+
+        // Regression: stop_capture while a tunnel still waits for the
+        // client's first bytes used to be missed, leaving it open.
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let authority: Authority = upstream.local_addr().unwrap().to_string().parse().unwrap();
+        let (_silent_game, proxy_side) = tokio::io::duplex(64);
+        let tunnel = tokio::spawn(handler.clone().serve_tunnel(
+            "127.0.0.1:50002".parse().unwrap(),
+            authority,
+            proxy_side,
+        ));
+        let _dialled = upstream.accept().await.unwrap();
+        force_close.notify_waiters();
+        tokio::time::timeout(std::time::Duration::from_secs(1), tunnel)
+            .await
+            .expect("stop_capture ends a tunnel mid-peek")
+            .unwrap();
     }
 
     use super::{
