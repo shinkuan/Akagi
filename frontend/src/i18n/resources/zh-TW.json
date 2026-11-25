@@ -912,6 +912,13 @@
       "settings_button": "公告"
     },
     "entries": {
+      "v3_9_0": {
+        "title": "支援ホロじゃん,一鍵打包日誌",
+        "holomahjong_title": "支援ホロじゃん",
+        "holomahjong_desc": "四麻、三麻都能看建議,斷線重連後也能接上。需用 Proxifier 等工具,以 HTTP 代理把遊戲導向 Akagi。",
+        "pack_logs_title": "打包日誌",
+        "pack_logs_desc": "在日誌頁面一鍵打包回報用的日誌。含帳號資訊的部分只在你選擇時加入,並用你設定的密碼加密。"
+      },
       "v3_8_0": {
         "title": "天鳳斷線重連與自動打牌思考時間更新",
         "tenhou_rejoin_title": "天鳳斷線重連",

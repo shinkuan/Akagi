@@ -7,6 +7,7 @@ import {
   CreditCard,
   Download,
   Gamepad2,
+  Package,
   RefreshCw,
   SearchCheck,
   SlidersHorizontal,
@@ -58,6 +59,15 @@ export type AnnouncementEntry = {
  * committed entry here. See README.md in this directory for the workflow.
  */
 export const ANNOUNCEMENTS: AnnouncementEntry[] = [
+  {
+    id: 'v3_9_0',
+    date: '2026-11-25',
+    version: '3.9.0',
+    features: [
+      { icon: Gamepad2, key: 'holomahjong' },
+      { icon: Package, key: 'pack_logs' },
+    ],
+  },
   {
     id: 'v3_8_0',
     date: '2026-11-04',

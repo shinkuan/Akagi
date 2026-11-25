@@ -912,6 +912,13 @@
       "settings_button": "Announcements"
     },
     "entries": {
+      "v3_9_0": {
+        "title": "HoloMahjong support, one-click log packs",
+        "holomahjong_title": "HoloMahjong support",
+        "holomahjong_desc": "Recommendations for 4- and 3-player games, including after a reconnect. Route the game to Akagi as an HTTP proxy, e.g. with Proxifier.",
+        "pack_logs_title": "Pack logs",
+        "pack_logs_desc": "Pack your logs for a bug report in one click on the Logs page. The part with account data is added only if you choose, encrypted with your password."
+      },
       "v3_8_0": {
         "title": "Tenhou reconnects and autoplay thinking time",
         "tenhou_rejoin_title": "Tenhou reconnects",
