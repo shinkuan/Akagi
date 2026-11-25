@@ -317,13 +317,13 @@ impl HoloMahjongBridge {
 
     fn meld_event(&mut self, seat: u8, s: &str) -> Option<MjaiEvent> {
         let actor = self.actor(seat)?;
-        let n = self.players();
-        // A call takes the discard just made; the direction mark is only a
-        // fallback, since its meaning at a 3-player table is not assumed.
+        // A call takes the discard just made. The direction mark is the
+        // fallback: it counts seats around a 4-seat table, also at three
+        // players (seat 3 empty), so it is resolved on seats, not actors.
         let last = self.last_discard;
         let target = |from: tile::Source| match last {
             Some(discarder) => self.actor(discarder),
-            None => Some((actor + from.offset(n)) % n),
+            None => self.actor((seat + from.offset()) % 4),
         };
         Some(match tile::meld(s)? {
             Meld::Chi {
@@ -366,10 +366,11 @@ impl HoloMahjongBridge {
     }
 
     /// BabeiEvent `[_, seat, tile, ron_offer, timeout]` — a North set aside
-    /// at a 3-player table.
+    /// at a 3-player table. The tile carries the discard marks: `"z4_"` when
+    /// it is the tile just drawn.
     fn on_babei(&mut self, b: &JsonValue) -> Option<Vec<MjaiEvent>> {
         let actor = self.actor(seat_of(b.get(1)?)?)?;
-        let pai = tile::tile(b.get(2)?.as_str()?)?;
+        let pai = tile::discard(b.get(2)?.as_str()?)?.pai;
         self.last_discard = None;
         Some(vec![MjaiEvent::Kita {
             actor,

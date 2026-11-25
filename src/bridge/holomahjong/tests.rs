@@ -1152,3 +1152,68 @@ fn a_call_targets_the_last_discarder() {
     let ev = feed(&mut b, &[dapai(3, "m1"), fulou(1, 2, "m111+")]);
     assert_eq!(ev[1]["target"], json!(3));
 }
+
+/// Regression: the wire marks a kita of the tile just drawn like a
+/// tsumogiri (`"z4_"`); reading it as a bare tile dropped every such kita.
+#[test]
+fn a_kita_of_the_drawn_north_carries_the_tsumogiri_mark() {
+    let mut b = bridge();
+    feed(
+        &mut b,
+        &[
+            kaiju_seats(0, &[0, 1, 2]),
+            qipai_seats(
+                0,
+                field(0, 0, 0, 0, "m1"),
+                &[(0, 0, 35000), (1, 1, 35000), (2, 2, 35000)],
+                MY_DEAL,
+            ),
+        ],
+    );
+    let no_hule = json!([0, null, null, null, null, 0, null, null, 0, null, null, null]);
+    let ev = feed(
+        &mut b,
+        &[
+            push(
+                hub::ON_ZIMO,
+                json!([null, 0, "z4", [], ["z4_"], no_hule, TIMER]),
+            ),
+            push(hub::ON_BABEI, json!([null, 0, "z4_", no_hule, TIMER])),
+            push(hub::ON_ZIMO, json!([null, 0, "p5", [], [], no_hule, TIMER])),
+        ],
+    );
+    assert_eq!(
+        ev,
+        vec![
+            json!({"type": "tsumo", "actor": 0, "pai": "N"}),
+            json!({"type": "kita", "actor": 0, "pai": "N"}),
+            json!({"type": "tsumo", "actor": 0, "pai": "5p"}),
+        ]
+    );
+}
+
+/// Regression guard from a live 3-player game: the mark counts 4-seat
+/// geometry, so seat 2 calling seat 0 (its next player) is marked `=`.
+#[test]
+fn a_three_player_mark_counts_four_seats() {
+    let mut b = bridge();
+    feed(
+        &mut b,
+        &[
+            kaiju_seats(1, &[0, 1, 2]),
+            qipai_seats(
+                1,
+                field(0, 0, 0, 0, "m1"),
+                &[(0, 0, 35000), (1, 1, 35000), (2, 2, 35000)],
+                MY_DEAL,
+            ),
+        ],
+    );
+    // No discard seen first, so only the mark can name the target.
+    let ev = feed(
+        &mut b,
+        &[fulou(2, 2, "z777="), zimo(0, ""), fulou(1, 2, "z555-")],
+    );
+    assert_eq!(ev[0]["target"], json!(0));
+    assert_eq!(ev[2]["target"], json!(0));
+}

@@ -69,8 +69,10 @@ players by **wind**, which the same formula resolves.
 
 The target of a chi, pon or open kan is the seat that made the discard being
 called. The meld string's direction mark (`+ = -`) is only a fallback for a
-call whose discard we did not see: at a 3-player table it is not known whether
-the server counts it in turn order or by 4-seat geometry. Win deltas include riichi sticks and
+call whose discard we did not see, and it counts seats around a **4-seat**
+table even at three players, where seat 3 is empty: seat 2 calling seat 0 —
+its next player in turn order — is marked `=`. Reading the mark in turn order
+would point those calls at the wrong player. Win deltas include riichi sticks and
 honba and map straight onto `hora.deltas`; with several winners the wire only
 has the combined result, so each `hora` gets its own hand value (`Defen`) and
 the first also takes what is left over (honba and riichi sticks).

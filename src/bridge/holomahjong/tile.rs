@@ -93,12 +93,14 @@ pub enum Source {
 }
 
 impl Source {
-    /// Places after the caller in turn order, at a 4-player table.
-    pub fn offset(self, n: u8) -> u8 {
+    /// Seats after the caller around a 4-seat table. A 3-player table is
+    /// numbered the same way with seat 3 empty, so the next player of seat 2
+    /// is two seats on (`=`).
+    pub fn offset(self) -> u8 {
         match self {
             Source::Next => 1,
-            Source::Opposite => 2 % n,
-            Source::Previous => n - 1,
+            Source::Opposite => 2,
+            Source::Previous => 3,
         }
     }
 }
@@ -360,10 +362,9 @@ mod tests {
     }
 
     #[test]
-    fn marks_are_turn_order_offsets() {
-        assert_eq!(Source::Next.offset(4), 1);
-        assert_eq!(Source::Opposite.offset(4), 2);
-        assert_eq!(Source::Previous.offset(4), 3);
-        assert_eq!(Source::Previous.offset(3), 2);
+    fn marks_are_4_seat_offsets() {
+        assert_eq!(Source::Next.offset(), 1);
+        assert_eq!(Source::Opposite.offset(), 2);
+        assert_eq!(Source::Previous.offset(), 3);
     }
 }
