@@ -893,6 +893,8 @@ function AutoplayCard({
   // Riichi City autoplay runs through the MITM proxy (frame injection), so
   // the Chromium-mode requirement only applies to the click platforms.
   const platformIsRiichiCity = draft.platform?.kind === 'RiichiCity'
+  // Observe-only platforms: no input path exists, whatever the capture mode.
+  const platformHasNoAutoplay = draft.platform?.kind === 'HoloMahjong'
   const setApField = (patch: Partial<typeof ap>) =>
     setDraft({ ...draft, autoplay: { ...ap, ...patch } })
   const setMajsoulField = (patch: Partial<typeof ap.majsoul>) =>
@@ -922,7 +924,12 @@ function AutoplayCard({
         <p className="text-xs text-muted-foreground">
           {t('settings.autoplay.enable_help')}
         </p>
-        {ap.enabled && !captureIsChromium && !platformIsRiichiCity && (
+        {ap.enabled && platformHasNoAutoplay && (
+          <p className="text-xs text-amber-500">
+            {t('settings.autoplay.unsupported_platform')}
+          </p>
+        )}
+        {ap.enabled && !captureIsChromium && !platformIsRiichiCity && !platformHasNoAutoplay && (
           <p className="text-xs text-amber-500">
             {t('settings.autoplay.requires_chromium')}
           </p>

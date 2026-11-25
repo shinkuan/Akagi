@@ -13,6 +13,10 @@ pub enum Platform {
     /// captured exclusively through the MITM proxy — the Chromium/CDP backend
     /// does not apply. Observe-only (no autoplay).
     RiichiCity,
+    /// ホロじゃん / HoloMahjong (Aiming). Native Windows client only, so MITM
+    /// only. Its battle server speaks gRPC over cleartext HTTP/2, which the
+    /// proxy relays and taps itself (see `proxy::h2c`). Observe-only.
+    HoloMahjong,
 }
 
 impl Platform {
@@ -23,6 +27,7 @@ impl Platform {
             Platform::Majsoul => "majsoul",
             Platform::Tenhou => "tenhou",
             Platform::RiichiCity => "riichi_city",
+            Platform::HoloMahjong => "holomahjong",
         }
     }
 }
@@ -36,6 +41,7 @@ impl From<Platform> for schema::Platform {
             Platform::Majsoul => schema::Platform::Majsoul,
             Platform::Tenhou => schema::Platform::Tenhou,
             Platform::RiichiCity => schema::Platform::RiichiCity,
+            Platform::HoloMahjong => schema::Platform::HoloMahjong,
         }
     }
 }
@@ -63,6 +69,10 @@ mod tests {
         assert_eq!(
             schema::Platform::from(Platform::RiichiCity),
             schema::Platform::RiichiCity
+        );
+        assert_eq!(
+            schema::Platform::from(Platform::HoloMahjong),
+            schema::Platform::HoloMahjong
         );
     }
 }

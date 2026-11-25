@@ -482,6 +482,7 @@
       "enable_help": "有効にすると、Akagi がボットの選んだ手を自動で実行します。Chromium キャプチャモードと起動中の対局タブが必要です。雀魂では卓上をクリックし、天鳳では対局接続に直接送信します。",
       "platform_note": "上記のクリック時間の設定は雀魂のみに適用されます。天鳳の自動打牌は対局接続に直接送信するためクリックを行わず、下の思考時間モデルのみを使用します。",
       "requires_chromium": "自動操作にはChromiumキャプチャモードが必要です。",
+      "unsupported_platform": "このプラットフォームは自動操作に未対応です。推奨の表示のみ行います。",
       "rc_warning_title": "麻雀一番街の自動操作に関する警告",
       "rc_warning_desc": "麻雀一番街の自動操作は MITM によるパケット注入で実現されています。安全性には依然として懸念があり、アカウントが BAN される可能性があります。リスクをご理解の上でご利用ください。",
       "rc_warning_ack": "リスクを理解しました",
@@ -843,6 +844,8 @@
     "tenhou_desc": "tenhou.net — 四麻 + 三麻",
     "riichi_city": "麻雀一番街",
     "riichi_city_desc": "ネイティブアプリ — MITM のみ · 四麻 + 三麻",
+    "holomahjong": "ホロじゃん",
+    "holomahjong_desc": "ネイティブアプリ — MITM のみ · 四麻 · 観戦のみ",
     "mjai": "mjai"
   },
   "updates": {

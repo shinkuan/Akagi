@@ -19,6 +19,7 @@ Tunneling that deadlocks. hudsucker's `process_connect` answers `200` and then b
 Tunneling it *correctly* is not an option either — libcurl's `socketpair()` emulation verifies that the address it accepted matches its connecting socket's local address, which a proxied hop breaks. So `handle_request` returns `403` immediately, which short-circuits hudsucker's `proxy()` before that blocking read is reached.
 
 The refusal also pushes a **sticky `warn` toast** (id `proxy-loopback-connect`) onto `NotifyBus` — nobody opens the log while staring at a game that never finishes loading. `ProxyHandler` latches on the first refusal (`loopback_notified`), so the toast fires once even though a misconfigured redirector produces one refused CONNECT per socket the game opens; the log keeps every occurrence (first at `WARN`, the rest at `DEBUG`). `start_proxy` takes the bus as `Option<NotifyBus>` — `None` in "log only" mode. The user-facing fix is to exclude loopback in the redirector. Covered by `tests/proxy_loopback_connect.rs`.
+- `h2c.rs` — Cleartext HTTP/2 tunnels: `H2Tap`, a passive frame parser fed both directions that yields complete gRPC messages, and `relay`, which forwards every chunk before tapping it. See "Taken-over tunnels" below.
 - `upstream.rs` — Custom hyper-rustls connector used for the proxy → server leg. Skips server-cert validation (`NoVerify`) on purpose so we can talk to CDN IPs whose default cert covers only DNS hostnames, matching the game client's own loose validation. Replaces what hudsucker's `with_rustls_connector` would have given us. See the module-level doc for the threat-model justification.
 
 ## CA Certificate
@@ -150,6 +151,32 @@ browser under its own switch, `[capture.chromium] block_telemetry` — see
 `src/capture/README.md`. Covered by `tests/proxy_telemetry_block.rs`, which asserts a beacon is
 answered locally and never reaches the upstream while ordinary traffic
 still forwards.
+
+## Taken-over tunnels (HoloMahjong)
+
+After a `CONNECT`, hudsucker understands HTTP/1 and TLS and tunnels anything
+else blind. HoloMahjong's battle server speaks gRPC over cleartext HTTP/2, so
+when that platform is selected `handle_request` answers every `CONNECT` itself
+(`take_over_connect`, the same `hyper::upgrade::on` + `200` hudsucker's own
+`process_connect` uses) and `serve_tunnel` relays it:
+
+- It reads the client's first bytes (up to 3 s; a client that stays silent is
+  assumed to wait for a server greeting) and dials the target.
+- A tunnel that opens with the HTTP/2 client preface goes through
+  `h2c::relay`: bytes are forwarded first and tapped after, and each complete
+  gRPC message goes to the platform bridge, the binlog and the Inspector like
+  a WebSocket frame. Request `:path`s are logged under
+  `akagi::proxy::forward`; header values are not (they carry the bearer
+  token). A tap that loses track stops decoding that direction and logs why;
+  the tunnel keeps relaying.
+- Any other tunnel, TLS included, is relayed untouched with an
+  `akagi_bypass` note on the timeline. Nothing is MITM'd for this platform,
+  so the game does not need to trust the CA.
+
+The loopback and telemetry `CONNECT` refusals above still run first.
+`stop_capture` ends taken-over tunnels through the same `force_close` signal
+as WebSocket flows. Covered by the `taken_over_tunnels_*` test in `handler.rs`
+and the tap's own tests in `h2c.rs`.
 
 ## Adding traffic interception
 

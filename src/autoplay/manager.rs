@@ -310,6 +310,7 @@ impl AutoplayManager {
         let platform: &dyn PlatformAutoplay = match platform_kind {
             crate::config::Platform::Tenhou => &self.tenhou,
             crate::config::Platform::RiichiCity => &self.riichi,
+            crate::config::Platform::HoloMahjong => return,
             _ => &self.majsoul,
         };
 
