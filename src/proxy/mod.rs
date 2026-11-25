@@ -1,5 +1,6 @@
 mod ca;
 pub mod certstore;
+pub mod h2c;
 mod handler;
 pub mod rewrite;
 mod upstream;

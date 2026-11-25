@@ -96,7 +96,7 @@ export type DetectedBrowser = {
 /// share names but the schema enum carries extra archive-only variants).
 /// Mirrors `src/config/platform.rs::Platform` (`#[derive(Serialize)]` →
 /// PascalCase JSON: `"Majsoul"`, `"Tenhou"`).
-export type PlatformKind = 'Majsoul' | 'Tenhou' | 'RiichiCity'
+export type PlatformKind = 'Majsoul' | 'Tenhou' | 'RiichiCity' | 'HoloMahjong'
 
 /** A duration setting as an inclusive `[min, max]` range, ms. Mirrors
  *  `src/config/range.rs::MsRange`; every decision draws one value from it. */
@@ -542,6 +542,7 @@ export type Platform =
   | 'majsoul'
   | 'tenhou'
   | 'riichi_city'
+  | 'holo_mahjong'
   | 'mjai'
   | 'unknown'
 

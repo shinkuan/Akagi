@@ -25,6 +25,7 @@ pub enum Platform {
     Majsoul,
     Tenhou,
     RiichiCity,
+    HoloMahjong,
     Mjai,
     Unknown,
 }

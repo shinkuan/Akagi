@@ -4,10 +4,12 @@
 //! mjai JSONL event stream consumed by AI bots. One bridge instance per
 //! independent game session (e.g. one Majsoul WebSocket flow).
 
+pub mod holomahjong;
 pub mod majsoul;
 pub mod riichi_city;
 pub mod tenhou;
 
+pub use holomahjong::HoloMahjongBridge;
 pub use majsoul::MajsoulBridge;
 pub use riichi_city::RiichiCityBridge;
 pub use tenhou::TenhouBridge;
@@ -146,5 +148,6 @@ pub fn for_platform(
         crate::config::Platform::RiichiCity => {
             Box::new(RiichiCityBridge::new(flow_log, session).with_inject(hooks.riichi_inject))
         }
+        crate::config::Platform::HoloMahjong => Box::new(HoloMahjongBridge::new(flow_log, session)),
     }
 }

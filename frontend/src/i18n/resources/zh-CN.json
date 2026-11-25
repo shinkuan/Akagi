@@ -482,6 +482,7 @@
       "enable_help": "启用后,Akagi 会替你执行 BOT 选择的动作。需使用 Chromium 抓取模式并开着游戏标签页。雀魂会在牌桌上点击;天凤则直接通过游戏连接发送。",
       "platform_note": "以上点击时间参数仅适用于雀魂。天凤的自动打牌是直接通过游戏连接发送动作,不做点击,因此只会套用下方的思考时间模型,不会用到上面的设置。",
       "requires_chromium": "自动打牌需要使用 Chromium 抓包模式。",
+      "unsupported_platform": "此平台尚不支持自动打牌，只会显示建议。",
       "rc_warning_title": "麻雀一番街自动打牌风险警告",
       "rc_warning_desc": "麻雀一番街的自动打牌是通过 MITM 注入游戏数据包的方式实现的,在安全性上仍有疑虑,可能导致账号被封禁。请自行评估风险后再使用。",
       "rc_warning_ack": "我已了解风险",
@@ -843,6 +844,8 @@
     "tenhou_desc": "tenhou.net — 四麻 + 三麻",
     "riichi_city": "麻雀一番街",
     "riichi_city_desc": "原生客户端 — 仅 MITM · 四麻 + 三麻",
+    "holo_mahjong": "ホロじゃん",
+    "holo_mahjong_desc": "原生客户端 — 仅 MITM · 四麻 + 三麻",
     "mjai": "mjai"
   },
   "updates": {

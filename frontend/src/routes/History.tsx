@@ -176,6 +176,7 @@ function FilterCard({
                 <SelectItem value="majsoul">{t('platform.majsoul')}</SelectItem>
                 <SelectItem value="tenhou">{t('platform.tenhou')}</SelectItem>
                 <SelectItem value="riichi_city">{t('platform.riichi_city')}</SelectItem>
+                <SelectItem value="holo_mahjong">{t('platform.holo_mahjong')}</SelectItem>
                 <SelectItem value="mjai">{t('platform.mjai')}</SelectItem>
               </SelectContent>
             </Select>

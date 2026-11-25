@@ -51,6 +51,14 @@ export const PLATFORMS: PlatformInfo[] = [
     defaultStartUrl: '',
     supportsChromium: false,
   },
+  {
+    kind: 'HoloMahjong',
+    labelKey: 'platform.holo_mahjong',
+    descriptionKey: 'platform.holo_mahjong_desc',
+    // Native client, no web build → MITM only.
+    defaultStartUrl: '',
+    supportsChromium: false,
+  },
 ]
 
 const BY_KIND: Record<PlatformKind, PlatformInfo> = Object.fromEntries(

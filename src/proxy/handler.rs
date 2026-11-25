@@ -12,7 +12,11 @@ use crate::{
         InspectorWriter,
     },
     logger::{BinaryLogger, Session},
-    proxy::{certstore::CertStore, rewrite::majsoul_cert},
+    proxy::{
+        certstore::CertStore,
+        h2c::{self, TapEvent},
+        rewrite::majsoul_cert,
+    },
     schema::{
         CaptureSource, FrameDirection, FrameRaw, HttpAnnotation, HttpExchange, HttpPhase,
         InspectorEntry, Notification,
@@ -23,7 +27,8 @@ use chrono::Local;
 use http_body_util::{BodyExt as _, Full};
 use hudsucker::{
     futures::{Sink, SinkExt, Stream, StreamExt},
-    hyper::{self, Method, Request, Response, StatusCode, Uri},
+    hyper::{self, http::uri::Authority, Method, Request, Response, StatusCode, Uri},
+    hyper_util::rt::TokioIo,
     tokio_tungstenite::tungstenite::{self, Message},
     Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler,
 };
@@ -35,7 +40,11 @@ use std::{
         Arc, Mutex as StdMutex,
     },
 };
-use tokio::sync::Notify;
+use tokio::{
+    io::{AsyncReadExt as _, AsyncWriteExt as _},
+    net::TcpStream,
+    sync::Notify,
+};
 use tracing::{debug, error, info, warn};
 
 const TAG_CLIENT_TO_SERVER: u8 = 0;
@@ -581,6 +590,13 @@ impl HttpHandler for ProxyHandler {
                 .into();
         }
 
+        // HoloMahjong's battle server speaks gRPC over cleartext HTTP/2,
+        // which hudsucker would tunnel blind. Relay every tunnel ourselves
+        // and tap the h2c ones; see `serve_tunnel`.
+        if self.platform == Platform::HoloMahjong && req.method() == Method::CONNECT {
+            return self.take_over_connect(ctx.client_addr, req);
+        }
+
         // Telemetry blocking comes first: a dropped beacon is never
         // forwarded, so there is nothing left for the rewrite below to
         // correct. See `block_telemetry_beacon`.
@@ -1085,6 +1101,220 @@ impl ProxyHandler {
     }
 }
 
+/// How long a taken-over tunnel waits for the client's first bytes before
+/// relaying blind (a server that speaks first ends the wait at once).
+const TUNNEL_PEEK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+impl ProxyHandler {
+    /// Answer a `CONNECT` ourselves and serve the tunnel once hyper hands
+    /// over the upgraded connection, the same way hudsucker's own
+    /// `process_connect` does.
+    fn take_over_connect(&self, client: SocketAddr, mut req: Request<Body>) -> RequestOrResponse {
+        let Some(authority) = req.uri().authority().cloned() else {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::empty())
+                .expect("static CONNECT rejection must build")
+                .into();
+        };
+        let on_upgrade = hyper::upgrade::on(&mut req);
+        let this = self.clone();
+        tokio::spawn(async move {
+            match on_upgrade.await {
+                Ok(upgraded) => {
+                    this.serve_tunnel(client, authority, TokioIo::new(upgraded))
+                        .await
+                }
+                Err(e) => {
+                    warn!(target: "akagi::proxy::forward", "CONNECT {authority} upgrade failed: {e}")
+                }
+            }
+        });
+        Response::new(Body::empty()).into()
+    }
+
+    /// Relay one tunnel. Cleartext HTTP/2 is tapped and its gRPC messages go
+    /// to the bridge; anything else (TLS included) is relayed untouched and
+    /// noted on the timeline as not inspected.
+    async fn serve_tunnel<C>(self, client: SocketAddr, authority: Authority, mut client_io: C)
+    where
+        C: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        // Registered up front: `notify_waiters` only wakes waiters that
+        // already exist, and this one must cover the dial and the peek too.
+        let force_close = self.force_close.clone();
+        let shutdown = force_close.notified();
+        tokio::pin!(shutdown);
+        shutdown.as_mut().enable();
+
+        let mut server = tokio::select! {
+            r = TcpStream::connect(authority.as_str()) => match r {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!(target: "akagi::proxy::forward", "tunnel to {authority}: connect failed: {e}");
+                    return;
+                }
+            },
+            _ = &mut shutdown => return,
+        };
+        // The client's first bytes decide the path. Keep reading while they
+        // could still be a preface split across reads; stop early if the
+        // server speaks first (then nothing here is HTTP/2) or nothing comes.
+        let mut first = Vec::new();
+        let peek = async {
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = client_io.read(&mut buf).await?;
+                if n == 0 {
+                    return Ok(());
+                }
+                first.extend_from_slice(&buf[..n]);
+                if first.len() >= h2c::PREFACE.len() || !h2c::PREFACE.starts_with(&first) {
+                    return Ok::<_, std::io::Error>(());
+                }
+            }
+        };
+        tokio::select! {
+            r = tokio::time::timeout(TUNNEL_PEEK_TIMEOUT, peek) => {
+                if let Ok(Err(e)) = r {
+                    debug!(target: "akagi::proxy::forward", "tunnel to {authority}: client read failed: {e}");
+                    return;
+                }
+            }
+            _ = server.readable() => {}
+            _ = &mut shutdown => return,
+        }
+        if h2c::looks_like_h2c(&first) {
+            info!(target: "akagi::proxy::forward", "tapping cleartext HTTP/2 tunnel to {authority}");
+            let sink = {
+                let this = self.clone();
+                let authority = authority.to_string();
+                move |events: Vec<TapEvent>| this.on_tap_events(client, &authority, events)
+            };
+            tokio::select! {
+                r = h2c::relay(client_io, server, &first, sink) => {
+                    if let Err(e) = r {
+                        debug!(target: "akagi::proxy::forward", "h2c tunnel to {authority} ended: {e}");
+                    }
+                }
+                _ = &mut shutdown => {}
+            }
+            self.forget_flow(client);
+        } else {
+            self.record_tunnel_bypass(&authority);
+            if server.write_all(&first).await.is_err() {
+                return;
+            }
+            tokio::select! {
+                _ = tokio::io::copy_bidirectional(&mut client_io, &mut server) => {}
+                _ = &mut shutdown => {}
+            }
+        }
+    }
+
+    fn on_tap_events(&self, client: SocketAddr, authority: &str, events: Vec<TapEvent>) {
+        for ev in events {
+            match ev {
+                // Paths only: header values include the bearer token.
+                TapEvent::Headers {
+                    stream,
+                    dir: Direction::Up,
+                    headers,
+                } => {
+                    if let Some((_, path)) = headers.iter().find(|(n, _)| n == ":path") {
+                        info!(target: "akagi::proxy::forward", "h2c {authority} stream {stream}: {path}");
+                    }
+                }
+                TapEvent::Headers { .. } => {}
+                TapEvent::Message {
+                    dir,
+                    path,
+                    compressed,
+                    payload,
+                    ..
+                } => {
+                    if compressed {
+                        debug!(target: "akagi::proxy::forward", "h2c {authority}: skipping a compressed gRPC message");
+                        continue;
+                    }
+                    let path = path.unwrap_or_else(|| "/".to_string());
+                    let Ok(uri) = format!("http://{authority}{path}")
+                        .parse::<Uri>()
+                        .or_else(|_| format!("http://{authority}/").parse::<Uri>())
+                    else {
+                        continue;
+                    };
+                    let (tag, arrow) = match dir {
+                        Direction::Up => (TAG_CLIENT_TO_SERVER, '\u{2191}'),
+                        Direction::Down => (TAG_SERVER_TO_CLIENT, '\u{2193}'),
+                    };
+                    self.binary.write(tag, &payload);
+                    let bridge = self.acquire_bridge(client, &uri);
+                    let result = bridge
+                        .lock()
+                        .expect("bridge mutex poisoned")
+                        .parse(dir, &payload);
+                    self.record_frame(
+                        client,
+                        dir,
+                        FrameRaw::Binary(b64(&payload)),
+                        payload.len(),
+                        &result,
+                    );
+                    self.dispatch_events(arrow, &uri.to_string(), result.events);
+                }
+                TapEvent::Desync { dir, reason } => warn!(
+                    target: "akagi::proxy::forward",
+                    "h2c {authority}: stopped decoding {}: {reason}; still relaying",
+                    dir.as_str()
+                ),
+            }
+        }
+    }
+
+    /// Drop a finished tunnel's bridge and inspector id, so a later
+    /// connection from the same client port starts fresh.
+    fn forget_flow(&self, client: SocketAddr) {
+        self.bridges
+            .lock()
+            .expect("bridges mutex poisoned")
+            .remove(&client);
+        self.inspector_flow_ids
+            .lock()
+            .expect("inspector_flow_ids mutex poisoned")
+            .remove(&client);
+    }
+
+    /// A taken-over tunnel we relay without looking inside. Recorded so the
+    /// timeline says so rather than simply omitting the connection.
+    fn record_tunnel_bypass(&self, authority: &Authority) {
+        self.inspector.record(InspectorEntry::Http {
+            ts_ms: Local::now().timestamp_millis(),
+            source: CaptureSource::Mitm,
+            exchange: HttpExchange {
+                exchange_id: None,
+                phase: HttpPhase::Request,
+                method: "CONNECT".to_string(),
+                url: authority.to_string(),
+                host: authority.host().to_string(),
+                version: "HTTP/1.1".to_string(),
+                status: None,
+                headers: Vec::new(),
+                body: None,
+                annotations: vec![HttpAnnotation {
+                    kind: "akagi_bypass".to_string(),
+                    summary: "relayed without inspection — not cleartext HTTP/2".to_string(),
+                    data: serde_json::json!({
+                        "reason": "this platform's game traffic is cleartext HTTP/2; \
+                                   other tunnels, TLS included, are relayed untouched",
+                        "platform": format!("{:?}", self.platform),
+                    }),
+                }],
+            },
+        });
+    }
+}
+
 fn b64(buf: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(buf)
 }
@@ -1210,9 +1440,162 @@ fn is_riichi_city_telemetry_path(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// HoloMahjong tunnels: an h2c client's gRPC messages reach the bridge
+    /// while every byte still reaches the server unchanged, both ways; any
+    /// other tunnel (TLS here) is relayed untouched. One test because
+    /// `Session::init` installs the process-wide tracing subscriber.
+    #[tokio::test]
+    async fn taken_over_tunnels_relay_untouched_and_tap_h2c() {
+        use crate::bridge::holomahjong::hub;
+        use crate::proxy::h2c::PREFACE;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let session =
+            Arc::new(Session::init(&tmp.path().join("logs"), "info", "info", &[]).unwrap());
+        let (mjai_tx, mut mjai_rx) = tokio::sync::broadcast::channel(64);
+        let force_close = Arc::new(Notify::new());
+        let handler = super::ProxyHandler::new(
+            session,
+            Platform::HoloMahjong,
+            Some(mjai_tx),
+            None,
+            force_close.clone(),
+            HttpCapturePolicy::default(),
+            Arc::new(CertStore::default()),
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+        fn frame(ftype: u8, stream: u32, payload: &[u8]) -> Vec<u8> {
+            let mut f = (payload.len() as u32).to_be_bytes()[1..].to_vec();
+            f.extend([ftype, 0]);
+            f.extend(stream.to_be_bytes());
+            f.extend(payload);
+            f
+        }
+        fn grpc_data(value: &rmpv::Value) -> Vec<u8> {
+            let mut msg = Vec::new();
+            rmpv::encode::write_value(&mut msg, value).unwrap();
+            let mut body = vec![0];
+            body.extend((msg.len() as u32).to_be_bytes());
+            body.extend(msg);
+            frame(0, 1, &body)
+        }
+
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let authority: Authority = upstream.local_addr().unwrap().to_string().parse().unwrap();
+        let (mut game, proxy_side) = tokio::io::duplex(64 * 1024);
+        let client: SocketAddr = "127.0.0.1:50000".parse().unwrap();
+        let tunnel = tokio::spawn(handler.clone().serve_tunnel(client, authority, proxy_side));
+
+        let deal = rmpv::Value::Array(vec![
+            hub::ON_ZIMO.into(),
+            rmpv::Value::Array(vec![rmpv::Value::Nil, 0.into(), "m1".into()]),
+        ]);
+        let mut up = PREFACE.to_vec();
+        up.extend(grpc_data(&rmpv::Value::Array(vec![
+            hub::READY.into(),
+            rmpv::Value::Nil,
+        ])));
+        game.write_all(&up).await.unwrap();
+
+        let (mut server, _) = upstream.accept().await.unwrap();
+        let mut got = vec![0u8; up.len()];
+        server.read_exact(&mut got).await.unwrap();
+        assert_eq!(got, up, "client bytes reach the server untouched");
+        let down = grpc_data(&deal);
+        server.write_all(&down).await.unwrap();
+        let mut back = vec![0u8; down.len()];
+        game.read_exact(&mut back).await.unwrap();
+        assert_eq!(back, down, "server bytes reach the client untouched");
+
+        // No deal yet, so the draw drives no mjai event — but the bridge saw
+        // it: its flow is registered, and a recorded frame names the method.
+        // The tunnel ends once both sides have closed.
+        drop(server);
+        drop(game);
+        tokio::time::timeout(std::time::Duration::from_secs(5), tunnel)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(mjai_rx.try_recv().is_err());
+        let read_timeline = || {
+            std::fs::read_dir(tmp.path().join("logs"))
+                .unwrap()
+                .flatten()
+                .find_map(|d| {
+                    std::fs::read_to_string(d.path().join("sensitive").join("inspector.jsonl")).ok()
+                })
+                .unwrap_or_default()
+        };
+        let timeline = read_timeline();
+        assert!(
+            timeline.contains("\"Ready\""),
+            "uplink hub call recorded: {timeline}"
+        );
+        assert!(
+            timeline.contains("\"OnZimo\""),
+            "downlink broadcast recorded: {timeline}"
+        );
+        assert!(
+            handler.bridges.lock().unwrap().is_empty(),
+            "flow forgotten at close"
+        );
+
+        // A tunnel that is not h2c.
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let authority: Authority = upstream.local_addr().unwrap().to_string().parse().unwrap();
+        let (mut game, proxy_side) = tokio::io::duplex(4096);
+        let tunnel = tokio::spawn(handler.clone().serve_tunnel(
+            "127.0.0.1:50001".parse().unwrap(),
+            authority,
+            proxy_side,
+        ));
+        let hello = b"\x16\x03\x01\x00\x05hello";
+        game.write_all(hello).await.unwrap();
+        let (mut server, _) = upstream.accept().await.unwrap();
+        let mut got = vec![0u8; hello.len()];
+        server.read_exact(&mut got).await.unwrap();
+        assert_eq!(&got, hello);
+        server.write_all(b"reply").await.unwrap();
+        let mut back = [0u8; 5];
+        game.read_exact(&mut back).await.unwrap();
+        assert_eq!(&back, b"reply");
+        drop(server);
+        drop(game);
+        tokio::time::timeout(std::time::Duration::from_secs(5), tunnel)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            read_timeline().contains("akagi_bypass"),
+            "the uninspected tunnel is noted"
+        );
+
+        // Regression: stop_capture while a tunnel still waits for the
+        // client's first bytes used to be missed, leaving it open.
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let authority: Authority = upstream.local_addr().unwrap().to_string().parse().unwrap();
+        let (_silent_game, proxy_side) = tokio::io::duplex(64);
+        let tunnel = tokio::spawn(handler.clone().serve_tunnel(
+            "127.0.0.1:50002".parse().unwrap(),
+            authority,
+            proxy_side,
+        ));
+        let _dialled = upstream.accept().await.unwrap();
+        force_close.notify_waiters();
+        tokio::time::timeout(std::time::Duration::from_secs(1), tunnel)
+            .await
+            .expect("stop_capture ends a tunnel mid-peek")
+            .unwrap();
+    }
+
     use super::{
         is_ip_literal_host, is_loopback_connect, is_loopback_host, is_riichi_city_telemetry_path,
-        is_telemetry_connect, should_raw_tunnel, will_be_answered_by_handle_response,
+        is_telemetry_connect, should_raw_tunnel, will_be_answered_by_handle_response, Arc,
+        Authority, CertStore, HttpCapturePolicy, Notify, Session, SocketAddr,
     };
     use crate::config::Platform;
     use hudsucker::hyper::{Method, Request, Uri};
