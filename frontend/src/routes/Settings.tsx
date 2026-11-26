@@ -877,7 +877,7 @@ function AutoplayCard({
   const ap = draft.autoplay ?? {
     enabled: false,
     majsoul: {
-      discard_input: 'click' as DiscardInput,
+      discard_input: 'drag' as DiscardInput,
       pre_click_delay_min_ms: 1000,
       pre_click_delay_max_ms: 3000,
       inter_click_delay_ms: [250, 500],

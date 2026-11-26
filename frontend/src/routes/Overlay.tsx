@@ -19,7 +19,7 @@ import type { AppConfig, BotResponse, OverlayConfig, ShowMeta } from '@/types'
 // Only used if `get_config` fails — a blank overlay would be worse than a
 // default-looking one. Mirrors `OverlayConfig::default()`.
 const FALLBACK: OverlayConfig = {
-  enabled: true,
+  enabled: false,
   top_n: 3,
   opacity: 0.95,
   always_on_top: true,

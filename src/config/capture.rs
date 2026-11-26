@@ -1,10 +1,12 @@
 //! Capture-mode configuration: which transport supplies WebSocket frames
 //! to the bridge layer.
 //!
-//! Two modes:
-//! - `Mitm` (default): hudsucker MITM proxy — see `[proxy]`.
-//! - `Chromium`: a Chromium browser launched and controlled by Akagi via
-//!   the Chrome DevTools Protocol.
+//! Three modes:
+//! - `Embedded` (default): the game runs in a WebView2 inside Akagi's own
+//!   window, captured and driven over the Chrome DevTools Protocol.
+//! - `Chromium`: a Chromium browser launched and controlled by Akagi, same
+//!   protocol, separate window.
+//! - `Mitm`: a hudsucker MITM proxy — see `[proxy]`.
 
 use serde::{Deserialize, Serialize};
 
@@ -72,13 +74,17 @@ impl HttpCaptureConfig {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CaptureMode {
-    #[default]
     Mitm,
     Chromium,
     /// The game runs inside Akagi's own window (a WebView2 the main Tauri
     /// window hosts alongside the control panel). Capture and autoplay
     /// attach to that WebView2 over CDP — see `capture::embedded`. Web
     /// platforms only (Majsoul, Tenhou); native clients keep MITM.
+    ///
+    /// The default: one window, no proxy, no certificate, nothing to
+    /// install. The other two stay for native clients and for setups where
+    /// the webview is not an option.
+    #[default]
     Embedded,
 }
 
@@ -141,7 +147,7 @@ mod tests {
         let cfg = CaptureConfig::default();
         let s = toml::to_string(&cfg).unwrap();
         let back: CaptureConfig = toml::from_str(&s).unwrap();
-        assert_eq!(back.mode, CaptureMode::Mitm);
+        assert_eq!(back.mode, CaptureMode::Embedded);
         assert_eq!(back.chromium.cft_channel, "stable");
     }
 
@@ -224,6 +230,6 @@ mod tests {
         }
         let s = "";
         let w: Wrap = toml::from_str(s).unwrap();
-        assert_eq!(w.capture.mode, CaptureMode::Mitm);
+        assert_eq!(w.capture.mode, CaptureMode::Embedded);
     }
 }

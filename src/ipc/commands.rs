@@ -284,30 +284,27 @@ pub async fn set_assist_mode(
 ) -> CmdResult<()> {
     let (cfg, overlay) = {
         let mut cfg = state.config.write().await;
+        // Only the decision switch is touched here; the floating suggestion
+        // window (`overlay.enabled`) is the player's own preference and a
+        // mode change must not silently turn it on.
         match mode {
             AssistMode::Off => {
                 cfg.bot.enabled = false;
                 cfg.autoplay.enabled = false;
-                cfg.overlay.enabled = false;
             }
             AssistMode::Recommend => {
                 cfg.bot.enabled = true;
                 cfg.autoplay.enabled = false;
-                cfg.overlay.enabled = true;
             }
             AssistMode::Auto => {
                 cfg.bot.enabled = true;
                 cfg.autoplay.enabled = true;
                 cfg.autoplay.scope = crate::config::AutoplayScope::DiscardsOnly;
-                cfg.overlay.enabled = true;
             }
             AssistMode::FullAuto => {
                 cfg.bot.enabled = true;
                 cfg.autoplay.enabled = true;
                 cfg.autoplay.scope = crate::config::AutoplayScope::All;
-                // The overlay is left as the user set it: full auto does not
-                // need the floating card, but it may be wanted on a second
-                // monitor, so this mode is not opinionated about it.
             }
         }
         let overlay = cfg.overlay.clone();
@@ -2013,13 +2010,13 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::sync_bot_deps,
             $crate::ipc::commands::delete_bot,
             $crate::ipc::commands::start_capture,
-            $crate::ipc::commands::stop_capture,
-            $crate::ipc::commands::restart_capture,
-            $crate::ipc::commands::get_capture_status,
             $crate::ipc::commands::detect_system_chrome,
             $crate::ipc::commands::list_cft_installed,
             $crate::ipc::commands::download_chrome_for_testing,
             $crate::ipc::commands::remove_chrome_for_testing,
+            $crate::ipc::commands::stop_capture,
+            $crate::ipc::commands::restart_capture,
+            $crate::ipc::commands::get_capture_status,
             $crate::ipc::commands::get_status,
             $crate::ipc::commands::get_log_dir,
             $crate::ipc::commands::open_log_folder,

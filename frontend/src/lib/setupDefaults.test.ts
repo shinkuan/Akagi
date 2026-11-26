@@ -76,19 +76,21 @@ function makeConfig(over: {
         no_budget_cap_ms: 0,
       },
     },
-    overlay: { enabled: true, top_n: 3, opacity: 1, always_on_top: true },
+    overlay: { enabled: false, top_n: 3, opacity: 1, always_on_top: true },
     network: { github_mirror_mode: 'auto', github_custom_mirror: '' },
   }
 }
 
 describe('withFirstRunCaptureDefault', () => {
-  it('pre-selects Chromium on a first run for a Chromium-capable platform', () => {
+  it('pre-selects the embedded backend on a first run for a web platform', () => {
+    // A config written by an older build still says `mitm`; first run moves it
+    // to the one-window backend the shipped default uses.
     const out = withFirstRunCaptureDefault(makeConfig({ platform: 'Majsoul', mode: 'mitm' }))
-    expect(out.capture.mode).toBe('chromium')
+    expect(out.capture.mode).toBe('embedded')
   })
 
   it('keeps the saved mode when setup was already completed (Settings re-run)', () => {
-    // A returning user who saved MITM must not be flipped back to Chromium.
+    // A returning user who saved MITM must not be flipped back.
     const out = withFirstRunCaptureDefault(
       makeConfig({ firstRunCompleted: true, mode: 'mitm' }),
     )
@@ -96,7 +98,7 @@ describe('withFirstRunCaptureDefault', () => {
   })
 
   it('leaves native-only platforms on MITM even on a first run', () => {
-    // Riichi City has no web build → Chromium capture cannot drive it.
+    // Riichi City has no web build → there is nothing to embed.
     const out = withFirstRunCaptureDefault(
       makeConfig({ platform: 'RiichiCity', mode: 'mitm' }),
     )

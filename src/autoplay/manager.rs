@@ -186,6 +186,7 @@ impl AutoplayManager {
     async fn handle_bot_response(&mut self, resp: BotResponse) {
         // Re-read config every iteration so `cfg.autoplay.enabled` can be
         // toggled at runtime via the Settings UI without restarting.
+        //
         let cfg_guard = self.cfg.read().await;
         if !cfg_guard.autoplay.enabled {
             return;

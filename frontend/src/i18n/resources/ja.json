@@ -997,7 +997,6 @@
     "status_ready": "準備完了",
     "waiting_decision": "最初の判断を待っています",
     "ai_recommend": "AI 提案",
-    "tile_hint": "牌表示",
     "waiting_data": "ゲームデータを待機中…",
     "cloud": "クラウド推論",
     "cloud_off": "未使用",

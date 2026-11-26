@@ -76,12 +76,16 @@ pub struct AutoplayConfig {
 #[serde(rename_all = "snake_case")]
 pub enum DiscardInput {
     /// Synthesised mouse click on the tile. The historical behaviour.
-    #[default]
     Click,
     /// Human-like drag: press the tile, travel upward with the button
     /// down, release above the rack ("flick a tile out"). The trajectory
     /// is generated per decision — jittered, occasionally hesitating or
     /// overshooting — see `autoplay::drag`.
+    ///
+    /// The default: a click's press-and-release on one pixel is the one
+    /// gesture no human makes, and the flick is what the client's own input
+    /// path expects for a hand tile.
+    #[default]
     Drag,
 }
 
@@ -411,10 +415,10 @@ mod tests {
         let cfg: MajsoulAutoplayConfig =
             toml::from_str("pre_click_delay_min_ms = 1000\npre_click_delay_max_ms = 3000\n")
                 .unwrap();
-        assert_eq!(cfg.discard_input, DiscardInput::Click);
+        assert_eq!(cfg.discard_input, DiscardInput::Drag);
         assert_eq!(cfg.drag_duration_ms, DRAG_DURATION);
         let written = toml::to_string(&cfg).unwrap();
-        assert!(written.contains(r#"discard_input = "click""#));
+        assert!(written.contains(r#"discard_input = "drag""#));
         assert!(written.contains("drag_duration_ms = [220, 450]"));
         // And the drag mode itself round-trips.
         let cfg: MajsoulAutoplayConfig = toml::from_str("discard_input = \"drag\"").unwrap();

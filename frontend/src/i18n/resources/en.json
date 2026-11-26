@@ -997,7 +997,6 @@
     "status_ready": "Ready",
     "waiting_decision": "Waiting for the first decision",
     "ai_recommend": "AI suggestion",
-    "tile_hint": "In-game hint",
     "waiting_data": "Waiting for game data…",
     "cloud": "Cloud inference",
     "cloud_off": "Not in use",

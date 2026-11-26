@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bot, Cloud, Sparkles } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { BotShowList } from '@/components/BotShowList'
 import { PurchaseDialog } from '@/components/PurchaseDialog'
@@ -17,7 +15,6 @@ import { useApiStatusStore } from '@/stores/apiStatusStore'
 import { bakazeFor, kyokuLabel } from '@/lib/format'
 import { pickShow, visibleItems } from '@/lib/botShow'
 import { cn } from '@/lib/utils'
-import type { AppConfig } from '@/types'
 
 /**
  * The right-hand panel of the single-window layout (the `main` webview,
@@ -61,17 +58,6 @@ export function SidePanel() {
   const idle = bot.state !== 'ready'
 
   const apiEnabled = cfg?.bot?.api?.enabled ?? false
-  const overlayOn = cfg?.overlay?.enabled ?? false
-
-  const toggleOverlay = async (on: boolean) => {
-    try {
-      await invoke('set_overlay_enabled', { enabled: on })
-      const next = await invoke<AppConfig>('get_config')
-      useConfigStore.getState().setConfig(next)
-    } catch {
-      /* reported by the backend toast */
-    }
-  }
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto bg-background p-3 text-sm">
@@ -119,16 +105,7 @@ export function SidePanel() {
               <Sparkles className="h-4 w-4 text-muted-foreground" />
               {t('panel.ai_recommend')}
             </span>
-            <span className="flex items-center gap-1.5">
-              <Label htmlFor="panel-overlay" className="text-[10px] font-normal text-muted-foreground">
-                {t('panel.tile_hint')}
-              </Label>
-              <Switch
-                id="panel-overlay"
-                checked={overlayOn}
-                onCheckedChange={toggleOverlay}
-              />
-            </span>
+
           </CardTitle>
         </CardHeader>
         <CardContent className="px-3">

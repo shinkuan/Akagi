@@ -997,7 +997,6 @@
     "status_ready": "就緒",
     "waiting_decision": "等待第一次決策",
     "ai_recommend": "AI 推薦",
-    "tile_hint": "牌面提示",
     "waiting_data": "等待遊戲資料…",
     "cloud": "雲端推論",
     "cloud_off": "未使用",
