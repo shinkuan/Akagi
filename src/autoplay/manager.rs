@@ -13,7 +13,7 @@
 //! manager logs a warning and skips the click. The bot pipeline is
 //! untouched; the user can still play the round manually.
 
-use crate::autoplay::cdp_input::{dispatch_click_shaped, evaluate_canvas_rect};
+use crate::autoplay::cdp_input::{dispatch_click_shaped, dispatch_drag, evaluate_canvas_rect};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::autoplay::delay::Reading;
 use crate::autoplay::inject::InjectFrame;
@@ -29,6 +29,7 @@ use crate::game_state::snapshot::GameStateSnapshot;
 use crate::game_state::tracker::GameTracker;
 use crate::schema::MjaiEvent;
 use chromiumoxide::page::Page;
+use rand::Rng;
 use riichienv_core::action::Action;
 use riichienv_core::state::legal_actions::GameStateLegalActions;
 use riichienv_core::state_3p::legal_actions::GameState3PLegalActions;
@@ -39,6 +40,17 @@ use tracing::{debug, info, warn};
 
 /// How long before a cached `CanvasRect` is treated as stale and re-queried.
 const CANVAS_RECT_TTL: Duration = Duration::from_secs(30);
+
+/// Drag-release geometry, in 16:9-normalised units (the same coordinate
+/// system as the `Step::Drag` press point). The hand sits at roughly
+/// y ≈ 6.9–7.5; travelling 2.5–4.2 units up lands the release between
+/// the middle of our river and the bottom of the opponents', comfortably
+/// past Majsoul's "above the rack" discard threshold at either extreme.
+const DRAG_UP_NORM_MIN: f64 = 2.5;
+const DRAG_UP_NORM_MAX: f64 = 4.2;
+/// Horizontal drift of the release point, ±16:9 units. Straight-up
+/// releases every time would be their own tell.
+const DRAG_X_DRIFT_NORM: f64 = 1.2;
 
 pub struct AutoplayManager {
     cfg: Arc<RwLock<AppConfig>>,
@@ -324,10 +336,13 @@ impl AutoplayManager {
             plan.steps.len(),
         );
 
-        // Only a click needs to know where the canvas is. A plan built of
-        // `Send` steps talks to the page's socket and would otherwise be
-        // held hostage by a rect query it never uses.
-        let needs_canvas = plan.steps.iter().any(|s| matches!(s, Step::Click { .. }));
+        // Only a click or drag needs to know where the canvas is. A plan
+        // built of `Send` steps talks to the page's socket and would
+        // otherwise be held hostage by a rect query it never uses.
+        let needs_canvas = plan
+            .steps
+            .iter()
+            .any(|s| matches!(s, Step::Click { .. } | Step::Drag { .. }));
         let rect = if needs_canvas {
             // Cache + TTL. If we can't resolve one, drop the click — the page
             // handle isn't ready yet (e.g. user still on the lobby), or the
@@ -407,6 +422,30 @@ impl AutoplayManager {
 
         let mut window_checked = false;
         for step in &plan.steps {
+            // The decision window can close while we sleep: a higher-
+            // priority claimant (ron over our chi window) resolves it
+            // early, and the *next* window's buttons render at the same
+            // coordinates — a stale click would press a live button of
+            // the wrong decision. The bridge rewrites the budget slot
+            // exactly when that happens, so the slot still holding the
+            // window we planned against is the cheap validity check.
+            // Checked once, before the first canvas press (click or
+            // drag): later steps of one plan run inside our own action's
+            // window. With no budget tracked (off-Majsoul) there is no
+            // signal — behaviour is unchanged there.
+            if matches!(step, Step::Click { .. } | Step::Drag { .. }) && !window_checked {
+                window_checked = true;
+                if planned_budget.is_some() {
+                    let current = self.ctx.time_budget.read().ok().and_then(|g| *g);
+                    if current.map(|b| b.opened_at) != planned_budget.map(|b| b.opened_at) {
+                        warn!(
+                            "autoplay: decision window closed mid-delay — dropping stale click for {:?}",
+                            resp.action
+                        );
+                        return;
+                    }
+                }
+            }
             match step {
                 Step::Sleep { duration_ms } => {
                     tokio::time::sleep(Duration::from_millis(*duration_ms as u64)).await;
@@ -484,70 +523,106 @@ impl AutoplayManager {
                         }
                     }
                 }
-                Step::Click { x_norm, y_norm } => {
+                Step::Click { x_norm, y_norm } | Step::Drag { x_norm, y_norm } => {
+                    let is_drag = matches!(step, Step::Drag { .. });
                     let Some(rect) = rect else {
-                        warn!("autoplay: click step with no canvas rect; skipping");
+                        warn!("autoplay: press step with no canvas rect; skipping");
                         continue;
                     };
-                    // The decision window can close while we sleep: a
-                    // higher-priority claimant (ron over our chi window)
-                    // resolves it early, and the *next* window's buttons
-                    // render at the same coordinates — a stale click
-                    // would press a live button of the wrong decision.
-                    // The bridge rewrites the budget slot exactly when
-                    // that happens, so the slot still holding the window
-                    // we planned against is the cheap validity check.
-                    // Checked once, before the first click: later steps
-                    // of one plan run inside our own action's window.
-                    // With no budget tracked (off-Majsoul) there is no
-                    // signal — behaviour is unchanged there.
-                    if !window_checked {
-                        window_checked = true;
-                        if planned_budget.is_some() {
-                            let current = self.ctx.time_budget.read().ok().and_then(|g| *g);
-                            if current.map(|b| b.opened_at) != planned_budget.map(|b| b.opened_at) {
-                                warn!(
-                                    "autoplay: decision window closed mid-delay — dropping stale click for {:?}",
-                                    resp.action
-                                );
-                                return;
-                            }
-                        }
-                    }
                     let (px, py) = rect.pixel(*x_norm, *y_norm);
                     if !rect.contains(px, py) {
                         warn!(
-                            "autoplay: click ({px},{py}) outside canvas rect {:?}; skipping",
+                            "autoplay: press ({px},{py}) outside canvas rect {:?}; skipping",
                             rect
                         );
                         continue;
                     }
-                    // Need to re-acquire the page handle on each click;
+                    // All the drag randomisation happens *before* the page
+                    // handle is taken: `ThreadRng` is not `Send`, so it must
+                    // not live across the `.await` below.
+                    //
+                    // The flick: press the tile, then release somewhere
+                    // meaningfully above the rack. Distance and drift are
+                    // drawn per decision — the discard threshold is roughly
+                    // "above the hand row", so 2.5–4.2 16:9 units of travel
+                    // crosses it with room to spare at any aspect ratio the
+                    // canvas rect reports, while a shorter tug risks
+                    // snapping the tile back. Clamped so a short canvas
+                    // cannot push the release off it.
+                    let drag = if is_drag {
+                        let mut rng = rand::rng();
+                        let up = rng.random_range(DRAG_UP_NORM_MIN..DRAG_UP_NORM_MAX);
+                        let dx = rng.random_range(-DRAG_X_DRIFT_NORM..DRAG_X_DRIFT_NORM);
+                        let (ex, ey) = rect.pixel(*x_norm + dx, *y_norm - up);
+                        let ex = ex.clamp(rect.x + 8.0, rect.x + rect.width - 8.0);
+                        // The release must stay inside the canvas *and*
+                        // above the press — clamping the x is enough for
+                        // the sides, but a tiny window height could clamp
+                        // `ey` below the press point, which turns the
+                        // gesture into a no-op drag; floor it at 60 px
+                        // above the press and fall back to a click rather
+                        // than fake it.
+                        let ey = ey.max(rect.y + 8.0).min(py - 60.0);
+                        if ey >= py {
+                            warn!(
+                                "autoplay: canvas too short for a drag release — falling back to a click at the tile"
+                            );
+                            None
+                        } else {
+                            Some(crate::autoplay::drag::drag_path(
+                                (px, py),
+                                (ex, ey),
+                                cfg.drag_duration_ms.ms(),
+                                &mut rng,
+                            ))
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Need to re-acquire the page handle on each press;
                     // it may have been replaced (tab reload) between
-                    // successive clicks within one action.
+                    // successive presses within one action.
                     let page_guard = self.ctx.page.read().await;
                     let Some(page) = page_guard.as_ref() else {
-                        warn!("autoplay: no page handle — aborting click sequence");
+                        warn!("autoplay: no page handle — aborting press sequence");
                         return;
                     };
-                    // A lost press usually costs nothing — the decision
-                    // window closes and the client passes. A lost *riichi*
-                    // press is different: the discard that follows it still
-                    // goes out, so the hand throws its riichi tile with no
-                    // riichi behind it. That press gets the sturdier shape
-                    // from the first attempt rather than only on a retry.
-                    if let Err(e) = dispatch_click_shaped(
-                        page,
-                        px,
-                        py,
-                        cfg.hover_delay_ms.ms(),
-                        cfg.click_hold_ms.ms(),
-                        declares_reach,
-                    )
-                    .await
-                    {
-                        warn!("autoplay: dispatch_click failed: {e:#}");
-                        return;
+                    if let Some(path) = drag {
+                        if let Err(e) = dispatch_drag(
+                            page,
+                            cfg.hover_delay_ms.ms(),
+                            cfg.click_hold_ms.ms(),
+                            &path,
+                        )
+                        .await
+                        {
+                            warn!("autoplay: dispatch_drag failed: {e:#}");
+                            return;
+                        }
+                    } else {
+                        // A lost press usually costs nothing — the decision
+                        // window closes and the client passes. A lost
+                        // *riichi* press is different: the discard that
+                        // follows it still goes out, so the hand throws its
+                        // riichi tile with no riichi behind it. That press
+                        // gets the sturdier shape from the first attempt
+                        // rather than only on a retry. (A drag that could
+                        // not fit its release also lands here — the click
+                        // fallback noted above.)
+                        if let Err(e) = dispatch_click_shaped(
+                            page,
+                            px,
+                            py,
+                            cfg.hover_delay_ms.ms(),
+                            cfg.click_hold_ms.ms(),
+                            declares_reach,
+                        )
+                        .await
+                        {
+                            warn!("autoplay: dispatch_click failed: {e:#}");
+                            return;
+                        }
                     }
                     drop(page_guard);
                 }
@@ -762,11 +837,16 @@ impl AutoplayManager {
         action: &MjaiEvent,
         require_non_discard: bool,
     ) -> bool {
-        let clicks: Vec<(f64, f64)> = plan
+        // Every collected press is (x_norm, y_norm, is_drag): the retry
+        // replays the same kind of gesture that failed — a swallowed drag
+        // is re-dragged, not clicked, since a click would carry none of
+        // the drag's momentum and the client may treat it differently.
+        let presses: Vec<(f64, f64, bool)> = plan
             .steps
             .iter()
             .filter_map(|s| match s {
-                Step::Click { x_norm, y_norm } => Some((*x_norm, *y_norm)),
+                Step::Click { x_norm, y_norm } => Some((*x_norm, *y_norm, false)),
+                Step::Drag { x_norm, y_norm } => Some((*x_norm, *y_norm, true)),
                 Step::Sleep { .. }
                 | Step::DomClick { .. }
                 | Step::Discard { .. }
@@ -774,7 +854,7 @@ impl AutoplayManager {
                 | Step::SendFrame(_) => None,
             })
             .collect();
-        if clicks.is_empty() {
+        if presses.is_empty() {
             return true;
         }
 
@@ -797,26 +877,29 @@ impl AutoplayManager {
                 );
                 return true;
             }
-            let again = retry_slice(&clicks, attempt);
+            let again = retry_slice(&presses, attempt);
             // The coordinates are in the message on purpose: when a button
             // visibly reacts and the action still does not happen, this
             // line is what says which slot was aimed at.
             warn!(
-                "autoplay: no input command after clicking {action:?} at {clicks:?} (hover {}ms, hold {}ms); pressing {} of {} click(s) again (attempt {})",
+                "autoplay: no input command after pressing {action:?} at {presses:?} (hover {}ms, hold {}ms); pressing {} of {} press(es) again (attempt {})",
                 cfg.hover_delay_ms.ms(),
                 cfg.click_hold_ms.ms(),
                 again.len(),
-                clicks.len(),
+                presses.len(),
                 attempt + 1
             );
             // Retries vary the press rather than repeating it verbatim.
             // A press that lands on the right control and still does not
-            // commit is not a positioning problem, so pressing the same way
-            // again has nothing new to offer: the second attempt holds
-            // longer, the third also nudges the cursor mid-press.
+            // commit is not a positioning problem, so pressing the same
+            // way again has nothing new to offer: the second attempt holds
+            // longer, the third also nudges the cursor mid-press (clicks)
+            // or travels slower (drags — the escalation constant is shared
+            // because the "hold it longer" idea transfers one-to-one).
             let hold = retry_hold_ms(cfg.click_hold_ms.ms(), attempt);
+            let drag_duration = retry_hold_ms(cfg.drag_duration_ms.ms(), attempt);
             let jiggle = attempt >= 1;
-            for (i, (x_norm, y_norm)) in again.iter().enumerate() {
+            for (i, (x_norm, y_norm, is_drag)) in again.iter().enumerate() {
                 if i > 0 {
                     tokio::time::sleep(Duration::from_millis(u64::from(
                         cfg.inter_click_delay_ms.ms(),
@@ -826,7 +909,7 @@ impl AutoplayManager {
                 let (px, py) = rect.pixel(*x_norm, *y_norm);
                 if !rect.contains(px, py) {
                     warn!(
-                        "autoplay: retry click ({px},{py}) outside canvas rect {:?}; skipping",
+                        "autoplay: retry press ({px},{py}) outside canvas rect {:?}; skipping",
                         rect
                     );
                     continue;
@@ -836,10 +919,37 @@ impl AutoplayManager {
                     warn!("autoplay: no page handle — abandoning retry for {action:?}");
                     return false;
                 };
-                if let Err(e) =
+                let result = if *is_drag {
+                    // A fresh trajectory each retry — the first one's exact
+                    // wobble is not what failed, and repeating it verbatim
+                    // would be the machine tell the generator exists to
+                    // avoid. Distance and drift redraw here too, via the
+                    // same clamping as the first attempt.
+                    let up = rand::rng().random_range(DRAG_UP_NORM_MIN..DRAG_UP_NORM_MAX);
+                    let dx = rand::rng().random_range(-DRAG_X_DRIFT_NORM..DRAG_X_DRIFT_NORM);
+                    let (ex, ey) = rect.pixel(*x_norm + dx, *y_norm - up);
+                    let ex = ex.clamp(rect.x + 8.0, rect.x + rect.width - 8.0);
+                    let ey = ey.max(rect.y + 8.0).min(py - 60.0);
+                    if ey >= py {
+                        warn!(
+                            "autoplay: canvas too short for a drag retry — re-pressing as a click instead"
+                        );
+                        dispatch_click_shaped(page, px, py, cfg.hover_delay_ms.ms(), hold, jiggle)
+                            .await
+                    } else {
+                        let path = crate::autoplay::drag::drag_path(
+                            (px, py),
+                            (ex, ey),
+                            drag_duration,
+                            &mut rand::rng(),
+                        );
+                        dispatch_drag(page, cfg.hover_delay_ms.ms(), hold, &path).await
+                    }
+                } else {
                     dispatch_click_shaped(page, px, py, cfg.hover_delay_ms.ms(), hold, jiggle).await
-                {
-                    warn!("autoplay: retry dispatch_click failed: {e:#}");
+                };
+                if let Err(e) = result {
+                    warn!("autoplay: retry dispatch failed: {e:#}");
                 }
             }
         }
@@ -848,7 +958,7 @@ impl AutoplayManager {
         // never reached me" is otherwise indistinguishable from "the click
         // is landing in the wrong place".
         warn!(
-            "autoplay: {action:?} never produced an input command after {} attempt(s) at {clicks:?} (hover {}ms, hold {}ms); if the button visibly reacts to these coordinates the press is being ignored — try longer timings under Settings -> Autoplay",
+            "autoplay: {action:?} never produced an input command after {} attempt(s) at {presses:?} (hover {}ms, hold {}ms); if the button visibly reacts to these coordinates the press is being ignored — try longer timings under Settings -> Autoplay",
             cfg.click_retries + 1,
             cfg.hover_delay_ms.ms(),
             cfg.click_hold_ms.ms()
@@ -1080,7 +1190,7 @@ fn discard_needs_window_guard(action: &MjaiEvent) -> bool {
 /// a chi button whose row is already open, whose effect we cannot predict.
 /// A second retry then replays the whole sequence on the theory that the
 /// opening click was the one lost.
-fn retry_slice(clicks: &[(f64, f64)], attempt: u32) -> &[(f64, f64)] {
+fn retry_slice(clicks: &[(f64, f64, bool)], attempt: u32) -> &[(f64, f64, bool)] {
     if attempt == 0 && clicks.len() > 1 {
         &clicks[clicks.len() - 1..]
     } else {
@@ -1545,7 +1655,7 @@ mod tests {
     /// nothing to escalate — every attempt presses the same one click.
     #[test]
     fn a_single_click_plan_always_retries_that_click() {
-        let clicks = [(1.0, 2.0)];
+        let clicks = [(1.0, 2.0, false)];
         assert_eq!(retry_slice(&clicks, 0), &clicks[..]);
         assert_eq!(retry_slice(&clicks, 1), &clicks[..]);
     }
@@ -1556,11 +1666,11 @@ mod tests {
     /// effect we cannot predict, so it is not the first thing tried.
     #[test]
     fn a_multi_click_plan_retries_the_committing_click_first() {
-        let clicks = [(1.0, 2.0), (3.0, 4.0)];
+        let clicks = [(1.0, 2.0, false), (3.0, 4.0, true)];
         assert_eq!(
             retry_slice(&clicks, 0),
-            &[(3.0, 4.0)],
-            "first retry presses only the candidate/tile click"
+            &[(3.0, 4.0, true)],
+            "first retry presses only the candidate/tile press (drag included)"
         );
         assert_eq!(
             retry_slice(&clicks, 1),
@@ -1573,7 +1683,7 @@ mod tests {
     /// must not panic if it ever is.
     #[test]
     fn no_clicks_is_not_a_panic() {
-        let clicks: [(f64, f64); 0] = [];
+        let clicks: [(f64, f64, bool); 0] = [];
         assert!(retry_slice(&clicks, 0).is_empty());
         assert!(retry_slice(&clicks, 3).is_empty());
     }

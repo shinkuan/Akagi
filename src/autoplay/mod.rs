@@ -32,7 +32,7 @@
 //! - [`context`] — shared state between the chromium capture backend
 //!   and this manager (page handle + canvas rect cache).
 //! - [`platform`] — `PlatformAutoplay` trait + the `Step` types
-//!   (`Click` / `Sleep` / `AwaitReady` / `DomClick` / `Discard`).
+//!   (`Click` / `Drag` / `Sleep` / `AwaitReady` / `DomClick` / `Discard`).
 //! - [`majsoul`] — the production Majsoul implementation: 16:9
 //!   coordinate tables (ported from the Python autoplay in
 //!   <https://github.com/shinkuan/Akagi>) + plan dispatch covering all mjai
@@ -44,9 +44,11 @@
 //!   tile-index resolution plus its current decision window, which is what
 //!   lets an mjai tile string name a physical copy at all.
 //! - [`cdp_input`] — chromiumoxide wrappers (`dispatch_click`,
-//!   `evaluate_canvas_rect`, and the Tenhou DOM helpers: action-button
-//!   selectors, the readiness probe, and the call into the injected
-//!   discard handler).
+//!   `dispatch_drag`, `evaluate_canvas_rect`, and the Tenhou DOM helpers:
+//!   action-button selectors, the readiness probe, and the call into the
+//!   injected discard handler).
+//! - [`drag`] — the human-like drag trajectory generator behind the
+//!   `Drag` step (pure geometry + timing, heavily unit-tested).
 //! - [`manager`] — the long-lived `AutoplayManager` task that owns
 //!   per-game state and drives the plan.
 //! - [`verify`] — did the click land? Counts the client's own uplink
@@ -67,6 +69,7 @@ pub mod budget;
 pub mod cdp_input;
 pub mod context;
 pub mod delay;
+pub mod drag;
 pub mod inject;
 pub mod majsoul;
 pub mod manager;

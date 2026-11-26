@@ -19,6 +19,16 @@ use riichienv_core::action::Action;
 pub enum Step {
     /// Click at a normalised 16:9 point on the game canvas.
     Click { x_norm: f64, y_norm: f64 },
+    /// Drag from a normalised 16:9 point on the game canvas upward and
+    /// release — the human "flick a tile out" discard on Majsoul.
+    ///
+    /// The coordinate is the press point (the tile). The release point is
+    /// *not* carried here on purpose: it is chosen at execution time,
+    /// where the canvas rect is known in pixels and the per-decision
+    /// randomisation (distance, drift, trajectory) is drawn — the same
+    /// place the click path's hover/hold timings are drawn. See
+    /// `autoplay::drag` for the trajectory shape.
+    Drag { x_norm: f64, y_norm: f64 },
     /// Pause for `duration_ms` before the next step. Used for the
     /// pre-click "thinking" delay and the inter-click gap inside one
     /// action.

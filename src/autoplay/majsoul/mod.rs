@@ -69,8 +69,8 @@ impl PlatformAutoplay for MajsoulAutoplay {
                 // issued during it are dropped) is folded into the delay
                 // model as the `opening_animation` functional floor.
                 push_pre_delay(&mut result.steps, ctx, DecisionKind::Dahai, 0);
-                if let Some(click) = plan_dahai_click(pai, ctx) {
-                    result.steps.push(click);
+                if let Some(press) = plan_dahai_press(pai, ctx) {
+                    result.steps.push(press);
                 }
             }
 
@@ -86,7 +86,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                 let Some(tile) = pai else {
                     return PlanResult::default();
                 };
-                // Clicks the riichi tile right after the button, so reserve
+                // Plays the riichi tile right after the button, so reserve
                 // one extra click of overhead.
                 push_pre_delay(&mut result.steps, ctx, DecisionKind::Reach, 1);
                 if let Some(button) = action_button_for(MajsoulOpType::Reach, ctx) {
@@ -101,8 +101,8 @@ impl PlatformAutoplay for MajsoulAutoplay {
                 result.steps.push(Step::Sleep {
                     duration_ms: ctx.cfg.inter_click_delay_ms.ms(),
                 });
-                if let Some(click) = plan_dahai_click(tile, ctx) {
-                    result.steps.push(click);
+                if let Some(press) = plan_dahai_press(tile, ctx) {
+                    result.steps.push(press);
                 }
             }
 
@@ -374,26 +374,40 @@ fn push_pre_delay(
     steps.push(Step::Sleep { duration_ms: sleep });
 }
 
-/// Plan a hand-tile click for a discard or riichi-declaring discard.
-fn plan_dahai_click(pai: &str, ctx: &ActionContext) -> Option<Step> {
+/// Plan a hand-tile press for a discard or riichi-declaring discard:
+/// a click or a drag-flick, per the configured [`DiscardInput`].
+fn plan_dahai_press(pai: &str, ctx: &ActionContext) -> Option<Step> {
+    let (x, y) = dahai_coords(pai, ctx)?;
+    Some(match ctx.cfg.discard_input {
+        crate::config::DiscardInput::Click => Step::Click {
+            x_norm: x,
+            y_norm: y,
+        },
+        // The release point is chosen by the manager at execution time —
+        // here we only name where the gesture starts (the tile).
+        crate::config::DiscardInput::Drag => Step::Drag {
+            x_norm: x,
+            y_norm: y,
+        },
+    })
+}
+
+/// Resolve the 16:9-normalised tile position for a discard.
+fn dahai_coords(pai: &str, ctx: &ActionContext) -> Option<(f64, f64)> {
     let our_seat = ctx.our_seat as usize;
     if our_seat >= ctx.snapshot.players.len() {
         return None;
     }
 
     // Dealer's first discard: Majsoul lays all 14 tiles continuously on
-    // the rack (sorted) — there's no "tsumohai" gap. Click position is
+    // the rack (sorted) — there's no "tsumohai" gap. Press position is
     // the index in the fully-sorted 14-tile array, using TILES[i]
     // directly (not get_pai_coord, which would add TSUMO_SPACE for i=13).
     if is_dealer_first_discard(ctx) {
         let mut sorted = ctx.snapshot.players[our_seat].tehai.clone();
         sorted.sort_by(|a, b| compare_pai(a, b));
         let idx = sorted.iter().position(|x| x == pai)?;
-        let (x, y) = TILES.get(idx).copied()?;
-        return Some(Step::Click {
-            x_norm: x,
-            y_norm: y,
-        });
+        return TILES.get(idx).copied();
     }
 
     let tehai: Vec<String> = ctx.snapshot.players[our_seat].tehai.clone();
@@ -423,12 +437,8 @@ fn plan_dahai_click(pai: &str, ctx: &ActionContext) -> Option<Step> {
     if has_tsumohai {
         let t = tsumohai.unwrap();
         if pai == t {
-            // Discarding the tsumohai: click the far-right tsumohai slot.
-            let (x, y) = get_pai_coord(13, tehai.len() - 1);
-            return Some(Step::Click {
-                x_norm: x,
-                y_norm: y,
-            });
+            // Discarding the tsumohai: press the far-right tsumohai slot.
+            return Some(get_pai_coord(13, tehai.len() - 1));
         }
         // Discarding a closed-hand tile. The tsumohai sits on the far right
         // visually. Exclude the last occurrence of the tsumohai tile from
@@ -444,23 +454,15 @@ fn plan_dahai_click(pai: &str, ctx: &ActionContext) -> Option<Step> {
         if idx >= TILES.len() - 1 {
             return None;
         }
-        let (x, y) = get_pai_coord(idx, tehai.len() - 1);
-        return Some(Step::Click {
-            x_norm: x,
-            y_norm: y,
-        });
+        return Some(get_pai_coord(idx, tehai.len() - 1));
     }
 
-    // No tsumohai: all tiles closed, click by sorted index directly.
+    // No tsumohai: all tiles closed, press by sorted index directly.
     let idx = sorted_tehai.iter().position(|x| x.as_str() == pai)?;
     if idx >= TILES.len() - 1 {
         return None;
     }
-    let (x, y) = get_pai_coord(idx, tehai.len());
-    Some(Step::Click {
-        x_norm: x,
-        y_norm: y,
-    })
+    Some(get_pai_coord(idx, tehai.len()))
 }
 /// True for the dealer's very first discard of a kyoku — the moment
 /// when Mahjong Soul has dealt 14 tiles, played the hand-sort animation,
@@ -764,6 +766,7 @@ mod tests {
 
     fn cfg() -> MajsoulAutoplayConfig {
         MajsoulAutoplayConfig {
+            discard_input: crate::config::DiscardInput::Click,
             pre_click_delay_min_ms: 0,
             pre_click_delay_max_ms: 0,
             inter_click_delay_ms: crate::config::MsRange::fixed(0),
@@ -773,6 +776,7 @@ mod tests {
             click_retries: 0,
             reload_after_failures: 0,
             dealer_first_discard_extra_delay_ms: crate::config::MsRange::fixed(0),
+            drag_duration_ms: crate::config::MsRange::fixed(0),
         }
     }
 

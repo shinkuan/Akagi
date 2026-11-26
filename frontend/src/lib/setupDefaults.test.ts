@@ -48,6 +48,7 @@ function makeConfig(over: {
     autoplay: {
       enabled: false,
       majsoul: {
+        discard_input: 'click',
         pre_click_delay_min_ms: 0,
         pre_click_delay_max_ms: 0,
         inter_click_delay_ms: [0, 0],
@@ -57,6 +58,7 @@ function makeConfig(over: {
         click_retries: 0,
         reload_after_failures: 0,
         dealer_first_discard_extra_delay_ms: [0, 0],
+        drag_duration_ms: [0, 0],
       },
       delay: {
         mode: 'legacy',

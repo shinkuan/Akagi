@@ -63,6 +63,7 @@ import type {
   CaptureMode,
   DelayMode,
   DelayModelConfig,
+  DiscardInput,
   MsRange,
   DetectedBrowser,
   GithubMirrorMode,
@@ -876,6 +877,7 @@ function AutoplayCard({
   const ap = draft.autoplay ?? {
     enabled: false,
     majsoul: {
+      discard_input: 'click' as DiscardInput,
       pre_click_delay_min_ms: 1000,
       pre_click_delay_max_ms: 3000,
       inter_click_delay_ms: [250, 500],
@@ -885,6 +887,7 @@ function AutoplayCard({
       click_retries: 2,
       reload_after_failures: 3,
       dealer_first_discard_extra_delay_ms: [2000, 3000],
+      drag_duration_ms: [220, 450],
     },
     delay: defaultDelayModel(),
   }
@@ -992,6 +995,39 @@ function AutoplayCard({
           step={50}
           onChange={(v) => setDelayField({ min_button_delay_ms: v })}
         />
+        {/* How the tile itself leaves the hand: a click, or a human-like
+            upward flick ("拖牌出牌"). Buttons are always clicked. */}
+        <Field
+          label={t('settings.autoplay.discard_input')}
+          hint={t('settings.autoplay.discard_input_hint')}
+        >
+          <Select
+            value={ap.majsoul.discard_input}
+            onValueChange={(v) => setMajsoulField({ discard_input: v as DiscardInput })}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="click">
+                {t('settings.autoplay.discard_input_click')}
+              </SelectItem>
+              <SelectItem value="drag">
+                {t('settings.autoplay.discard_input_drag')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        {ap.majsoul.discard_input === 'drag' && (
+          <RangeField
+            label={t('settings.autoplay.drag_duration')}
+            hint={t('settings.autoplay.drag_duration_hint')}
+            value={ap.majsoul.drag_duration_ms}
+            max={1000}
+            step={10}
+            onChange={(v) => setMajsoulField({ drag_duration_ms: v })}
+          />
+        )}
         <RangeField
           label={t('settings.autoplay.inter_click_delay')}
           value={ap.majsoul.inter_click_delay_ms}

@@ -102,7 +102,14 @@ export type PlatformKind = 'Majsoul' | 'Tenhou' | 'RiichiCity' | 'HoloMahjong'
  *  `src/config/range.rs::MsRange`; every decision draws one value from it. */
 export type MsRange = [number, number]
 
+/** How a discard leaves the hand. Mirrors
+ *  `src/config/autoplay.rs::DiscardInput` (serde snake_case). */
+export type DiscardInput = 'click' | 'drag'
+
 export type MajsoulAutoplayConfig = {
+  /** Gesture for the tile itself: `click` presses it, `drag` flicks it
+   *  out (press, travel upward, release). Buttons are clicks either way. */
+  discard_input: DiscardInput
   pre_click_delay_min_ms: number
   pre_click_delay_max_ms: number
   inter_click_delay_ms: MsRange
@@ -116,6 +123,9 @@ export type MajsoulAutoplayConfig = {
   /** Reload the game page after this many dead decisions in a row; 0 = off. */
   reload_after_failures: number
   dealer_first_discard_extra_delay_ms: MsRange
+  /** Total travel time (press → release) of the drag gesture, ms; only
+   *  used when `discard_input` is `'drag'`. */
+  drag_duration_ms: MsRange
 }
 
 /** Pre-click delay model parameters. Mirrors

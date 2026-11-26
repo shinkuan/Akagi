@@ -18,6 +18,11 @@ const HOVER_DELAY: MsRange = MsRange::new(150, 300);
 const CLICK_HOLD: MsRange = MsRange::new(60, 140);
 const VERIFY_INPUT: MsRange = MsRange::new(300, 500);
 const DEALER_FIRST_DISCARD_EXTRA: MsRange = MsRange::new(2000, 3000);
+/// How long the drag gesture travels (press → release) for the drag
+/// discard. A human flick is quick but not instant: fast enough to stay
+/// inside the decision window, slow enough that the tile visibly follows
+/// the cursor.
+const DRAG_DURATION: MsRange = MsRange::new(220, 450);
 upgraded_range!(upgrade_min_delay, 1000, MIN_DELAY);
 upgraded_range!(upgrade_min_button_delay, 1600, MIN_BUTTON_DELAY);
 upgraded_range!(upgrade_inter_click_delay, 300, INTER_CLICK_DELAY);
@@ -41,6 +46,22 @@ pub struct AutoplayConfig {
     pub majsoul: MajsoulAutoplayConfig,
     /// Pre-click delay model (platform-agnostic). See `autoplay::delay`.
     pub delay: DelayModelConfig,
+}
+
+/// How a discard leaves the hand on Majsoul. Buttons (chi/pon/kan/riichi
+/// and friends) are always clicks; this only chooses the gesture for the
+/// tile itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscardInput {
+    /// Synthesised mouse click on the tile. The historical behaviour.
+    #[default]
+    Click,
+    /// Human-like drag: press the tile, travel upward with the button
+    /// down, release above the rack ("flick a tile out"). The trajectory
+    /// is generated per decision — jittered, occasionally hesitating or
+    /// overshooting — see `autoplay::drag`.
+    Drag,
 }
 
 /// Which delay policy drives autoplay. Exactly one is active.
@@ -209,6 +230,10 @@ impl Default for DelayModelConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MajsoulAutoplayConfig {
+    /// Gesture used to leave the hand: `click` presses the tile, `drag`
+    /// flicks it out (press, travel upward, release). See
+    /// [`DiscardInput`]. Buttons are clicks either way.
+    pub discard_input: DiscardInput,
     /// Lower bound of the random pre-click delay (ms). The reference
     /// Akagi autoplay used `random.uniform(1.0, 3.0)` seconds; the same
     /// distribution is replicated here as `[1000, 3000]` ms by default.
@@ -268,6 +293,10 @@ pub struct MajsoulAutoplayConfig {
     /// the regular pre-click delay anyway).
     #[serde(deserialize_with = "upgrade_dealer_first_discard_extra")]
     pub dealer_first_discard_extra_delay_ms: MsRange,
+    /// Total travel time (press → release) of the drag gesture, ms, when
+    /// `discard_input = "drag"`. Drawn per decision like every range
+    /// here. Ignored in click mode.
+    pub drag_duration_ms: MsRange,
 }
 
 impl MajsoulAutoplayConfig {
@@ -280,6 +309,7 @@ impl MajsoulAutoplayConfig {
             click_hold_ms: self.click_hold_ms.draw(rng),
             verify_input_ms: self.verify_input_ms.draw(rng),
             dealer_first_discard_extra_delay_ms: self.dealer_first_discard_extra_delay_ms.draw(rng),
+            drag_duration_ms: self.drag_duration_ms.draw(rng),
             ..self.clone()
         }
     }
@@ -288,6 +318,7 @@ impl MajsoulAutoplayConfig {
 impl Default for MajsoulAutoplayConfig {
     fn default() -> Self {
         Self {
+            discard_input: DiscardInput::default(),
             pre_click_delay_min_ms: 1000,
             pre_click_delay_max_ms: 3000,
             inter_click_delay_ms: INTER_CLICK_DELAY,
@@ -297,6 +328,7 @@ impl Default for MajsoulAutoplayConfig {
             click_retries: 2,
             reload_after_failures: 3,
             dealer_first_discard_extra_delay_ms: DEALER_FIRST_DISCARD_EXTRA,
+            drag_duration_ms: DRAG_DURATION,
         }
     }
 }
@@ -347,6 +379,25 @@ mod tests {
         assert_eq!(cfg.delay.min_delay_ms, MIN_DELAY);
         assert_eq!(cfg.delay.min_button_delay_ms, MsRange::fixed(2000));
         assert_eq!(cfg.majsoul.verify_input_ms, VERIFY_INPUT, "absent: default");
+    }
+
+    /// A config written before the drag discard existed has neither
+    /// `discard_input` nor `drag_duration_ms` — it must deserialize to
+    /// click mode with the calibrated default range, and round-trip back
+    /// with both fields written out (so the next save persists them).
+    #[test]
+    fn missing_drag_fields_get_defaults() {
+        let cfg: MajsoulAutoplayConfig =
+            toml::from_str("pre_click_delay_min_ms = 1000\npre_click_delay_max_ms = 3000\n")
+                .unwrap();
+        assert_eq!(cfg.discard_input, DiscardInput::Click);
+        assert_eq!(cfg.drag_duration_ms, DRAG_DURATION);
+        let written = toml::to_string(&cfg).unwrap();
+        assert!(written.contains(r#"discard_input = "click""#));
+        assert!(written.contains("drag_duration_ms = [220, 450]"));
+        // And the drag mode itself round-trips.
+        let cfg: MajsoulAutoplayConfig = toml::from_str("discard_input = \"drag\"").unwrap();
+        assert_eq!(cfg.discard_input, DiscardInput::Drag);
     }
 
     /// A decision's settings hold one drawn value per range, inside it.

@@ -11,7 +11,8 @@ mod proxy;
 mod range;
 
 pub use autoplay::{
-    AutoplayConfig, DelayDistribution, DelayMode, DelayModelConfig, MajsoulAutoplayConfig,
+    AutoplayConfig, DelayDistribution, DelayMode, DelayModelConfig, DiscardInput,
+    MajsoulAutoplayConfig,
 };
 pub use bot::{BotConfig, NativeApiConfig};
 pub use capture::{CaptureConfig, CaptureMode, ChromiumConfig, HttpCaptureConfig};

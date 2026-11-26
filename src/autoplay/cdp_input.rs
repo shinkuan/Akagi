@@ -101,6 +101,100 @@ pub async fn dispatch_click_shaped(
     Ok(())
 }
 
+/// Dispatch a human-like drag: press at the path's first point, walk the
+/// pre-computed `path` one mouse-move per entry (sleeping each entry's
+/// delay between moves), and release at its last point.
+///
+/// The gesture is the Majsoul "flick a tile out": mousedown on the tile,
+/// a short hold so the engine registers the press on the tile sprite (the
+/// same `click_hold_ms` the click path uses), then a multi-event travel
+/// upward with the button down, and the release away from where the press
+/// happened. The path comes from [`drag_path`](crate::autoplay::drag::
+/// drag_path), whose entry 0 is the (slightly jittered) press point and
+/// whose last point differs from it — a zero-length drag would read as a
+/// click.
+///
+/// The hover requirement from [`dispatch_click_shaped`] applies unchanged:
+/// the ≥100 ms hover before the press is what makes Laya register the
+/// hit on the tile at all.
+pub async fn dispatch_drag(
+    page: &Page,
+    hover_delay_ms: u32,
+    hold_ms: u32,
+    path: &[crate::autoplay::drag::DragStep],
+) -> Result<()> {
+    let Some(first) = path.first() else {
+        return Err(anyhow!("drag path is empty — nothing to press"));
+    };
+    let pt = Point::new(first.point.0, first.point.1);
+    page.move_mouse(pt)
+        .await
+        .context("CDP move_mouse (drag start)")?;
+    if hover_delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(hover_delay_ms as u64)).await;
+    }
+
+    let press = DispatchMouseEventParams::builder()
+        .r#type(DispatchMouseEventType::MousePressed)
+        .x(pt.x)
+        .y(pt.y)
+        .button(MouseButton::Left)
+        .click_count(1)
+        .build()
+        .map_err(|e| anyhow!("build mousePressed (drag): {e}"))?;
+    page.execute(press)
+        .await
+        .context("CDP mousePressed (drag)")?;
+
+    if hold_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(hold_ms as u64)).await;
+    }
+
+    for step in path {
+        if step.delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(step.delay_ms)).await;
+        }
+        let (x, y) = step.point;
+        // Skip the no-op move to the press point itself — the cursor is
+        // already there and re-emitting it wastes a frame, not behaviour.
+        if (x - pt.x).abs() < f64::EPSILON && (y - pt.y).abs() < f64::EPSILON {
+            continue;
+        }
+        // `buttons: 1` is what carries "the left button is still down"
+        // through the move: without it the DOM `mousemove` events report
+        // `buttons == 0`, which is a hover, not a drag — engines read
+        // that field to tell the two apart.
+        let mv = DispatchMouseEventParams::builder()
+            .r#type(DispatchMouseEventType::MouseMoved)
+            .x(x)
+            .y(y)
+            .button(MouseButton::Left)
+            .buttons(1i64)
+            .build()
+            .map_err(|e| anyhow!("build mouseMoved (drag travel): {e}"))?;
+        page.execute(mv)
+            .await
+            .context("CDP move_mouse (drag travel)")?;
+    }
+
+    let Some(last) = path.last() else {
+        return Err(anyhow!("drag path is empty — refusing to release nowhere"));
+    };
+    let release = DispatchMouseEventParams::builder()
+        .r#type(DispatchMouseEventType::MouseReleased)
+        .x(last.point.0)
+        .y(last.point.1)
+        .button(MouseButton::Left)
+        .click_count(1)
+        .build()
+        .map_err(|e| anyhow!("build mouseReleased (drag): {e}"))?;
+    page.execute(release)
+        .await
+        .context("CDP mouseReleased (drag)")?;
+
+    Ok(())
+}
+
 /// Read the game canvas's `getBoundingClientRect()` via `Runtime.evaluate`.
 ///
 /// Majsoul renders into the first `<canvas>` element on the page; Tenhou
