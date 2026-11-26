@@ -83,7 +83,12 @@ pub fn open<R: Runtime>(app: &AppHandle<R>, cfg: &OverlayConfig) -> tauri::Resul
         return Ok(());
     }
 
-    let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+    let builder = crate::ipc::embedded_window::apply_to_window(WebviewWindowBuilder::new(
+        app,
+        LABEL,
+        WebviewUrl::App("index.html".into()),
+    ));
+    let w = builder
         .title("Akagi Overlay")
         .inner_size(DEFAULT_WIDTH, default_height(rows))
         .min_inner_size(MIN_WIDTH, min_height(rows))

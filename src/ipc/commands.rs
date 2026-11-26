@@ -397,11 +397,11 @@ pub async fn open_tool_window(route: String, app: AppHandle) -> CmdResult<()> {
             return;
         }
         let url = tauri::WebviewUrl::App(format!("index.html#/{route}").into());
-        match tauri::WebviewWindowBuilder::new(&handle, label, url)
-            .title(format!("Akagi — {route}"))
-            .inner_size(1100.0, 800.0)
-            .build()
-        {
+        let builder =
+            embedded_window::apply_to_window(tauri::WebviewWindowBuilder::new(&handle, label, url))
+                .title(format!("Akagi — {route}"))
+                .inner_size(1100.0, 800.0);
+        match builder.build() {
             Ok(_) => tracing::info!("tool window opened: {route}"),
             Err(e) => tracing::warn!("tool window failed for {route}: {e}"),
         }

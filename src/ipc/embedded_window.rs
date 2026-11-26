@@ -63,6 +63,26 @@ fn webview2() -> Option<&'static Webview2Options> {
     WEBVIEW2.get()
 }
 
+/// Apply the shared WebView2 profile + browser arguments to a **window**
+/// builder (the overlay and the detached pages are windows of their own, not
+/// children of `main`).
+///
+/// Every webview in the process must agree on these: a second WebView2
+/// environment that differs only in its options sometimes fails outright
+/// (`HRESULT 0x8007139F`, "class not registered"), and the failure mode is a
+/// permanently blank window with a single line in the log.
+pub fn apply_to_window<R: Runtime>(
+    builder: tauri::WebviewWindowBuilder<'_, R, AppHandle<R>>,
+) -> tauri::WebviewWindowBuilder<'_, R, AppHandle<R>> {
+    #[cfg(windows)]
+    if let Some(opts) = webview2() {
+        return builder
+            .data_directory(opts.profile.clone())
+            .additional_browser_args(&opts.args);
+    }
+    builder
+}
+
 /// Apply the shared WebView2 profile + browser arguments to a child builder.
 fn with_webview2<R: Runtime>(builder: WebviewBuilder<R>) -> WebviewBuilder<R> {
     #[cfg(windows)]
