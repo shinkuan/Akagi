@@ -27,6 +27,10 @@ use tokio::sync::RwLock;
 pub struct AutoplayContext {
     pub page: Arc<RwLock<Option<Page>>>,
     pub canvas_rect: Arc<RwLock<Option<CanvasRect>>>,
+    /// The game server's WS endpoint (`host:port` of the most recent
+    /// platform socket), for the status bar. Written by whichever capture
+    /// backend observed the socket; `None` before the first connection.
+    pub endpoint: Arc<RwLock<Option<String>>>,
     /// Server-granted time budget for the current decision window.
     /// Written by the Majsoul bridge (see `autoplay::budget`), read by
     /// the manager's delay model. Uses a `std::sync::RwLock` (not tokio)

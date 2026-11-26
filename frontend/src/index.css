@@ -337,6 +337,18 @@ html.overlay-window #root {
   overflow: hidden;
 }
 
+/* ---- toolbar window ----
+ * The `top` webview is a 42 px strip created by `ipc::embedded_window`. It
+ * must never scroll or show a body margin, and it is frameless like the
+ * window it belongs to, so the strip paints the whole surface.
+ */
+html.toolbar-window,
+html.toolbar-window body,
+html.toolbar-window #root {
+  overflow: hidden;
+  height: 100%;
+}
+
 /* ---- react-grid-layout placeholder + handle skin ----
  * Uses var(--primary) so palette + light/dark swaps cascade automatically.
  */

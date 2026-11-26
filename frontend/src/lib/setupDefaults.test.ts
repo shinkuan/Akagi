@@ -47,6 +47,7 @@ function makeConfig(over: {
     },
     autoplay: {
       enabled: false,
+      scope: 'all',
       majsoul: {
         discard_input: 'click',
         pre_click_delay_min_ms: 0,

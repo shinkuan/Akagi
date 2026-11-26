@@ -12,8 +12,8 @@
 //! straight to `Running`.
 
 use crate::capture::{
-    chromium::ChromiumBackend, hudsucker_backend::HudsuckerBackend, CaptureBackend, CaptureCtx,
-    CaptureKind as RtCaptureKind, ShutdownToken,
+    chromium::ChromiumBackend, embedded::EmbeddedBackend, hudsucker_backend::HudsuckerBackend,
+    CaptureBackend, CaptureCtx, CaptureKind as RtCaptureKind, ShutdownToken,
 };
 use crate::config::CaptureMode;
 use crate::ipc::state::AppState;
@@ -27,6 +27,7 @@ fn schema_kind(k: RtCaptureKind) -> CaptureKind {
     match k {
         RtCaptureKind::Mitm => CaptureKind::Mitm,
         RtCaptureKind::Chromium => CaptureKind::Chromium,
+        RtCaptureKind::Embedded => CaptureKind::Embedded,
     }
 }
 
@@ -115,7 +116,11 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
                 force_close,
             ))
         }
-        CaptureMode::Chromium => Box::new(ChromiumBackend::new(chromium_cfg)),
+        CaptureMode::Chromium => Box::new(ChromiumBackend::new(chromium_cfg.clone())),
+        // The webview's CDP port is opened by `lib::run` before the window
+        // is built; without that setup there is nothing to attach to, and
+        // the backend reports it as an error instead of hanging.
+        CaptureMode::Embedded => Box::new(EmbeddedBackend::new(chromium_cfg.block_telemetry)),
     };
     let descriptor = backend.descriptor();
     let kind = schema_kind(descriptor.kind);
@@ -126,6 +131,7 @@ pub async fn spawn_capture_supervisor(state: AppState) -> Result<()> {
     let label = match descriptor.kind {
         RtCaptureKind::Mitm => proxy_cfg.addr.clone(),
         RtCaptureKind::Chromium => format!("chromium ({})", descriptor.label),
+        RtCaptureKind::Embedded => "embedded webview".to_string(),
     };
     let running_status = CaptureStatus::Running {
         kind,
@@ -211,5 +217,6 @@ fn kind_label(k: CaptureKind) -> &'static str {
     match k {
         CaptureKind::Mitm => "MITM",
         CaptureKind::Chromium => "Chromium",
+        CaptureKind::Embedded => "Embedded",
     }
 }

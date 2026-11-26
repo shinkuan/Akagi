@@ -543,7 +543,9 @@
       "chromium_title": "Chromium browser (recommended)",
       "chromium_desc": "Akagi launches a controlled browser and intercepts WebSocket frames via Chrome DevTools Protocol. No system proxy. No CA cert. Works for Mahjong Soul and Tenhou; not for RiichiCity (no web client).",
       "mitm_title": "MITM proxy (advanced)",
-      "mitm_desc": "hudsucker-based MITM. You configure your system proxy and trust Akagi's self-signed CA. Required for RiichiCity (no web client)."
+      "mitm_desc": "hudsucker-based MITM. You configure your system proxy and trust Akagi's self-signed CA. Required for RiichiCity (no web client).",
+      "embedded_title": "Built-in window (recommended)",
+      "embedded_desc": "The game runs inside this window, next to the panel — one window, no extra browser, no proxy or certificate."
     },
     "mitm": {
       "title": "MITM proxy settings",
@@ -820,7 +822,11 @@
     "kyuushukyuuhai": "Kyuushukyuuhai",
     "skip": "Skip",
     "points_suffix": "pts",
-    "points_value": "+{{points}} pts"
+    "points_value": "+{{points}} pts",
+    "kyoku": "Round",
+    "honba": "Honba",
+    "kyotaku": "Riichi sticks",
+    "self_wind": "Your wind"
   },
   "errors": {
     "something_wrong": "Something went wrong",
@@ -978,5 +984,26 @@
   "overlay": {
     "close": "Close overlay",
     "empty": "Waiting for the bot…"
+  },
+  "mode": {
+    "off": "Off",
+    "recommend": "Suggest",
+    "auto": "Auto",
+    "full_auto": "Full auto"
+  },
+  "panel": {
+    "bot_status": "Bot status",
+    "status_idle": "Idle",
+    "status_ready": "Ready",
+    "waiting_decision": "Waiting for the first decision",
+    "ai_recommend": "AI suggestion",
+    "tile_hint": "In-game hint",
+    "waiting_data": "Waiting for game data…",
+    "cloud": "Cloud inference",
+    "cloud_off": "Not in use",
+    "cloud_active": "Connected",
+    "cloud_degraded": "Degraded",
+    "cloud_desc": "The built-in model runs locally; a cloud key swaps in a stronger hosted model. Values fall back to the built-in model automatically.",
+    "footer_idle": "Idle"
   }
 }

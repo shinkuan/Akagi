@@ -75,6 +75,11 @@ pub enum CaptureMode {
     #[default]
     Mitm,
     Chromium,
+    /// The game runs inside Akagi's own window (a WebView2 the main Tauri
+    /// window hosts alongside the control panel). Capture and autoplay
+    /// attach to that WebView2 over CDP — see `capture::embedded`. Web
+    /// platforms only (Majsoul, Tenhou); native clients keep MITM.
+    Embedded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

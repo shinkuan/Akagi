@@ -543,7 +543,9 @@
       "chromium_title": "Chromium ブラウザ（推奨）",
       "chromium_desc": "Akagi は制御下のブラウザを起動し、Chrome DevTools Protocol で WebSocket フレームを傍受します。システムプロキシも CA 証明書も不要。雀魂（Mahjong Soul）と天鳳（Tenhou）に対応；麻雀一番街は Web クライアントが無いため非対応です。",
       "mitm_title": "MITM プロキシ（上級者向け）",
-      "mitm_desc": "hudsucker ベースの MITM。システムプロキシを設定し、Akagi の自己署名 CA を信頼する必要があります。麻雀一番街には必須です（Web クライアントが無いため）。"
+      "mitm_desc": "hudsucker ベースの MITM。システムプロキシを設定し、Akagi の自己署名 CA を信頼する必要があります。麻雀一番街には必須です（Web クライアントが無いため）。",
+      "embedded_title": "内蔵ウィンドウ（推奨）",
+      "embedded_desc": "ゲームがこのウィンドウ内でパネルと並んで動作します。別ブラウザもプロキシも証明書も不要です。"
     },
     "mitm": {
       "title": "MITM プロキシ設定",
@@ -820,7 +822,11 @@
     "kyuushukyuuhai": "九種九牌",
     "skip": "スキップ",
     "points_suffix": "点",
-    "points_value": "+{{points}} 点"
+    "points_value": "+{{points}} 点",
+    "kyoku": "局",
+    "honba": "本場",
+    "kyotaku": "供託",
+    "self_wind": "自風"
   },
   "errors": {
     "something_wrong": "エラーが発生しました",
@@ -978,5 +984,26 @@
   "overlay": {
     "close": "オーバーレイを閉じる",
     "empty": "AI の判断を待っています…"
+  },
+  "mode": {
+    "off": "OFF",
+    "recommend": "提案",
+    "auto": "自動",
+    "full_auto": "全自動"
+  },
+  "panel": {
+    "bot_status": "Bot ステータス",
+    "status_idle": "待機",
+    "status_ready": "準備完了",
+    "waiting_decision": "最初の判断を待っています",
+    "ai_recommend": "AI 提案",
+    "tile_hint": "牌表示",
+    "waiting_data": "ゲームデータを待機中…",
+    "cloud": "クラウド推論",
+    "cloud_off": "未使用",
+    "cloud_active": "接続済み",
+    "cloud_degraded": "低下",
+    "cloud_desc": "内蔵モデルはローカルで動作します。クラウドキーを設定するとより強いモデルに切り替わり、利用できない場合は内蔵モデルへ自動的に戻ります。",
+    "footer_idle": "アイドル"
   }
 }

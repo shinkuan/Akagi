@@ -35,12 +35,33 @@ upgraded_range!(
     DEALER_FIRST_DISCARD_EXTRA
 );
 
+/// Which decisions autoplay performs when it is enabled.
+///
+/// The toolbar's four assist modes map onto this plus [`AutoplayConfig::enabled`]:
+/// off (disabled) / recommend (disabled, overlay on) / auto
+/// (`discards_only`) / full auto (`all`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoplayScope {
+    /// Every decision: discards, calls (chi/pon/kan), riichi, win claims.
+    #[default]
+    All,
+    /// Only the tile itself: Dahai and the riichi-declaring discard are
+    /// performed; claims, riichi declarations and win buttons are left to
+    /// the player.
+    DiscardsOnly,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct AutoplayConfig {
     /// Master switch. When `false`, no `AutoplayManager` is spawned and bot
     /// responses are not converted into UI clicks.
     pub enabled: bool,
+    /// Which decisions the manager is allowed to perform. With `enabled`
+    /// it yields the toolbar's Auto (`discards_only`) vs Full auto (`all`)
+    /// distinction.
+    pub scope: AutoplayScope,
     /// Per-platform autoplay knobs. Only the matching platform's section is
     /// consulted at runtime; the others sit dormant.
     pub majsoul: MajsoulAutoplayConfig,

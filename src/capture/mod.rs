@@ -11,6 +11,7 @@
 //! into the platform bridge, which emits mjai events on [`crate::event_bus::MjaiBus`].
 
 pub mod chromium;
+pub mod embedded;
 pub mod flow;
 pub mod http;
 pub mod hudsucker_backend;
@@ -33,6 +34,8 @@ use tokio::sync::Notify;
 pub enum CaptureKind {
     Mitm,
     Chromium,
+    /// The game runs in Akagi's own embedded WebView2; CDP attaches to it.
+    Embedded,
 }
 
 impl CaptureKind {
@@ -40,6 +43,7 @@ impl CaptureKind {
         match self {
             CaptureKind::Mitm => "mitm",
             CaptureKind::Chromium => "chromium",
+            CaptureKind::Embedded => "embedded",
         }
     }
 }

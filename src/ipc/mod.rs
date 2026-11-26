@@ -35,6 +35,7 @@
 //! | `analysis-result`  | `analysis::AnalysisResult`    |
 //! | `history-recorded` | `schema::HistoryEvent`        |
 //! | `overlay-config`   | `config::OverlayConfig`       |
+//! | `connection-endpoint` | `Option<String>` (`host:port`) |
 //!
 //! All of the above are broadcast to every webview, which is what lets the
 //! [`overlay`] window render suggestions without any dedicated plumbing.
@@ -42,6 +43,7 @@
 
 pub mod capture_supervisor;
 pub mod commands;
+pub mod embedded_window;
 pub mod overlay;
 pub mod state;
 
@@ -81,7 +83,8 @@ fn spawn_forwarders<R: Runtime>(app: AppHandle<R>, state: AppState) {
 
     // Status buses: forward AND snapshot into AppState.
     spawn_bot_status_forwarder(app.clone(), state.clone());
-    spawn_capture_status_forwarder(app, state);
+    spawn_capture_status_forwarder(app.clone(), state.clone());
+    spawn_endpoint_forwarder(app, state);
 }
 
 /// Plain forwarder: subscribe, drain, emit. `Lagged` is logged once and
@@ -146,6 +149,29 @@ fn spawn_capture_status_forwarder<R: Runtime>(app: AppHandle<R>, state: AppState
                 }
                 Err(broadcast::error::RecvError::Closed) => return,
             }
+        }
+    });
+}
+
+/// The game server's socket endpoint, for the status bar.
+///
+/// It is written into `AutoplayContext.endpoint` by whichever capture
+/// backend opened the socket, and there is no bus for it — a 500 ms poll of
+/// one small cell is cheaper than threading a new channel through both
+/// backends, and the value changes at most once per connection.
+fn spawn_endpoint_forwarder<R: Runtime>(app: AppHandle<R>, state: AppState) {
+    let cell = state.autoplay_context.endpoint.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut last: Option<String> = None;
+        loop {
+            let current = cell.read().await.clone();
+            if current != last {
+                last = current.clone();
+                if let Err(e) = app.emit("connection-endpoint", &current) {
+                    warn!("ipc emit connection-endpoint failed: {e}");
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
     });
 }

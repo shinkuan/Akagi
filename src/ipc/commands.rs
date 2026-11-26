@@ -17,6 +17,7 @@ use crate::game_state::snapshot::GameStateSnapshot;
 use crate::ipc::capture_supervisor::{
     restart_capture as restart_capture_inner, spawn_capture_supervisor,
 };
+use crate::ipc::embedded_window;
 use crate::ipc::overlay;
 use crate::ipc::state::AppState;
 use crate::schema::{
@@ -27,7 +28,7 @@ use crate::schema::{
 use crate::util::resolve_dir;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 /// Returns `true` exactly once per process the first time `bot_enabled`
 /// is observed as `true` here. Side-effect on success: flips `flag`
@@ -103,10 +104,35 @@ pub async fn update_config(
     let bot_now_enabled = new_config.bot.enabled;
     let autoplay_now_enabled = new_config.autoplay.enabled;
     let new_overlay = new_config.overlay.clone();
+    // Switching in or out of embedded capture needs the WebView2 browser
+    // arguments, which are read once when the webview process starts — so
+    // that transition is the one config change that cannot be applied live.
+    let embedded_toggled = matches!(prev_capture.mode, crate::config::CaptureMode::Embedded)
+        != matches!(
+            new_config.capture.mode,
+            crate::config::CaptureMode::Embedded
+        );
+    let layout_cfg = new_config.clone();
     *state.config.write().await = new_config;
 
     // Open / close / retune the overlay window to match what was just saved.
     overlay::reconcile(&app, &new_overlay);
+
+    // Re-shape the single-window layout: the toolbar/panel/game split and
+    // the game URL both follow the config just saved (wizard completion is
+    // the big one — it turns the full window into the split layout).
+    embedded_window::reconcile(&app, &layout_cfg);
+
+    if embedded_toggled {
+        let _ = state.notify_bus.send(
+            Notification::info("Restart Akagi for embedded mode")
+                .body(
+                    "Embedded capture opens its debugging port when the window is created, \
+                     so this change takes effect on the next launch.",
+                )
+                .id("embedded-restart"),
+        );
+    }
 
     // Sync the history recorder's platform tag immediately. Subsequent
     // finalised games are stamped with the new tag; the in-flight buffer
@@ -226,6 +252,161 @@ pub async fn set_overlay_enabled(
     persist_config(&cfg, &state.config_path).map_err(|e| e.to_string())?;
     overlay::reconcile(&app, &cfg.overlay);
     Ok(())
+}
+
+/// The toolbar's four assist modes, as one switch.
+///
+/// The backend models this as three independent flags (`bot.enabled`,
+/// `autoplay.enabled`, `autoplay.scope`, plus `overlay.enabled` for the
+/// floating suggestion window). The toolbar is one segmented control, so it
+/// needs one command that sets the whole combination atomically — going
+/// through `update_config` would re-persist a full config the toolbar never
+/// loaded, and four separate writes would leave the game briefly in an
+/// half-applied mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssistMode {
+    /// Analysis off — a plain game window.
+    Off,
+    /// Suggestions shown (overlay), nothing performed.
+    Recommend,
+    /// Bot plays the tile; calls / reach / win buttons stay with the player.
+    Auto,
+    /// Bot performs every decision.
+    FullAuto,
+}
+
+#[tauri::command]
+pub async fn set_assist_mode(
+    mode: AssistMode,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<()> {
+    let (cfg, overlay) = {
+        let mut cfg = state.config.write().await;
+        match mode {
+            AssistMode::Off => {
+                cfg.bot.enabled = false;
+                cfg.autoplay.enabled = false;
+                cfg.overlay.enabled = false;
+            }
+            AssistMode::Recommend => {
+                cfg.bot.enabled = true;
+                cfg.autoplay.enabled = false;
+                cfg.overlay.enabled = true;
+            }
+            AssistMode::Auto => {
+                cfg.bot.enabled = true;
+                cfg.autoplay.enabled = true;
+                cfg.autoplay.scope = crate::config::AutoplayScope::DiscardsOnly;
+                cfg.overlay.enabled = true;
+            }
+            AssistMode::FullAuto => {
+                cfg.bot.enabled = true;
+                cfg.autoplay.enabled = true;
+                cfg.autoplay.scope = crate::config::AutoplayScope::All;
+                // The overlay is left as the user set it: full auto does not
+                // need the floating card, but it may be wanted on a second
+                // monitor, so this mode is not opinionated about it.
+            }
+        }
+        let overlay = cfg.overlay.clone();
+        (cfg.clone(), overlay)
+    };
+    persist_config(&cfg, &state.config_path).map_err(|e| e.to_string())?;
+
+    // Hot-start the managers if this mode is the one that first enables
+    // them. `update_config` does the same thing on its path.
+    let bot_enabled = cfg.bot.enabled;
+    if claim_bot_manager_spawn(bot_enabled, &state.bot_manager_started) {
+        let cfg_for_bot = state.config.clone();
+        let events = state.post_tracker_bus.clone();
+        let resp = state.bot_response_bus.clone();
+        let bs = state.bot_status_bus.clone();
+        let nb = state.notify_bus.clone();
+        let inspector = state.log_session.inspector();
+        let rt = state.runtime.clone();
+        let syncs = state.syncs_in_flight.clone();
+        let started_flag = state.bot_manager_started.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) =
+                crate::bot::run_bot_manager(cfg_for_bot, events, resp, bs, nb, inspector, rt, syncs)
+                    .await
+            {
+                tracing::error!("Bot manager failed: {e:#}");
+                started_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+    }
+    if claim_autoplay_manager_spawn(cfg.autoplay.enabled, &state.autoplay_manager_started) {
+        let cfg_for_ap = state.config.clone();
+        let ctx_for_ap = state.autoplay_context.clone();
+        let tracker_for_ap = state.game_tracker.clone();
+        let mjai_for_ap = state.mjai_bus.clone();
+        let resp_for_ap = state.bot_response_bus.clone();
+        let notify_for_ap = state.notify_bus.clone();
+        let config_dir_for_ap = state
+            .config_path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let started_flag = state.autoplay_manager_started.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = crate::autoplay::run_autoplay_manager(
+                cfg_for_ap,
+                ctx_for_ap,
+                tracker_for_ap,
+                mjai_for_ap,
+                resp_for_ap,
+                notify_for_ap,
+                config_dir_for_ap,
+            )
+            .await
+            {
+                tracing::error!("Autoplay manager failed: {e:#}");
+                started_flag.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+    }
+
+    overlay::reconcile(&app, &overlay);
+    Ok(())
+}
+
+/// Open one of the full pages (settings / history / overview …) in its own
+/// window.
+///
+/// The single-window layout gives the panel to three summary cards; the rich
+/// pages still exist and are reached from the toolbar. Each page gets its
+/// own window so they can sit beside the game, and re-invoking focuses the
+/// one already open instead of stacking duplicates.
+#[tauri::command]
+pub async fn open_tool_window(route: String, app: AppHandle) -> CmdResult<()> {
+    // Only the known pages: the route goes into a URL, and a free-form
+    // string would let a caller aim the window anywhere.
+    const ROUTES: [&str; 4] = ["overview", "settings", "history", "bots"];
+    if !ROUTES.contains(&route.as_str()) {
+        return Err(format!("unknown page: {route}"));
+    }
+    let label = format!("tool-{route}");
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        if let Some(existing) = handle.get_window(&label) {
+            let _ = existing.unminimize();
+            let _ = existing.set_focus();
+            return;
+        }
+        let url = tauri::WebviewUrl::App(format!("index.html#/{route}").into());
+        match tauri::WebviewWindowBuilder::new(&handle, label, url)
+            .title(format!("Akagi — {route}"))
+            .inner_size(1100.0, 800.0)
+            .build()
+        {
+            Ok(_) => tracing::info!("tool window opened: {route}"),
+            Err(e) => tracing::warn!("tool window failed for {route}: {e}"),
+        }
+    })
+    .map_err(|e| e.to_string())
 }
 
 /// Synthetic `BotInfo` entries for the built-in native bots. They have no
@@ -1820,6 +2001,8 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::get_config,
             $crate::ipc::commands::update_config,
             $crate::ipc::commands::set_overlay_enabled,
+            $crate::ipc::commands::set_assist_mode,
+            $crate::ipc::commands::open_tool_window,
             $crate::ipc::commands::list_bots,
             $crate::ipc::commands::set_active_bot,
             $crate::ipc::commands::get_bot_settings,

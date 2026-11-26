@@ -543,7 +543,9 @@
       "chromium_title": "Chromium 浏览器(推荐)",
       "chromium_desc": "Akagi 会启动一个受控的浏览器，并通过 Chrome DevTools Protocol 拦截 WebSocket 数据帧。无需系统代理，也无需 CA 证书。支持雀魂(Mahjong Soul)与天凤(Tenhou)；不支持麻雀一番街(无 Web 客户端)。",
       "mitm_title": "MITM 代理(高级)",
-      "mitm_desc": "基于 hudsucker 的 MITM。需要配置系统代理并信任 Akagi 的自签 CA。麻雀一番街必须使用此模式(无 Web 客户端)。"
+      "mitm_desc": "基于 hudsucker 的 MITM。需要配置系统代理并信任 Akagi 的自签 CA。麻雀一番街必须使用此模式(无 Web 客户端)。",
+      "embedded_title": "内置窗口（推荐）",
+      "embedded_desc": "游戏直接在本窗口内运行，与控制面板并排——单窗口，无需额外浏览器，也无需代理或证书。"
     },
     "mitm": {
       "title": "MITM 代理设置",
@@ -820,7 +822,11 @@
     "kyuushukyuuhai": "九种九牌",
     "skip": "略过",
     "points_suffix": "点",
-    "points_value": "+{{points}} 点"
+    "points_value": "+{{points}} 点",
+    "kyoku": "局",
+    "honba": "本场",
+    "kyotaku": "供托",
+    "self_wind": "自风"
   },
   "errors": {
     "something_wrong": "发生错误",
@@ -978,5 +984,26 @@
   "overlay": {
     "close": "关闭悬浮窗",
     "empty": "等待 AI 建议…"
+  },
+  "mode": {
+    "off": "关",
+    "recommend": "推荐",
+    "auto": "自动",
+    "full_auto": "全自动"
+  },
+  "panel": {
+    "bot_status": "Bot 状态",
+    "status_idle": "待机",
+    "status_ready": "就绪",
+    "waiting_decision": "等待第一次决策",
+    "ai_recommend": "AI 推荐",
+    "tile_hint": "牌面提示",
+    "waiting_data": "等待游戏数据…",
+    "cloud": "云端推理",
+    "cloud_off": "未使用",
+    "cloud_active": "已连接",
+    "cloud_degraded": "降级",
+    "cloud_desc": "内置模型本地运行；填写云端密钥即可换成更强的托管模型，不可用时自动回退到内置模型。",
+    "footer_idle": "空闲"
   }
 }

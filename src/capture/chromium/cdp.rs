@@ -149,6 +149,48 @@ fn is_autoplay_target_url(ws_url: &str) -> bool {
     AUTOPLAY_HOST_HINTS.iter().any(|h| ws_url.contains(h))
 }
 
+/// `host:port` of a WebSocket URL, for the status bar. The endpoint is
+/// display-only: `redact_query` already keeps credentials out of the log
+/// line, and this keeps only the authority.
+fn ws_host_port(ws_url: &str) -> Option<String> {
+    let rest = ws_url
+        .strip_prefix("wss://")
+        .or_else(|| ws_url.strip_prefix("ws://"))?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    if authority.is_empty() {
+        return None;
+    }
+    // A URL without an explicit port still connects on the scheme default;
+    // saying ":443" is what the user sees in their client's own status.
+    if authority.contains(':') {
+        Some(authority.to_string())
+    } else if ws_url.starts_with("wss://") {
+        Some(format!("{authority}:443"))
+    } else {
+        Some(format!("{authority}:80"))
+    }
+}
+
+/// Whether a page target belongs to the game at all.
+///
+/// In embedded mode the same WebView2 process also hosts Akagi's own UI
+/// webviews (top bar, panel, tool windows) — their targets must never be
+/// attached: `Network.enable` plus fetch interception on our own UI would
+/// pause our own requests and log noise, and `document.querySelector('canvas')`
+/// probes from autoplay would find nothing. Tauri serves the UI from
+/// `tauri://` / `tauri.localhost` in release and Vite in dev.
+fn is_app_ui_url(url: &str) -> bool {
+    let u = url.trim();
+    u.starts_with("tauri://")
+        || u.starts_with("about:")
+        || u.starts_with("data:")
+        || u.contains("tauri.localhost")
+        || u.starts_with("http://localhost:1420")
+        || u.starts_with("http://127.0.0.1:1420")
+        || u.starts_with("devtools://")
+        || u.starts_with("chrome-extension://")
+}
+
 /// Run the CDP loop until the browser disconnects or an unrecoverable
 /// error occurs. Frames flow through `bridges` into `mjai_bus`, and each
 /// frame is also recorded into `inspector` for the Logs → Inspector tab.
@@ -246,6 +288,18 @@ pub async fn run(
                 let id = page.target_id().inner().clone();
                 if !adds.contains(&id) {
                     continue;
+                }
+                // Embedded mode shares the WebView2 process with Akagi's own
+                // UI webviews. Intercepting those would pause our own
+                // requests and pollute the inspector — and nothing there is
+                // a game to bridge.
+                match page.url().await {
+                    Ok(Some(url)) if is_app_ui_url(&url) => {
+                        debug!("CDP: skipping app UI target {id} ({url})");
+                        continue;
+                    }
+                    Ok(_) => {}
+                    Err(e) => debug!("CDP: could not read URL of target {id}: {e:?}"),
                 }
                 match attach_page(
                     page.clone(),
@@ -681,12 +735,20 @@ async fn attach_page(
 
                     // If this is the platform's WS (Majsoul), capture
                     // the owning page so autoplay can dispatch input
-                    // into it. The handle is bound to the *tab* and lives
-                    // until the tab closes (see the poll loop); a new WS on
-                    // the same tab just refreshes it. Multi-tab user:
-                    // most-recent wins, per the plan.
+                    // into it, and record the server endpoint for the
+                    // status bar. The handle is bound to the *tab* and
+                    // lives until the tab closes (see the poll loop); a
+                    // new WS on the same tab just refreshes it.
                     if let Some(ctx) = &autoplay {
                         if is_autoplay_target_url(&ev.url) {
+                            if let Some(hostport) = ws_host_port(&ev.url) {
+                                let mut ep = ctx.endpoint.write().await;
+                                if ep.as_deref() != Some(hostport.as_str()) {
+                                    *ep = Some(hostport.clone());
+                                    drop(ep);
+                                    info!("game endpoint: {hostport}");
+                                }
+                            }
                             let mut guard = ctx.page.write().await;
                             let prev_target =
                                 guard.as_ref().map(|p| p.target_id().inner().clone());

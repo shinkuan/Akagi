@@ -132,6 +132,8 @@ pub enum BotStatus {
 pub enum CaptureKind {
     Mitm,
     Chromium,
+    /// Game runs in Akagi's own window (embedded WebView2).
+    Embedded,
 }
 
 /// Lifecycle of the active capture backend.

@@ -1,12 +1,17 @@
 {
   "identifier": "default",
-  "description": "Default capability",
-  "windows": ["main", "debug"],
+  "description": "Default capability. `main` is the declarative window's webview and, in the single-window layout, the right-hand control panel; `top` is the toolbar strip; `tool-*` are the detached pages (settings/history/overview). The `game` webview is deliberately absent — the external game page must never reach Tauri IPC.",
+  "windows": ["main", "debug", "top", "tool-*"],
   "permissions": [
     "core:default",
     "core:event:default",
     "core:window:default",
     "core:webview:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
     "dialog:allow-open",
     "dialog:allow-save"
   ]

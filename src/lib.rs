@@ -24,11 +24,90 @@ use std::sync::Arc;
 use tauri::Manager;
 use tracing::{error, info, warn};
 
+/// Everything the embedded game webview needs on the WebView2 side: where the
+/// browser keeps its profile and which DevTools port to open.
+///
+/// This is *not* done through `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`:
+/// wry always sets `additionalBrowserArgs` itself (to disable the built-in
+/// PDF/UI overlays), and an explicit `additionalBrowserArgs` makes WebView2
+/// ignore the environment variable entirely. The arguments have to be handed
+/// to the builder instead — which is why the main window is created at
+/// runtime rather than declaratively in `tauri.conf.json`.
+#[derive(Debug, Clone)]
+struct Webview2Setup {
+    profile: std::path::PathBuf,
+    /// `additionalBrowserArgs` for every `WebviewWindowBuilder` / `WebviewBuilder`.
+    /// wry's defaults are included: passing our own replaces theirs. The
+    /// embedded CDP port lives in here; `capture::embedded` got it separately
+    /// via `set_endpoint`.
+    args: String,
+}
+
+fn webview2_setup() -> Option<Webview2Setup> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let profile = util::resolve_dir(Path::new("./webview-profile"));
+    if let Err(e) = std::fs::create_dir_all(&profile) {
+        warn!(
+            "embedded: could not create webview profile dir {}: {e}",
+            profile.display()
+        );
+    }
+    // A stable port by preference: the WebView2 browser process outlives a
+    // frontend hot-reload of the app window, and tools (or a second Akagi)
+    // that remember the port keep working. Falls back to any free port when
+    // 23411 is taken.
+    const PREFERRED_PORT: u16 = 23411;
+    let port = if std::net::TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).is_ok() {
+        PREFERRED_PORT
+    } else {
+        match capture::chromium::launch::pick_remote_debugging_port() {
+            Ok(p) => p,
+            Err(e) => {
+                error!("embedded: could not reserve a DevTools port: {e:#}");
+                return None;
+            }
+        }
+    };
+    // wry's defaults, which an explicit `additionalBrowserArgs` would
+    // otherwise silently drop.
+    let args = format!(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+         --remote-debugging-port={port}"
+    );
+    capture::embedded::set_endpoint(capture::embedded::Webview2Endpoint {
+        port,
+        user_data_dir: profile.clone(),
+    });
+    info!(
+        "embedded: webview2 CDP on port {port}, profile {}",
+        profile.display()
+    );
+    Some(Webview2Setup { profile, args })
+}
+
 pub fn run() {
     platform::setup();
 
     let args = cli::Cli::parse();
     let (cfg, config_path) = config::load_config(args.config.as_deref());
+
+    // Embedded capture runs the game in a WebView2 inside our own window,
+    // and WebView2 only opens a DevTools port when the browser arguments are
+    // present **before** the first webview is created. That happens while
+    // the app is being built, so the variables have to be set here — before
+    // `tauri::Builder` — and the endpoint handed to `capture::embedded`.
+    //
+    // Gated on the mode: there is no reason to expose a debugging port on
+    // our own UI when the game runs in an external browser or over MITM.
+    // Only embedded capture needs the WebView2 DevTools port: there is no
+    // reason to expose one on our own UI when the game runs elsewhere.
+    let webview2 = if matches!(cfg.capture.mode, config::CaptureMode::Embedded) {
+        webview2_setup()
+    } else {
+        None
+    };
 
     let log_dir = util::resolve_dir(&cfg.logging.dir);
     let targets = [
@@ -112,6 +191,10 @@ pub fn run() {
     let proxy_enabled = cfg.proxy.enabled;
     let autoplay_enabled = cfg.autoplay.enabled;
     let overlay_cfg = cfg.overlay.clone();
+    // Clone taken here, before `cfg` is moved into the setup closure: the
+    // first layout pass needs it synchronously, and the tokio lock around
+    // the live config must not be blocked on from the main thread.
+    let layout_cfg = cfg.clone();
 
     // Game-state tracker handle is built up front so AppState can carry
     // the Arc, but the consumer task is spawned inside `.setup()` once
@@ -148,6 +231,42 @@ pub fn run() {
             // binaries live under `<resource_dir>/runtime/...` and that
             // path is only resolvable once the AppHandle exists.
             move |app| {
+                // The main window is created here rather than declaratively:
+                // the embedded CDP port has to ride on `additionalBrowserArgs`
+                // of the first webview created, and that can only be attached
+                // by a builder (see `webview2_setup`).
+                if let Some(opts) = &webview2 {
+                    ipc::embedded_window::set_webview2_options(
+                        ipc::embedded_window::Webview2Options {
+                            profile: opts.profile.clone(),
+                            args: opts.args.clone(),
+                        },
+                    );
+                }
+                let mut window_builder = tauri::WebviewWindowBuilder::new(
+                    app,
+                    "main",
+                    tauri::WebviewUrl::App("index.html".into()),
+                )
+                .title("Akagi")
+                .inner_size(1560.0, 980.0)
+                .min_inner_size(760.0, 560.0);
+                #[cfg(windows)]
+                if let Some(opts) = &webview2 {
+                    window_builder = window_builder
+                        .data_directory(opts.profile.clone())
+                        .additional_browser_args(&opts.args);
+                }
+                let main_window = window_builder.build()?;
+                {
+                    use tauri_plugin_window_state::{StateFlags, WindowExt};
+                    if let Err(e) = main_window.restore_state(
+                        StateFlags::POSITION | StateFlags::SIZE,
+                    ) {
+                        tracing::debug!("main window: no saved geometry to restore: {e}");
+                    }
+                }
+
                 let resource_dir = app.path().resource_dir().ok();
                 let runtime = bot::PythonRuntime::locate(resource_dir.as_deref()).ok();
                 match &runtime {
@@ -185,6 +304,24 @@ pub fn run() {
                 );
 
                 ipc::install(app.handle(), state.clone())?;
+
+                // Shape the window: panel on the right, toolbar on top, and
+                // (in embedded mode) the game on the left. Before the
+                // wizard completes this is a no-op and the full declarative
+                // window stands.
+                ipc::embedded_window::reconcile(app.handle(), &layout_cfg);
+
+                // Re-lay-out on resize. The window owns three child webviews
+                // whose bounds are absolute, so every resize has to push new
+                // rectangles; the layout pass is idempotent and cheap.
+                if let Some(window) = app.get_window("main") {
+                    let handle = app.handle().clone();
+                    window.on_window_event(move |event| {
+                        if matches!(event, tauri::WindowEvent::Resized(_)) {
+                            ipc::embedded_window::relayout(&handle);
+                        }
+                    });
+                }
 
                 // Reopen the suggestion overlay if it was left enabled. Safe
                 // before any game data exists — it renders its empty state and

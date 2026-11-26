@@ -1,60 +1,24 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createHashRouter, redirect, RouterProvider } from 'react-router-dom'
+import { RouterProvider } from 'react-router-dom'
 import 'mahgen'
 import './index.css'
 import './i18n'
 import './stores/themeStore'
-import App from './App.tsx'
-import { Overview } from '@/routes/Overview'
-import { GameDashboard } from '@/routes/GameDashboard'
-import { Bots } from '@/routes/Bots'
-import { History } from '@/routes/History'
-import { Review } from '@/routes/Review'
-import { Logs } from '@/routes/Logs'
-import { Settings } from '@/routes/Settings'
-import { Setup } from '@/routes/Setup'
 import { Overlay } from '@/routes/Overlay'
-import { HAS_TAURI, invoke } from '@/lib/tauri'
-import { isOverlayWindow } from '@/lib/window'
-import type { AppConfig } from '@/types'
-
-// Loader on the protected branch: bounce to /setup when first_run_completed
-// is false. The /setup route lives outside this loader so it can render
-// without recursion. Browser-only mode (no Tauri) skips the check entirely.
-const requireFirstRunCompleted = async () => {
-  if (!HAS_TAURI) return null
-  try {
-    const cfg = await invoke<AppConfig>('get_config')
-    if (!cfg.general.first_run_completed) {
-      return redirect('/setup')
-    }
-  } catch {
-    // If get_config fails the rest of the UI surfaces it; don't gate on it.
-  }
-  return null
-}
-
-const router = createHashRouter([
-  { path: '/setup', element: <Setup /> },
-  {
-    element: <App />,
-    loader: requireFirstRunCompleted,
-    children: [
-      { index: true, element: <Overview /> },
-      { path: 'game', element: <GameDashboard /> },
-      { path: 'bots', element: <Bots /> },
-      { path: 'history', element: <History /> },
-      { path: 'review', element: <Review /> },
-      { path: 'logs', element: <Logs /> },
-      { path: 'settings', element: <Settings /> },
-    ],
-  },
-])
+import { MainWindowRoot } from '@/components/MainWindowRoot'
+import { router } from '@/router'
+import { TopToolbar } from '@/components/TopToolbar'
+import { isMainWebview, isOverlayWindow, isTopWindow } from '@/lib/window'
 
 // Both windows load this same bundle; the window label decides which root gets
 // mounted. The overlay skips the router entirely — it has exactly one screen,
 // and a hash route would only invite the sidebar/statusbar layout to tag along.
+//
+// The single-window layout adds two more labels: `top` (the toolbar strip) and
+// the `main` webview, which becomes the right-hand panel once the wizard has
+// run. Detached pages (`tool-*`) get the full router, so the rich pages are
+// unchanged.
 const root = createRoot(document.getElementById('root')!)
 
 if (isOverlayWindow()) {
@@ -64,6 +28,20 @@ if (isOverlayWindow()) {
   root.render(
     <StrictMode>
       <Overlay />
+    </StrictMode>,
+  )
+} else if (isTopWindow()) {
+  // The strip is a fixed-height chrome surface: no page scroll, no margins.
+  document.documentElement.classList.add('toolbar-window')
+  root.render(
+    <StrictMode>
+      <TopToolbar />
+    </StrictMode>,
+  )
+} else if (isMainWebview()) {
+  root.render(
+    <StrictMode>
+      <MainWindowRoot />
     </StrictMode>,
   )
 } else {

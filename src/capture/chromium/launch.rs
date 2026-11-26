@@ -148,7 +148,7 @@ fn parse_remote_debugging_port(value: &str) -> Result<RemoteDebuggingPort> {
     }
 }
 
-fn pick_remote_debugging_port() -> Result<u16> {
+pub(crate) fn pick_remote_debugging_port() -> Result<u16> {
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .context("failed to choose a chromium remote debugging port")?;
     let port = listener

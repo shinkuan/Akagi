@@ -11,7 +11,7 @@ mod proxy;
 mod range;
 
 pub use autoplay::{
-    AutoplayConfig, DelayDistribution, DelayMode, DelayModelConfig, DiscardInput,
+    AutoplayConfig, AutoplayScope, DelayDistribution, DelayMode, DelayModelConfig, DiscardInput,
     MajsoulAutoplayConfig,
 };
 pub use bot::{BotConfig, NativeApiConfig};

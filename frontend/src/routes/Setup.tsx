@@ -416,6 +416,13 @@ function ModeStep({
     <div className="grid gap-3">
       <h2 className="text-lg font-semibold">{t('setup.mode.title')}</h2>
       <ModeCard
+        title={t('setup.mode.embedded_title')}
+        active={supportsChromium && mode === 'embedded'}
+        disabled={!supportsChromium}
+        onClick={() => setDraft({ ...draft, capture: { ...draft.capture, mode: 'embedded' } })}
+        description={t('setup.mode.embedded_desc')}
+      />
+      <ModeCard
         title={t('setup.mode.chromium_title')}
         active={supportsChromium && mode === 'chromium'}
         disabled={!supportsChromium}

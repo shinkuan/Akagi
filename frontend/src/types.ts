@@ -54,7 +54,7 @@ export type BotStatus =
   | { state: 'error'; bot: string; error: string }
   | { state: 'stopped'; bot: string }
 
-export type CaptureKind = 'mitm' | 'chromium'
+export type CaptureKind = 'mitm' | 'chromium' | 'embedded'
 
 export type CaptureStatus =
   | { state: 'stopped' }
@@ -70,7 +70,7 @@ export type Notification = {
   id?: string
 }
 
-export type CaptureMode = 'mitm' | 'chromium'
+export type CaptureMode = 'mitm' | 'chromium' | 'embedded'
 
 export type ChromiumConfig = {
   executable: string
@@ -161,6 +161,8 @@ export type DelayModelConfig = {
 
 export type AutoplayConfig = {
   enabled: boolean
+  /** Which decisions autoplay may perform when enabled. */
+  scope: 'all' | 'discards_only'
   majsoul: MajsoulAutoplayConfig
   delay: DelayModelConfig
 }

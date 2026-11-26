@@ -193,11 +193,12 @@ impl AutoplayManager {
         // Every timing range is drawn once for this decision: the floor the
         // planner waits out, the click overhead it budgets for and the
         // clicks themselves then agree, and no two decisions share them.
-        let (cfg, delay_cfg) = {
+        let (cfg, delay_cfg, scope) = {
             let mut rng = rand::rng();
             (
                 cfg_guard.autoplay.majsoul.draw(&mut rng),
                 cfg_guard.autoplay.delay.draw(&mut rng),
+                cfg_guard.autoplay.scope,
             )
         };
         let platform_kind = cfg_guard.platform.kind;
@@ -325,6 +326,24 @@ impl AutoplayManager {
             crate::config::Platform::HoloMahjong => return,
             _ => &self.majsoul,
         };
+
+        // In `discards_only` scope the player keeps the calls and the win
+        // buttons: performing a pon or a ron for them would override a
+        // decision they meant to make themselves. The deciding events are
+        // the *acts of claiming*, so everything outside `Dahai` is dropped
+        // — including the reach declaration and its tile, since declaring
+        // riichi is a table-visible commitment. Returning here (before the
+        // plan is even built) also keeps the delay model from pacing a
+        // decision that will not be performed.
+        if scope == crate::config::AutoplayScope::DiscardsOnly
+            && !matches!(resp.action, MjaiEvent::Dahai { .. })
+        {
+            debug!(
+                "autoplay: scope=discards_only — leaving {:?} to the player",
+                resp.action
+            );
+            return;
+        }
 
         let plan = platform.plan(&action_ctx);
         if plan.steps.is_empty() {
