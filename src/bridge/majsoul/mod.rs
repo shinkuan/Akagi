@@ -198,9 +198,10 @@ pub struct MajsoulBridge {
     /// autoplay manager for click verification (see `autoplay::verify`).
     /// `None` when the autoplay context isn't wired (MITM path, tests).
     input_watch: Option<crate::autoplay::verify::SharedInputWatch>,
-    /// Where the client's per-kyoku `logReport` goes (see `autoplay::mouse`).
+    /// Where the client's per-kyoku `logReport` goes (see `autoplay::majsoul::calibration`).
     /// `None` on the MITM path and in tests.
-    mouse_reports: Option<broadcast::Sender<crate::autoplay::mouse::LogReportSample>>,
+    mouse_reports:
+        Option<broadcast::Sender<crate::autoplay::majsoul::calibration::LogReportSample>>,
 }
 
 impl MajsoulBridge {
@@ -249,7 +250,7 @@ impl MajsoulBridge {
     /// `bridge::for_platform`).
     pub fn with_mouse_reports(
         mut self,
-        sink: Option<broadcast::Sender<crate::autoplay::mouse::LogReportSample>>,
+        sink: Option<broadcast::Sender<crate::autoplay::majsoul::calibration::LogReportSample>>,
     ) -> Self {
         self.mouse_reports = sink;
         self
@@ -332,8 +333,9 @@ impl MajsoulBridge {
                 }
                 Vec::new()
             }
-            // Sent by the client at every kyoku end; feeds mouse calibration
-            // and the autoplay cursor's controller.
+            // Sent by the client at every kyoku end, on the lobby socket — not
+            // the game's, so this bridge has no game id; the report's uuid
+            // gives it. Feeds mouse calibration and the cursor's controller.
             (MessageType::Request, METHOD_LOG_REPORT) => {
                 if let Some(sink) = &self.mouse_reports {
                     let now = Local::now().timestamp_millis();
@@ -342,9 +344,8 @@ impl MajsoulBridge {
                         .get("uuid")
                         .and_then(JsonValue::as_str)
                         .filter(|u| !u.is_empty())
-                        .map(stable_game_id)
-                        .or(self.game_id);
-                    match crate::autoplay::mouse::LogReportSample::from_payload(
+                        .map(stable_game_id);
+                    match crate::autoplay::majsoul::calibration::LogReportSample::from_payload(
                         &msg.payload,
                         game_id,
                         now,

@@ -15,9 +15,9 @@
 
 use crate::autoplay::cdp_input::{dispatch_click_shaped, evaluate_canvas_rect};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
-use crate::autoplay::cursor::{ClickShape, Cursor};
 use crate::autoplay::delay::Reading;
 use crate::autoplay::inject::InjectFrame;
+use crate::autoplay::majsoul::cursor::{ClickShape, Cursor};
 use crate::autoplay::majsoul::MajsoulAutoplay;
 use crate::autoplay::platform::{ActionContext, PlatformAutoplay, Step};
 use crate::autoplay::riichi_city::RiichiCityAutoplay;
@@ -199,9 +199,9 @@ impl AutoplayManager {
         };
         let platform_kind = cfg_guard.platform.kind;
         if platform_kind == crate::config::Platform::Majsoul {
-            if let Err(blocked) = crate::autoplay::mouse::majsoul_gate(
+            if let Err(blocked) = crate::autoplay::majsoul::calibration::majsoul_gate(
                 &cfg_guard.autoplay.majsoul.mouse,
-                self.ctx.mouse.calibrating(),
+                self.ctx.majsoul_mouse.calibrating(),
             ) {
                 drop(cfg_guard);
                 self.note_blocked(blocked);
@@ -802,30 +802,16 @@ impl AutoplayManager {
     /// calibrated habit.
     fn click_mode(&self, cfg: &crate::config::MajsoulAutoplayConfig) -> ClickMode {
         self.ctx
-            .mouse
-            .reported_click_mode()
+            .majsoul_mouse
+            .with(|s| s.reported_click_mode())
             .unwrap_or(cfg.mouse.click_mode)
     }
 
-    /// Majsoul autoplay was refused: say so once a game.
-    fn note_blocked(&mut self, blocked: crate::autoplay::mouse::Blocked) {
-        if std::mem::replace(&mut self.state.blocked_noted, true) {
-            return;
+    /// Majsoul autoplay was refused: log it once a game.
+    fn note_blocked(&mut self, blocked: crate::autoplay::majsoul::calibration::Blocked) {
+        if !std::mem::replace(&mut self.state.blocked_noted, true) {
+            warn!("autoplay: Mahjong Soul autoplay refused this game: {blocked:?}");
         }
-        let (title, body) = match blocked {
-            crate::autoplay::mouse::Blocked::NotCalibrated => (
-                "Mahjong Soul autoplay needs mouse calibration",
-                "Play a few games yourself first: Settings -> Autoplay -> Mouse habits.",
-            ),
-            crate::autoplay::mouse::Blocked::Calibrating => (
-                "Autoplay is paused while mouse calibration records",
-                "Finish or cancel the calibration to let autoplay play again.",
-            ),
-        };
-        warn!("autoplay: {title}");
-        let _ = self
-            .notify
-            .send(crate::schema::Notification::warn(title).body(body));
     }
 
     /// Wait for the client's input command; press again if it never came.
@@ -1529,11 +1515,9 @@ mod tests {
     }
 
     /// Majsoul autoplay does nothing until the user has calibrated, nor while
-    /// a calibration records; the user hears about it once a game.
+    /// a calibration records.
     #[tokio::test]
     async fn majsoul_autoplay_waits_for_calibration() {
-        let notify = crate::event_bus::notify_bus();
-        let mut rx = notify.subscribe();
         let mut cfg = AppConfig::default();
         cfg.autoplay.enabled = true;
         cfg.platform.kind = crate::config::Platform::Majsoul;
@@ -1544,7 +1528,7 @@ mod tests {
             ctx.clone(),
             tracker::new_handle(),
             mjai_bus(),
-            notify,
+            crate::event_bus::notify_bus(),
             std::env::temp_dir(),
         );
         let start_game = MjaiEvent::StartGame {
@@ -1558,17 +1542,18 @@ mod tests {
 
         m.handle_bot_response(discard_with_runner_up("1m", "2m"))
             .await;
-        m.handle_bot_response(discard_with_runner_up("1m", "2m"))
-            .await;
-        assert!(rx.try_recv().unwrap().title.contains("calibration"));
-        assert!(rx.try_recv().is_err(), "once a game");
+        assert!(m.state.blocked_noted, "uncalibrated");
 
         cfg.write().await.autoplay.majsoul.mouse.calibrated = true;
-        ctx.mouse.set_calibrating(true);
         m.handle_mjai_event(&start_game);
         m.handle_bot_response(discard_with_runner_up("1m", "2m"))
             .await;
-        assert!(rx.try_recv().unwrap().title.contains("paused"));
+        assert!(!m.state.blocked_noted, "calibrated");
+
+        ctx.majsoul_mouse.with(|s| s.start(chrono::Local::now()));
+        m.handle_bot_response(discard_with_runner_up("1m", "2m"))
+            .await;
+        assert!(m.state.blocked_noted, "calibrating");
     }
 
     /// Regression: `cached_our_seat` must be populated immediately when

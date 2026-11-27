@@ -1,7 +1,7 @@
 //! Keeps each kyoku's moving-frame rate on a target drawn from the user's
 //! own distribution, by scaling how much of the time the cursor moves.
 
-use crate::autoplay::mouse::LiveRate;
+use crate::autoplay::majsoul::calibration::LiveRate;
 use crate::config::MoveRate;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};

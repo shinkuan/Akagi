@@ -106,9 +106,10 @@ pub struct BridgeHooks {
     /// verify a click registered (see `autoplay::verify`).
     pub input_watch: Option<crate::autoplay::verify::SharedInputWatch>,
     /// Majsoul: where the client's per-kyoku `logReport` goes (see
-    /// `autoplay::mouse`).
-    pub mouse_reports:
-        Option<tokio::sync::broadcast::Sender<crate::autoplay::mouse::LogReportSample>>,
+    /// `autoplay::majsoul::calibration`).
+    pub mouse_reports: Option<
+        tokio::sync::broadcast::Sender<crate::autoplay::majsoul::calibration::LogReportSample>,
+    >,
     /// Tenhou: hand at Tenhou tile-index resolution plus the current decision
     /// window, needed to encode a client frame (see `autoplay::tenhou_state`).
     pub tenhou_state: Option<crate::autoplay::tenhou_state::SharedTenhouState>,

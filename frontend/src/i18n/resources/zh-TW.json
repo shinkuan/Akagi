@@ -515,7 +515,6 @@
         "recalibrate": "重新校準",
         "calibrate": "開始校準",
         "help": "從你自己的對局量測。自動打牌會在決策之間和每次點擊前移動游標,讓雀魂每局回報的移動量符合你的習慣。",
-        "recent": "最近 {{n}} 局自動打牌:每秒 {{rate}} 個移動影格(你的中位數:{{median}})",
         "locked": "完成第一次校準後才能編輯。",
         "blocked_calibrating": "滑鼠校準記錄期間,自動打牌不會啟動。",
         "blocked_uncalibrated": "完成滑鼠校準前,雀魂自動打牌不會啟動。",
@@ -955,11 +954,7 @@
     "cancel_title": "要取消校準嗎?",
     "cancel_body": "這次校準記錄的對局會被刪除,已儲存的滑鼠習慣不變。",
     "keep_recording": "繼續記錄",
-    "cancel_confirm": "取消校準",
-    "status_recording": "滑鼠校準中",
-    "status_recording_hint": "請像平常一樣打牌;完成校準前自動打牌不會啟動。",
-    "status_needed": "需要滑鼠校準",
-    "status_needed_hint": "完成滑鼠校準前,雀魂自動打牌不會啟動(設定 → 自動打牌)。"
+    "cancel_confirm": "取消校準"
   },
   "announcements": {
     "akagims": {

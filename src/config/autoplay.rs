@@ -270,7 +270,7 @@ pub struct MajsoulAutoplayConfig {
     pub dealer_first_discard_extra_delay_ms: MsRange,
     /// The user's own mouse habits, measured by calibration. Majsoul
     /// autoplay refuses to run until `calibrated` is set (see
-    /// `autoplay::mouse`).
+    /// `autoplay::majsoul::calibration`).
     pub mouse: MouseProfile,
 }
 

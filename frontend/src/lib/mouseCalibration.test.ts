@@ -28,8 +28,6 @@ function status(active: boolean, games = 0): MouseCalibrationStatus {
     required_games: 2,
     recommended_games: 5,
     recording: false,
-    recent_autoplay_rate: null,
-    recent_autoplay_kyoku: 0,
   }
 }
 

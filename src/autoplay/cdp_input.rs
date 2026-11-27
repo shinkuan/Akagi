@@ -101,37 +101,6 @@ pub async fn dispatch_click_shaped(
     Ok(())
 }
 
-/// One `mouseMoved` to `(x, y)`, CSS pixels.
-pub async fn mouse_move(page: &Page, x: f64, y: f64) -> Result<()> {
-    let ev = DispatchMouseEventParams::builder()
-        .r#type(DispatchMouseEventType::MouseMoved)
-        .x(x)
-        .y(y)
-        .build()
-        .map_err(|e| anyhow!("build mouseMoved: {e}"))?;
-    page.execute(ev).await.context("CDP mouseMoved")?;
-    Ok(())
-}
-
-/// Press (`down`) or release the left button at `(x, y)`.
-pub async fn mouse_button(page: &Page, x: f64, y: f64, down: bool) -> Result<()> {
-    let kind = if down {
-        DispatchMouseEventType::MousePressed
-    } else {
-        DispatchMouseEventType::MouseReleased
-    };
-    let ev = DispatchMouseEventParams::builder()
-        .r#type(kind)
-        .x(x)
-        .y(y)
-        .button(MouseButton::Left)
-        .click_count(1)
-        .build()
-        .map_err(|e| anyhow!("build mouse button: {e}"))?;
-    page.execute(ev).await.context("CDP mouse button")?;
-    Ok(())
-}
-
 /// Read the game canvas's `getBoundingClientRect()` via `Runtime.evaluate`.
 ///
 /// Majsoul renders into the first `<canvas>` element on the page; Tenhou

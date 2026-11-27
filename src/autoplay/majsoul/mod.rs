@@ -10,7 +10,9 @@
 //! - The dispatch flow from the original Akagi Python autoplay
 //!   (`autoplay_majsoul.py`, the main action handler).
 
+pub mod calibration;
 pub mod coords;
+pub mod cursor;
 
 use crate::autoplay::delay::{self, DecisionKind, DelayInput};
 use crate::autoplay::platform::{ActionContext, PlanResult, PlatformAutoplay, Step};

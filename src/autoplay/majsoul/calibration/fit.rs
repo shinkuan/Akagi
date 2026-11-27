@@ -1,9 +1,9 @@
-//! Turn a calibration session into a [`MouseProfile`].
+//! Turn a calibration's raw kyoku into a [`MouseProfile`].
 //!
 //! A field with too few samples keeps the value of `base` (the profile in
 //! force, or the defaults) and is named in [`Fit::kept`].
 
-use super::session::{quantile, KyokuRecord, RawKyoku};
+use super::session::RawKyoku;
 use crate::config::{ClickMode, MouseProfile, MoveRate, MsRange};
 
 /// z of the 10th / 90th percentile of a standard normal.
@@ -15,6 +15,8 @@ const DRAG_PX: f64 = 20.0;
 const DOUBLE_PX: f64 = 15.0;
 const DOUBLE_MAX_MS: f64 = 1500.0;
 const APPROACH_LOOKBACK_MS: f64 = 1500.0;
+const MIN_RATIO_FRAMES: usize = 50;
+const MIN_KYOKU: usize = 3;
 const MIN_STROKES: usize = 20;
 const MIN_PRESSES: usize = 8;
 const MIN_DOUBLES: usize = 5;
@@ -44,7 +46,6 @@ impl Stroke {
 }
 
 pub fn fit(
-    kyoku: &[KyokuRecord],
     raw: &[RawKyoku],
     base: &MouseProfile,
     games: f64,
@@ -55,34 +56,30 @@ pub fn fit(
     p.calibrated = true;
     p.calibrated_at = now.to_rfc3339();
     p.sample_games = games;
-    p.sample_kyoku = kyoku.len() as u32;
+    p.sample_kyoku = raw.len() as u32;
 
-    match move_rate(kyoku) {
+    match move_rate(raw) {
         Some(r) => p.move_rate = r,
         None => kept.push("move_rate"),
     }
-    let ratios: Vec<f64> = kyoku
+    let ratios: Vec<f64> = raw
         .iter()
-        .filter(|k| k.page_moving >= 50)
-        .map(|k| f64::from(k.d) / f64::from(k.page_moving))
+        .filter(|k| k.moves.len() >= MIN_RATIO_FRAMES)
+        .map(|k| f64::from(k.d) / k.moves.len() as f64)
         .collect();
     match quantile(&ratios, 0.5) {
         Some(r) => p.frame_ratio = r.clamp(0.1, 2.0),
         None => kept.push("frame_ratio"),
     }
-    let share =
-        |moving: u32, frames: u32| (frames > 0).then(|| f64::from(moving) / f64::from(frames));
-    let own: (u32, u32) = kyoku
-        .iter()
-        .fold((0, 0), |a, k| (a.0 + k.own_moving, a.1 + k.own_frames));
-    let other: (u32, u32) = kyoku
-        .iter()
-        .fold((0, 0), |a, k| (a.0 + k.other_moving, a.1 + k.other_frames));
-    match share(own.0, own.1) {
+    let split = raw.iter().map(phase_split).fold([0usize; 4], |a, s| {
+        [a[0] + s[0], a[1] + s[1], a[2] + s[2], a[3] + s[3]]
+    });
+    let share = |moving: usize, frames: usize| (frames > 0).then(|| moving as f64 / frames as f64);
+    match share(split[1], split[0]) {
         Some(s) => p.own_active = s.clamp(0.02, 0.98),
         None => kept.push("own_active"),
     }
-    match share(other.0, other.1) {
+    match share(split[3], split[2]) {
         Some(s) => p.other_active = s.clamp(0.02, 0.98),
         None => kept.push("other_active"),
     }
@@ -135,31 +132,27 @@ pub fn fit(
         kept.push("click_hold_ms");
     }
 
-    let doubles_seen = kyoku.iter().filter(|k| k.m == 1).count();
-    p.click_mode = if doubles_seen * 2 > kyoku.len() {
+    let double_kyoku = raw.iter().filter(|k| k.m == 1).count();
+    p.click_mode = if double_kyoku * 2 > raw.len() {
         ClickMode::Double
     } else {
         ClickMode::Single
     };
     if p.click_mode == ClickMode::Double {
-        match iqr(&doubles, MIN_DOUBLES) {
+        let from_client = |f: fn(&RawKyoku) -> u32| {
+            let v: Vec<f64> = raw
+                .iter()
+                .map(f)
+                .filter(|v| *v > 0)
+                .map(f64::from)
+                .collect();
+            quantile(&v, 0.5)
+        };
+        let gap = iqr(&doubles, MIN_DOUBLES)
+            .or_else(|| Some((from_client(|k| k.t_ms)?, from_client(|k| k.g_ms)?)));
+        match gap {
             Some((a, b)) => p.double_click_ms = ms_range(a, b, 60, 1500),
-            None => {
-                let t: Vec<f64> = kyoku
-                    .iter()
-                    .filter(|k| k.t_ms > 0)
-                    .map(|k| f64::from(k.t_ms))
-                    .collect();
-                let g: Vec<f64> = kyoku
-                    .iter()
-                    .filter(|k| k.g_ms > 0)
-                    .map(|k| f64::from(k.g_ms))
-                    .collect();
-                match (quantile(&t, 0.5), quantile(&g, 0.5)) {
-                    (Some(a), Some(b)) => p.double_click_ms = ms_range(a, b, 60, 1500),
-                    _ => kept.push("double_click_ms"),
-                }
-            }
+            None => kept.push("double_click_ms"),
         }
     }
 
@@ -172,13 +165,13 @@ pub fn fit(
 }
 
 /// Log-normal fit of the per-kyoku moving-frame rate.
-fn move_rate(kyoku: &[KyokuRecord]) -> Option<MoveRate> {
-    let logs: Vec<f64> = kyoku
+fn move_rate(raw: &[RawKyoku]) -> Option<MoveRate> {
+    let logs: Vec<f64> = raw
         .iter()
         .filter(|k| k.duration_s > 0.0)
         .map(|k| (f64::from(k.d.max(1)) / k.duration_s).ln())
         .collect();
-    if logs.len() < 3 {
+    if logs.len() < MIN_KYOKU {
         return None;
     }
     let n = logs.len() as f64;
@@ -191,6 +184,19 @@ fn move_rate(kyoku: &[KyokuRecord]) -> Option<MoveRate> {
         low: (mu - Z90 * sigma).exp(),
         high: (mu + Z90 * sigma).exp(),
     })
+}
+
+/// `[own frames, own moving, other frames, other moving]` of one kyoku.
+fn phase_split(k: &RawKyoku) -> [usize; 4] {
+    let own = |t: f64| k.own.iter().any(|w| t >= w[0] && t < w[1]);
+    let own_frames = k.frames.iter().filter(|t| own(**t)).count();
+    let own_moving = k.moves.iter().filter(|m| own(m[0])).count();
+    [
+        own_frames,
+        own_moving,
+        k.frames.len() - own_frames,
+        k.moves.len() - own_moving,
+    ]
 }
 
 /// Continuous movements in one kyoku's raw input.
@@ -276,6 +282,18 @@ fn px_dist(rect: (f64, f64), a: [f64; 5], b: [f64; 5]) -> f64 {
     ((a[3] - b[3]) * rect.0).hypot((a[4] - b[4]) * rect.1)
 }
 
+/// Linear-interpolated quantile; `None` for no values.
+fn quantile(values: &[f64], q: f64) -> Option<f64> {
+    let mut v: Vec<f64> = values.iter().copied().filter(|x| x.is_finite()).collect();
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(f64::total_cmp);
+    let pos = q.clamp(0.0, 1.0) * (v.len() - 1) as f64;
+    let (lo, hi) = (pos.floor() as usize, pos.ceil() as usize);
+    Some(v[lo] + (v[hi] - v[lo]) * (pos - lo as f64))
+}
+
 fn iqr(values: &[f64], min: usize) -> Option<(f64, f64)> {
     if values.len() < min {
         return None;
@@ -296,21 +314,27 @@ mod tests {
         chrono::Local::now()
     }
 
-    fn kyoku(d: u32, duration_s: f64) -> KyokuRecord {
-        KyokuRecord {
-            duration_s,
+    /// 100 frames 16 ms apart with our window over the first 50; `own` and
+    /// `other` of them moving in each half; `d` client frames over 100 s.
+    fn kyoku(d: u32, own: usize, other: usize) -> RawKyoku {
+        let frames: Vec<f64> = (0..100).map(|i| f64::from(i) * 16.0).collect();
+        let moves = frames[..own]
+            .iter()
+            .chain(&frames[50..50 + other])
+            .map(|&t| [t, 0.5, 0.5])
+            .collect();
+        RawKyoku {
+            duration_s: 100.0,
             d,
-            page_frames: 6000,
-            page_moving: d * 2,
-            own_frames: 2000,
-            own_moving: 1000,
-            other_frames: 4000,
-            other_moving: 800,
-            ..KyokuRecord::default()
+            rect: (1600.0, 900.0),
+            own: vec![[0.0, 800.0]],
+            frames,
+            moves,
+            ..RawKyoku::default()
         }
     }
 
-    /// A raw kyoku of `n` presses: each a 300 ms stroke across 0.3 of the
+    /// A raw kyoku of `n` presses: each a 288 ms stroke across 0.3 of the
     /// canvas, a 150 ms rest, a 90 ms press, then 1 s of nothing.
     fn raw_presses(n: usize) -> RawKyoku {
         let mut k = RawKyoku {
@@ -335,26 +359,33 @@ mod tests {
     }
 
     #[test]
-    fn move_rate_is_log_normal_over_kyoku() {
-        let ks: Vec<KyokuRecord> = [10.0, 20.0, 40.0]
+    fn rate_ratio_and_shares_come_from_the_kyoku() {
+        // Rates 10, 20, 40 /s; 25 + 10 moving frames each.
+        let raw: Vec<RawKyoku> = [1000, 2000, 4000]
             .iter()
-            .map(|r| kyoku((r * 100.0) as u32, 100.0))
+            .map(|d| kyoku(*d, 25, 10))
             .collect();
-        let f = fit(&ks, &[], &MouseProfile::default(), 2.0, now());
+        let f = fit(&raw, &MouseProfile::default(), 2.0, now());
         let r = f.profile.move_rate;
         assert!((r.median - 20.0).abs() < 1e-6, "geometric mean");
         assert!(r.low < 10.0 && r.high > 40.0);
-        assert!((f.profile.frame_ratio - 0.5).abs() < 1e-9);
         assert!((f.profile.own_active - 0.5).abs() < 1e-9);
         assert!((f.profile.other_active - 0.2).abs() < 1e-9);
+        assert!(
+            f.kept.contains(&"frame_ratio"),
+            "35 moving frames is too few"
+        );
         assert!(f.profile.calibrated);
         assert_eq!(f.profile.sample_kyoku, 3);
+
+        let raw: Vec<RawKyoku> = (0..3).map(|_| kyoku(40, 40, 40)).collect();
+        let f = fit(&raw, &MouseProfile::default(), 2.0, now());
+        assert!((f.profile.frame_ratio - 0.5).abs() < 1e-9);
     }
 
     #[test]
     fn press_timing_comes_from_the_raw_input() {
-        let raw = vec![raw_presses(24)];
-        let f = fit(&[], &raw, &MouseProfile::default(), 2.0, now());
+        let f = fit(&[raw_presses(24)], &MouseProfile::default(), 2.0, now());
         let a = f.profile.approach_ms;
         assert!((a.min as f64 - 288.0).abs() <= 1.0 && (a.max as f64 - 288.0).abs() <= 1.0);
         assert_eq!(f.hover_ms, Some(MsRange::fixed(150)));
@@ -362,13 +393,12 @@ mod tests {
         // 17 of the 18 steps are seen (the first frame's origin is not), in 288 ms.
         let speed = 0.3 * 17.0 / 18.0 / 0.288;
         assert!((f.profile.speed[0] - speed).abs() < 0.01);
-        assert!(!f.kept.contains(&"speed"));
     }
 
     #[test]
     fn too_few_samples_keep_the_base() {
         let base = MouseProfile::default();
-        let f = fit(&[kyoku(100, 60.0)], &[raw_presses(2)], &base, 2.0, now());
+        let f = fit(&[raw_presses(2)], &base, 2.0, now());
         assert_eq!(f.profile.move_rate, base.move_rate);
         assert_eq!(f.profile.speed, base.speed);
         assert_eq!(f.profile.approach_ms, base.approach_ms);
@@ -386,29 +416,25 @@ mod tests {
 
     #[test]
     fn double_click_users_get_their_gap() {
-        let mut ks: Vec<KyokuRecord> = (0..4).map(|_| kyoku(1000, 100.0)).collect();
-        for k in &mut ks {
+        let mut raw: Vec<RawKyoku> = (0..4).map(|_| kyoku(1000, 10, 10)).collect();
+        for k in &mut raw {
             k.m = 1;
             k.t_ms = 150;
             k.g_ms = 300;
         }
-        let mut raw = RawKyoku {
-            rect: (1600.0, 900.0),
-            ..RawKyoku::default()
-        };
+        // Without pairs on the same spot, the client's own min / max stand in.
+        let f = fit(&raw, &MouseProfile::default(), 2.0, now());
+        assert_eq!(f.profile.click_mode, ClickMode::Double);
+        assert_eq!(f.profile.double_click_ms, MsRange::new(150, 300));
         for i in 0..6 {
             let t = f64::from(i) * 3000.0;
-            raw.buttons.push([t, 1.0, 0.0, 0.5, 0.8]);
-            raw.buttons.push([t + 60.0, 0.0, 0.0, 0.5, 0.8]);
-            raw.buttons.push([t + 200.0, 1.0, 0.0, 0.5005, 0.8]);
-            raw.buttons.push([t + 260.0, 0.0, 0.0, 0.5005, 0.8]);
+            raw[0].buttons.push([t, 1.0, 0.0, 0.5, 0.8]);
+            raw[0].buttons.push([t + 60.0, 0.0, 0.0, 0.5, 0.8]);
+            raw[0].buttons.push([t + 200.0, 1.0, 0.0, 0.5005, 0.8]);
+            raw[0].buttons.push([t + 260.0, 0.0, 0.0, 0.5005, 0.8]);
         }
-        let f = fit(&ks, &[raw], &MouseProfile::default(), 2.0, now());
-        assert_eq!(f.profile.click_mode, ClickMode::Double);
+        let f = fit(&raw, &MouseProfile::default(), 2.0, now());
         assert_eq!(f.profile.double_click_ms, MsRange::fixed(200));
-        // Without raw pairs the client's own min/max stand in.
-        let f = fit(&ks, &[], &MouseProfile::default(), 2.0, now());
-        assert_eq!(f.profile.double_click_ms, MsRange::new(150, 300));
     }
 
     #[test]
@@ -417,8 +443,9 @@ mod tests {
         for b in raw.buttons.iter_mut().filter(|b| b[1] == 0.0) {
             b[3] += 0.1; // released 160 px away
         }
-        let f = fit(&[], &[raw], &MouseProfile::default(), 2.0, now());
-        assert!(f.hold_ms.is_none());
+        assert!(fit(&[raw], &MouseProfile::default(), 2.0, now())
+            .hold_ms
+            .is_none());
     }
 
     #[test]
@@ -438,5 +465,12 @@ mod tests {
         assert_eq!(s.len(), 2);
         assert!((s[0].length - 0.1).abs() < 1e-9);
         assert!((s[0].duration_ms() - 32.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn quantiles_interpolate() {
+        assert_eq!(quantile(&[3.0, 1.0, 2.0], 0.5), Some(2.0));
+        assert_eq!(quantile(&[0.0, 10.0], 0.25), Some(2.5));
+        assert_eq!(quantile(&[], 0.5), None);
     }
 }

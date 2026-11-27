@@ -1138,15 +1138,6 @@ function MouseHabitSection({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">{t('settings.autoplay.mouse.help')}</p>
-      {status?.recent_autoplay_rate != null && (
-        <p className="text-xs tabular-nums">
-          {t('settings.autoplay.mouse.recent', {
-            n: status.recent_autoplay_kyoku,
-            rate: status.recent_autoplay_rate.toFixed(1),
-            median: rate.median.toFixed(1),
-          })}
-        </p>
-      )}
       {locked && (
         <p className="text-xs text-amber-500">{t('settings.autoplay.mouse.locked')}</p>
       )}

@@ -8,12 +8,13 @@
 
 use std::time::Duration;
 
-use akagi::autoplay::cdp_input::{mouse_button, mouse_move};
-use akagi::autoplay::mouse::recorder::{self, InputBatch};
+use akagi::autoplay::cdp_input::dispatch_click_shaped;
+use akagi::autoplay::majsoul::calibration::recorder::{self, InputBatch};
 use akagi::capture::chromium::{detect, launch};
 use akagi::config::ChromiumConfig;
 use chromiumoxide::browser::Browser;
 use chromiumoxide::cdp::js_protocol::runtime::EventBindingCalled;
+use chromiumoxide::layout::Point;
 use futures_util::StreamExt;
 use tempfile::TempDir;
 
@@ -57,16 +58,16 @@ async fn recorder_counts_moving_frames_and_stays_out_of_the_page() {
     recorder::install(&page).await.expect("install");
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // 60 moves 16 ms apart, then a press and release.
+    // 60 moves 16 ms apart, then a press and release as the cursor makes them.
     for i in 0..60 {
-        mouse_move(&page, 100.0 + f64::from(i) * 5.0, 200.0)
+        page.move_mouse(Point::new(100.0 + f64::from(i) * 5.0, 200.0))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(16)).await;
     }
-    mouse_button(&page, 400.0, 200.0, true).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(80)).await;
-    mouse_button(&page, 400.0, 200.0, false).await.unwrap();
+    dispatch_click_shaped(&page, 400.0, 200.0, 50, 80, false)
+        .await
+        .unwrap();
 
     let mut batches: Vec<InputBatch> = Vec::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);

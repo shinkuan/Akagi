@@ -80,7 +80,7 @@ fn spawn_forwarders<R: Runtime>(app: AppHandle<R>, state: AppState) {
     );
     forward(
         app.clone(),
-        state.mouse_status_bus.subscribe(),
+        state.autoplay_context.majsoul_mouse.status.subscribe(),
         "mouse-calibration",
     );
 

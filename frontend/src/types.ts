@@ -147,7 +147,7 @@ export type MouseProfile = {
   frame_ratio: number
 }
 
-/** Mirrors `autoplay::mouse::CalibrationStatus` (`mouse-calibration` event). */
+/** Mirrors `autoplay::majsoul::calibration::CalibrationStatus` (`mouse-calibration` event). */
 export type MouseCalibrationStatus = {
   active: boolean
   started_at: string
@@ -158,8 +158,6 @@ export type MouseCalibrationStatus = {
   recommended_games: number
   /** The game in progress is being recorded. */
   recording: boolean
-  recent_autoplay_rate: number | null
-  recent_autoplay_kyoku: number
 }
 
 export type FinishedCalibration = {

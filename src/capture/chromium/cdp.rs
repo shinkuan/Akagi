@@ -640,7 +640,7 @@ async fn attach_page(
         .await
         .context("subscribe bindingCalled")?;
     if mouse_feed.is_some() {
-        if let Err(e) = crate::autoplay::mouse::recorder::install(&page).await {
+        if let Err(e) = crate::autoplay::majsoul::calibration::recorder::install(&page).await {
             warn!("CDP: pointer recorder not installed on target {target_id}: {e:#}");
         }
     }
@@ -684,12 +684,12 @@ async fn attach_page(
                     }
                 }
                 Some(ev) = on_binding.next() => {
-                    if ev.name == crate::autoplay::mouse::recorder::BINDING {
+                    if ev.name == crate::autoplay::majsoul::calibration::recorder::BINDING {
                         if let Some(feed) = &mouse_feed {
                             if let Some(batch) =
-                                crate::autoplay::mouse::recorder::parse_batch(&ev.payload)
+                                crate::autoplay::majsoul::calibration::recorder::parse_batch(&ev.payload)
                             {
-                                let _ = feed.mouse.input.send(batch);
+                                let _ = feed.majsoul_mouse.input.send(batch);
                             }
                         }
                     }

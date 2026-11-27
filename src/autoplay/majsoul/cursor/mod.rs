@@ -5,17 +5,18 @@
 //! keeps each kyoku's moving-frame rate on a target drawn from the user's own
 //! distribution ([`control`]). A press is an approach stroke onto the target,
 //! a rest, then the button. Only runs while Majsoul autoplay is allowed (see
-//! `autoplay::mouse::gate`) and a kyoku is being played.
+//! `calibration::majsoul_gate`) and a kyoku is being played.
 
 pub mod control;
 pub mod idle;
 pub mod path;
 
-use crate::autoplay::cdp_input::{evaluate_canvas_rect, mouse_button, mouse_move};
+use crate::autoplay::cdp_input::{dispatch_click_shaped, evaluate_canvas_rect};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
-use crate::autoplay::mouse::{majsoul_gate, service::now_ms};
+use crate::autoplay::majsoul::calibration::{majsoul_gate, service::now_ms};
 use crate::config::{AppConfig, MouseProfile, Platform};
 use anyhow::{anyhow, Result};
+use chromiumoxide::layout::Point;
 use chromiumoxide::page::Page;
 use control::Controller;
 use idle::{Params, Phase};
@@ -202,7 +203,7 @@ impl Actor {
         let profile = cfg.autoplay.majsoul.mouse.clone();
         let allowed = cfg.autoplay.enabled
             && cfg.platform.kind == Platform::Majsoul
-            && majsoul_gate(&profile, self.ctx.mouse.calibrating()).is_ok();
+            && majsoul_gate(&profile, self.ctx.majsoul_mouse.calibrating()).is_ok();
         drop(cfg);
         let s = Snapshot { allowed, profile };
         self.snap = Some((s.clone(), Instant::now()));
@@ -232,7 +233,7 @@ impl Actor {
 
     async fn idle_step(&mut self) {
         let snap = self.snapshot().await;
-        let live = *self.ctx.mouse.live.borrow();
+        let live = self.ctx.majsoul_mouse.with(|s| s.live());
         if !snap.allowed || !live.in_kyoku {
             if matches!(self.idle, Idle::Moving { .. }) {
                 self.rest_for(Duration::ZERO);
@@ -260,7 +261,7 @@ impl Actor {
                     next += 1;
                 }
                 if let Some(p) = due {
-                    if mouse_move(&page, p.x, p.y).await.is_err() {
+                    if page.move_mouse(Point::new(p.x, p.y)).await.is_err() {
                         self.rest_for(RETRY_LATER);
                         return;
                     }
@@ -342,44 +343,21 @@ impl Actor {
                 let start = Instant::now();
                 for (t, p) in pts {
                     tokio::time::sleep_until(start + Duration::from_millis(u64::from(t))).await;
-                    mouse_move(&page, p.x, p.y).await?;
+                    page.move_mouse(Point::new(p.x, p.y)).await?;
                     self.set_pos(p);
                 }
             }
-            None => {
-                mouse_move(&page, x, y).await?;
-                self.set_pos(target);
-            }
+            None => self.set_pos(target),
         }
-        sleep_ms(shape.hover_ms).await;
-        press_once(&page, x, y, shape.hold_ms, shape.jiggle).await?;
-        if let Some(gap) = shape.double_gap_ms {
-            sleep_ms(gap).await;
-            press_once(&page, x, y, shape.hold_ms, false).await?;
-        }
+        // Already on the target, so its opening move moves nothing; the
+        // second press of a double click waits out the gap as its "hover".
         self.set_pos(target);
+        dispatch_click_shaped(&page, x, y, shape.hover_ms, shape.hold_ms, shape.jiggle).await?;
+        if let Some(gap) = shape.double_gap_ms {
+            dispatch_click_shaped(&page, x, y, gap, shape.hold_ms, false).await?;
+        }
         Ok(())
     }
-}
-
-async fn sleep_ms(ms: u32) {
-    if ms > 0 {
-        tokio::time::sleep(Duration::from_millis(u64::from(ms))).await;
-    }
-}
-
-async fn press_once(page: &Page, x: f64, y: f64, hold_ms: u32, jiggle: bool) -> Result<()> {
-    mouse_button(page, x, y, true).await?;
-    if jiggle {
-        let half = hold_ms / 2;
-        sleep_ms(half).await;
-        mouse_move(page, x + 1.0, y).await?;
-        mouse_move(page, x, y).await?;
-        sleep_ms(hold_ms - half).await;
-    } else {
-        sleep_ms(hold_ms).await;
-    }
-    mouse_button(page, x, y, false).await
 }
 
 #[cfg(test)]

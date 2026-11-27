@@ -749,134 +749,38 @@ pub async fn replace_delay_script(state: State<'_, AppState>) -> CmdResult<Optio
 #[tauri::command]
 pub async fn mouse_calibration_status(
     state: State<'_, AppState>,
-) -> CmdResult<crate::autoplay::mouse::CalibrationStatus> {
-    Ok(state
-        .mouse_session
-        .lock()
-        .map(|s| s.status())
-        .unwrap_or_default())
+) -> CmdResult<crate::autoplay::majsoul::calibration::CalibrationStatus> {
+    Ok(state.autoplay_context.majsoul_mouse.with(|s| s.status()))
 }
 
-fn publish_mouse(state: &AppState) -> crate::autoplay::mouse::CalibrationStatus {
-    crate::autoplay::mouse::service::publish(
-        &state.mouse_session,
-        &state.autoplay_context,
-        &state.mouse_status_bus,
-    )
-}
-
-/// Begin recording the user's own Majsoul games. Majsoul autoplay is held
-/// off until the calibration is finished or cancelled.
 #[tauri::command]
 pub async fn start_mouse_calibration(
     state: State<'_, AppState>,
-) -> CmdResult<crate::autoplay::mouse::CalibrationStatus> {
-    {
-        let cfg = state.config.read().await;
-        if cfg.platform.kind != crate::config::Platform::Majsoul {
-            return Err("mouse calibration is for Mahjong Soul only".into());
-        }
-        if cfg.capture.mode != crate::config::CaptureMode::Chromium {
-            return Err("mouse calibration needs the Chromium capture mode".into());
-        }
-    }
-    {
-        let mut s = state
-            .mouse_session
-            .lock()
-            .map_err(|_| "calibration state unavailable".to_string())?;
-        s.start(chrono::Local::now());
-        s.save()
-            .map_err(|e| format!("save calibration state: {e}"))?;
-    }
-    Ok(publish_mouse(&state))
+) -> CmdResult<crate::autoplay::majsoul::calibration::CalibrationStatus> {
+    crate::autoplay::majsoul::calibration::start(
+        &state.config,
+        &state.autoplay_context.majsoul_mouse,
+    )
+    .await
 }
 
-/// Drop the calibration in progress and its recorded input.
 #[tauri::command]
 pub async fn cancel_mouse_calibration(
     state: State<'_, AppState>,
-) -> CmdResult<crate::autoplay::mouse::CalibrationStatus> {
-    {
-        let mut s = state
-            .mouse_session
-            .lock()
-            .map_err(|_| "calibration state unavailable".to_string())?;
-        s.cancel();
-        s.save()
-            .map_err(|e| format!("save calibration state: {e}"))?;
-    }
-    Ok(publish_mouse(&state))
+) -> CmdResult<crate::autoplay::majsoul::calibration::CalibrationStatus> {
+    crate::autoplay::majsoul::calibration::cancel(&state.autoplay_context.majsoul_mouse)
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct FinishedCalibration {
-    pub config: AppConfig,
-    /// Profile fields left as they were for want of samples.
-    pub kept: Vec<String>,
-}
-
-/// Fit the recorded games into the mouse profile, save it, and end the
-/// session.
 #[tauri::command]
 pub async fn finish_mouse_calibration(
     state: State<'_, AppState>,
-) -> CmdResult<FinishedCalibration> {
-    use crate::autoplay::mouse::session::{read_raw, REQUIRED_GAMES};
-    let (kyoku, raw_files, games) = {
-        let s = state
-            .mouse_session
-            .lock()
-            .map_err(|_| "calibration state unavailable".to_string())?;
-        if !s.active() {
-            return Err("no calibration in progress".into());
-        }
-        if s.games() < REQUIRED_GAMES {
-            return Err(format!("{} of {REQUIRED_GAMES} games recorded", s.games()));
-        }
-        (s.usable_kyoku(), s.raw_files(), s.games())
-    };
-    let raw = tokio::task::spawn_blocking(move || {
-        raw_files
-            .iter()
-            .flat_map(|p| read_raw(p))
-            .collect::<Vec<_>>()
-    })
+) -> CmdResult<crate::autoplay::majsoul::calibration::FinishedCalibration> {
+    crate::autoplay::majsoul::calibration::finish(
+        &state.config,
+        &state.autoplay_context.majsoul_mouse,
+        |cfg| persist_config(cfg, &state.config_path).map_err(|e| e.to_string()),
+    )
     .await
-    .map_err(|e| format!("read recorded input: {e}"))?;
-    let (config, kept) = {
-        let mut cfg = state.config.write().await;
-        let fit = crate::autoplay::mouse::fit::fit(
-            &kyoku,
-            &raw,
-            &cfg.autoplay.majsoul.mouse,
-            games,
-            chrono::Local::now(),
-        );
-        cfg.autoplay.majsoul.mouse = fit.profile;
-        if let Some(hover) = fit.hover_ms {
-            cfg.autoplay.majsoul.hover_delay_ms = hover;
-        }
-        if let Some(hold) = fit.hold_ms {
-            cfg.autoplay.majsoul.click_hold_ms = hold;
-        }
-        persist_config(&cfg, &state.config_path).map_err(|e| e.to_string())?;
-        (cfg.clone(), fit.kept)
-    };
-    {
-        let mut s = state
-            .mouse_session
-            .lock()
-            .map_err(|_| "calibration state unavailable".to_string())?;
-        s.finish();
-        s.save()
-            .map_err(|e| format!("save calibration state: {e}"))?;
-    }
-    publish_mouse(&state);
-    Ok(FinishedCalibration {
-        config,
-        kept: kept.into_iter().map(str::to_string).collect(),
-    })
 }
 
 /// Opens an `http(s)://` URL in the user's default browser. Used by the

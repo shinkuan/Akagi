@@ -131,10 +131,6 @@ pub struct AppState {
     /// `meta_source` are security policy inputs, and a compromised
     /// frontend must not get to assert them.
     pub pending_update: Arc<RwLock<Option<crate::updater::UpdateInfo>>>,
-    /// Majsoul mouse calibration: the session (persisted next to the config)
-    /// and the bus its status reaches the frontend through.
-    pub mouse_session: crate::autoplay::mouse::SharedSession,
-    pub mouse_status_bus: tokio::sync::broadcast::Sender<crate::autoplay::mouse::CalibrationStatus>,
 }
 
 impl AppState {
@@ -157,10 +153,6 @@ impl AppState {
         history_platform: SharedPlatform,
         runtime: Option<PythonRuntime>,
     ) -> Self {
-        let mouse_dir = config_path
-            .parent()
-            .map(|d| d.join("mouse_calibration"))
-            .unwrap_or_else(|| PathBuf::from("mouse_calibration"));
         Self {
             config: Arc::new(RwLock::new(config)),
             config_path: Arc::new(config_path),
@@ -186,10 +178,6 @@ impl AppState {
             autoplay_manager_started: Arc::new(AtomicBool::new(false)),
             updater_lock: Arc::new(Mutex::new(())),
             pending_update: Arc::new(RwLock::new(None)),
-            mouse_session: Arc::new(std::sync::Mutex::new(
-                crate::autoplay::mouse::Session::load(mouse_dir),
-            )),
-            mouse_status_bus: tokio::sync::broadcast::channel(16).0,
         }
     }
 }

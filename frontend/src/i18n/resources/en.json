@@ -515,7 +515,6 @@
         "recalibrate": "Recalibrate",
         "calibrate": "Calibrate",
         "help": "Measured from your own games. Autoplay moves the cursor between decisions and onto each press so that Mahjong Soul's per-hand movement count matches yours.",
-        "recent": "Last {{n}} autoplay hands: {{rate}} moving frames/s (yours: {{median}})",
         "locked": "Editable after the first calibration.",
         "blocked_calibrating": "Autoplay is off while the mouse calibration records.",
         "blocked_uncalibrated": "Mahjong Soul autoplay is off until the mouse calibration is done.",
@@ -955,11 +954,7 @@
     "cancel_title": "Cancel the calibration?",
     "cancel_body": "The games recorded by this calibration are deleted. The saved mouse habits stay as they are.",
     "keep_recording": "Keep recording",
-    "cancel_confirm": "Cancel calibration",
-    "status_recording": "Calibrating mouse",
-    "status_recording_hint": "Play as you normally do; autoplay is off until the calibration is finished.",
-    "status_needed": "Mouse calibration needed",
-    "status_needed_hint": "Mahjong Soul autoplay is off until the mouse calibration is done (Settings → Autoplay)."
+    "cancel_confirm": "Cancel calibration"
   },
   "announcements": {
     "akagims": {
