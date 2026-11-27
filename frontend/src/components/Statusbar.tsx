@@ -3,6 +3,8 @@ import { useConfigStore } from '@/stores/configStore'
 import { useApiStatusStore } from '@/stores/apiStatusStore'
 import { useCaptureStore } from '@/stores/captureStore'
 import { useBotStore } from '@/stores/botStore'
+import { useMouseCalibrationStore } from '@/stores/mouseCalibrationStore'
+import { autoplayBlock } from '@/lib/mouseCalibration'
 import {
   BOT_LABEL,
   botTone,
@@ -37,6 +39,7 @@ export function Statusbar() {
   const apiError = useApiStatusStore((s) => s.error)
   const capture = useCaptureStore((s) => s.status)
   const bot = useBotStore((s) => s.status)
+  const mouseStatus = useMouseCalibrationStore((s) => s.status)
 
   // Capture LED — "is Akagi reading the game?" (proxy / capture transport).
   // Tooltip surfaces the capture descriptor, or the error message on failure,
@@ -77,6 +80,14 @@ export function Statusbar() {
     api.key.trim() !== '' &&
     nativeActive
 
+  // Mouse calibration: recording, or Mahjong Soul autoplay switched on but
+  // refused until the user calibrates.
+  const calibrating = !!mouseStatus?.active
+  const needsCalibration =
+    !calibrating &&
+    !!config?.autoplay?.enabled &&
+    autoplayBlock(config, mouseStatus) === 'calibrate'
+
   return (
     <footer className="flex items-center justify-between border-t border-border px-4 py-1.5 text-xs text-muted-foreground bg-muted/30">
       <IndicatorDot
@@ -85,6 +96,20 @@ export function Statusbar() {
         title={captureTitle}
       />
       <span className="flex items-center gap-3">
+        {calibrating && (
+          <IndicatorDot
+            tone="pending"
+            label={t('mouse_calibration.status_recording')}
+            title={t('mouse_calibration.status_recording_hint')}
+          />
+        )}
+        {needsCalibration && (
+          <IndicatorDot
+            tone="fault"
+            label={t('mouse_calibration.status_needed')}
+            title={t('mouse_calibration.status_needed_hint')}
+          />
+        )}
         {usingApi && (
           <IndicatorDot
             tone={degraded ? 'fault' : 'live'}

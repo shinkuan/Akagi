@@ -10,6 +10,7 @@ import type {
   HistoryEvent,
   MahgenView,
   MjaiEvent,
+  MouseCalibrationStatus,
   Notification,
   OverlayConfig,
   Snapshot,
@@ -23,6 +24,7 @@ import { useApiStatusStore } from '@/stores/apiStatusStore'
 import { useInstallStore } from '@/stores/installStore'
 import { useConfigStore } from '@/stores/configStore'
 import { useHistoryStore } from '@/stores/historyStore'
+import { useMouseCalibrationStore } from '@/stores/mouseCalibrationStore'
 import { toast, type ToastSeverity } from '@/components/ui/sonner'
 
 // Backend `Notification.level` ∈ {info,success,warn,error}; toast helper
@@ -70,6 +72,12 @@ export function useTauriBridge() {
       }
       await refreshGame()
       try {
+        const m = await invoke<MouseCalibrationStatus>('mouse_calibration_status')
+        if (!cancelled) useMouseCalibrationStore.getState().setStatus(m)
+      } catch {
+        /* ignore */
+      }
+      try {
         const a = await invoke<AnalysisResult | null>('get_analysis')
         if (!cancelled) useAnalysisStore.getState().set(a)
       } catch {
@@ -112,6 +120,10 @@ export function useTauriBridge() {
 
     listen<CaptureStatus>('capture-status', (s) => {
       useCaptureStore.getState().set(s)
+    }).then((u) => unlistens.push(u))
+
+    listen<MouseCalibrationStatus>('mouse-calibration', (m) => {
+      useMouseCalibrationStore.getState().setStatus(m)
     }).then((u) => unlistens.push(u))
 
     listen<BotResponse>('bot-response', (r) => {

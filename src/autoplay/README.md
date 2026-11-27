@@ -9,7 +9,7 @@ Two very different routes in, decided by `platform.kind`:
 
 | Platform | Route | Why |
 |---|---|---|
-| Mahjong Soul | synthesised mouse input at reconstructed coordinates | The client renders to a canvas and exposes nothing to script. |
+| Mahjong Soul | synthesised mouse input at reconstructed coordinates, moved the way the user's own calibrated habits say (`cursor/`, `mouse/`) | The client renders to a canvas and exposes nothing to script. It also reports, per kyoku, how many frames its cursor moved. |
 | Tenhou | the client's own DOM buttons and discard handler | The client is HTML and script, so its input path can be driven directly. |
 
 Almost everything intricate in this module — coordinate tables, candidate
@@ -32,8 +32,10 @@ bot answers is the most obvious tell there is.
 | `delay/` | The pre-click "thinking time" model. See below. |
 | `advisor.rs` | A second opinion for delay scripts: the built-in bot (`native_bot`, which imitates people) follows the game on the same events and says what share of players would make the active bot's move. 4p and 3p (its sanma model). Never consulted for the action; any failure turns it off for the game. |
 | `table.rs` | Two facts read off the table for a discard, for delay scripts: whether the tile is *loose* in the hand (no second copy, nothing of its suit within two — by its place, not its kind) and whether it is *safe* against every riichi (each has discarded it). |
-| `context.rs` | `AutoplayContext` — shared slots between the capture backend, the bridge and the manager (`page`, `canvas_rect`, `time_budget`, `input_watch`, `tenhou_state`). |
-| `cdp_input.rs` | chromiumoxide wrappers: hover → press → hold → release click sequence (optionally with a mid-press cursor jiggle for retries), canvas rect query, and the Tenhou route's DOM helpers — action-button selectors, the readiness probe, and the call into the injected discard handler. |
+| `context.rs` | `AutoplayContext` — shared slots between the capture backend, the bridge and the manager (`page`, `canvas_rect`, `time_budget`, `input_watch`, `tenhou_state`, `mouse`). |
+| `mouse/` | Majsoul only. Calibration: the user's own games recorded (page pointer samples + the client's per-kyoku `logReport`) and fitted into `MouseProfile`. Autoplay is refused until calibrated. See `mouse/README.md`. |
+| `cursor/` | Majsoul only. The one sender of mouse events: idle movement between decisions and approach → hover → press for each click, steered so each kyoku's moving-frame count lands in the user's own range. See `cursor/README.md`. |
+| `cdp_input.rs` | chromiumoxide wrappers: single `mouseMoved` / button events for the cursor, the bare hover → press → hold → release click sequence (optionally with a mid-press cursor jiggle for retries), canvas rect query, and the Tenhou route's DOM helpers — action-button selectors, the readiness probe, and the call into the injected discard handler. |
 | `verify.rs` | Majsoul only. `InputWatch` — counts the client's own uplink input commands (`inputOperation` / `inputChiPengGang`, bumped by the Majsoul bridge). The manager takes a ticket before pressing; if the count never moves, the click was swallowed and the plan is pressed again (bounded by `click_retries`, gated on the decision window still being live). Repeated dead decisions trigger a page reload (`reload_after_failures`), which reconnects into the hand via the bridge's `GameRestore` path. |
 
 ## What arrives on the `BotResponseBus`

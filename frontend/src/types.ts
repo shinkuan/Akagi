@@ -116,6 +116,55 @@ export type MajsoulAutoplayConfig = {
   /** Reload the game page after this many dead decisions in a row; 0 = off. */
   reload_after_failures: number
   dealer_first_discard_extra_delay_ms: MsRange
+  /** The user's own mouse habits, from calibration. Mahjong Soul autoplay
+   *  stays off until `calibrated`. Mirrors `MouseProfile`. */
+  mouse: MouseProfile
+}
+
+export type ClickMode = 'single' | 'double'
+
+/** Per-kyoku moving-frame rate the client reports, frames per second;
+ *  `low`/`high` are the 10th/90th percentiles. */
+export type MoveRate = { median: number; low: number; high: number }
+
+export type MouseProfile = {
+  calibrated: boolean
+  /** RFC 3339; empty if never calibrated. */
+  calibrated_at: string
+  sample_games: number
+  sample_kyoku: number
+  move_rate: MoveRate
+  /** Share of time the cursor moves while our own decision is open. */
+  own_active: number
+  /** Share of time the cursor moves during other players' turns. */
+  other_active: number
+  /** Canvas widths per second. */
+  speed: [number, number]
+  approach_ms: MsRange
+  click_mode: ClickMode
+  double_click_ms: MsRange
+  /** Client frames per page frame (measured). */
+  frame_ratio: number
+}
+
+/** Mirrors `autoplay::mouse::CalibrationStatus` (`mouse-calibration` event). */
+export type MouseCalibrationStatus = {
+  active: boolean
+  started_at: string
+  /** Complete games recorded; an East-only game counts as half. */
+  games: number
+  kyoku: number
+  required_games: number
+  recommended_games: number
+  /** The game in progress is being recorded. */
+  recording: boolean
+  recent_autoplay_rate: number | null
+  recent_autoplay_kyoku: number
+}
+
+export type FinishedCalibration = {
+  config: AppConfig
+  kept: string[]
 }
 
 /** Pre-click delay model parameters. Mirrors

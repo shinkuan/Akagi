@@ -8,6 +8,8 @@ import { Toaster } from '@/components/ui/sonner'
 import { UpdateNotifier } from '@/components/UpdateNotifier'
 import { AnnouncementsDialog } from '@/components/AnnouncementsDialog'
 import { DelayScriptUpdateDialog } from '@/components/DelayScriptUpdateDialog'
+import { MouseCalibrationBanner } from '@/components/MouseCalibrationBanner'
+import { MouseCalibrationPrompt } from '@/components/MouseCalibrationPrompt'
 import { InstallBlockingOverlay } from '@/components/InstallBlockingOverlay'
 import { useTauriBridge } from '@/hooks/useTauriBridge'
 import { useSidebar } from '@/hooks/useSidebar'
@@ -51,6 +53,7 @@ export default function App() {
         {/* Below `lg` the sidebar is an off-screen drawer, so this is the
             only navigation entry point. Renders null when docked. */}
         <NarrowTopBar />
+        <MouseCalibrationBanner />
         <div className="flex-1 overflow-auto">
           {/* Keyed by route so a crash on one page doesn't poison the others. */}
           <ErrorBoundary key={location.pathname}>
@@ -63,6 +66,7 @@ export default function App() {
       <UpdateNotifier />
       <AnnouncementsDialog />
       <DelayScriptUpdateDialog />
+      <MouseCalibrationPrompt />
       <InstallBlockingOverlay />
     </>
   )
