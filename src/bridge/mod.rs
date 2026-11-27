@@ -105,6 +105,10 @@ pub struct BridgeHooks {
     /// Majsoul: counter bumped on every uplink input command, so autoplay can
     /// verify a click registered (see `autoplay::verify`).
     pub input_watch: Option<crate::autoplay::verify::SharedInputWatch>,
+    /// Majsoul: where the client's per-kyoku `logReport` goes (see
+    /// `autoplay::mouse`).
+    pub mouse_reports:
+        Option<tokio::sync::broadcast::Sender<crate::autoplay::mouse::LogReportSample>>,
     /// Tenhou: hand at Tenhou tile-index resolution plus the current decision
     /// window, needed to encode a client frame (see `autoplay::tenhou_state`).
     pub tenhou_state: Option<crate::autoplay::tenhou_state::SharedTenhouState>,
@@ -137,7 +141,8 @@ pub fn for_platform(
         crate::config::Platform::Majsoul => Box::new(
             MajsoulBridge::new(flow_log, session)
                 .with_time_budget(hooks.time_budget)
-                .with_input_watch(hooks.input_watch),
+                .with_input_watch(hooks.input_watch)
+                .with_mouse_reports(hooks.mouse_reports),
         ),
         crate::config::Platform::Tenhou => Box::new(
             TenhouBridge::new(flow_log, session)

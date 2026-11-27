@@ -121,6 +121,7 @@ impl CaptureBackend for ChromiumBackend {
             .map(|a| crate::bridge::BridgeHooks {
                 time_budget: Some(a.time_budget.clone()),
                 input_watch: Some(a.input_watch.clone()),
+                mouse_reports: Some(a.mouse.reports.clone()),
                 tenhou_state: Some(a.tenhou_state.clone()),
                 // Chromium has no injection relay; Riichi City autoplay
                 // only runs on the MITM path.

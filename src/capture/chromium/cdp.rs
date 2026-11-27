@@ -629,6 +629,21 @@ async fn attach_page(
             false
         }
     };
+    // Majsoul only: the pointer recorder for mouse calibration and the
+    // autoplay cursor's live count. A failure leaves both without input but
+    // costs nothing else.
+    let mouse_feed = autoplay
+        .clone()
+        .filter(|_| bridges.platform() == crate::config::Platform::Majsoul);
+    let mut on_binding = page
+        .event_listener::<chromiumoxide::cdp::js_protocol::runtime::EventBindingCalled>()
+        .await
+        .context("subscribe bindingCalled")?;
+    if mouse_feed.is_some() {
+        if let Err(e) = crate::autoplay::mouse::recorder::install(&page).await {
+            warn!("CDP: pointer recorder not installed on target {target_id}: {e:#}");
+        }
+    }
     let mut on_created = page
         .event_listener::<EventWebSocketCreated>()
         .await
@@ -666,6 +681,17 @@ async fn attach_page(
                         .await;
                     } else {
                         rewrite_paused_script(&page, &notify, ev.request_id.clone(), &url).await;
+                    }
+                }
+                Some(ev) = on_binding.next() => {
+                    if ev.name == crate::autoplay::mouse::recorder::BINDING {
+                        if let Some(feed) = &mouse_feed {
+                            if let Some(batch) =
+                                crate::autoplay::mouse::recorder::parse_batch(&ev.payload)
+                            {
+                                let _ = feed.mouse.input.send(batch);
+                            }
+                        }
                     }
                 }
                 Some(ev) = on_created.next() => {

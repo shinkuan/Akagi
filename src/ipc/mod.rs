@@ -78,6 +78,11 @@ fn spawn_forwarders<R: Runtime>(app: AppHandle<R>, state: AppState) {
         state.history_bus.subscribe(),
         "history-recorded",
     );
+    forward(
+        app.clone(),
+        state.mouse_status_bus.subscribe(),
+        "mouse-calibration",
+    );
 
     // Status buses: forward AND snapshot into AppState.
     spawn_bot_status_forwarder(app.clone(), state.clone());

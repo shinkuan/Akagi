@@ -60,6 +60,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                             result.steps.push(Step::Click {
                                 x_norm: button.0,
                                 y_norm: button.1,
+                                tile: false,
                             });
                         }
                     }
@@ -93,6 +94,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                     result.steps.push(Step::Click {
                         x_norm: button.0,
                         y_norm: button.1,
+                        tile: false,
                     });
                 } else {
                     // Reach not in legal_actions — bridge desync; bail.
@@ -146,6 +148,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                     result.steps.push(Step::Click {
                         x_norm: button.0,
                         y_norm: button.1,
+                        tile: false,
                     });
                 }
             }
@@ -157,6 +160,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                     result.steps.push(Step::Click {
                         x_norm: button.0,
                         y_norm: button.1,
+                        tile: false,
                     });
                 }
             }
@@ -172,6 +176,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                     result.steps.push(Step::Click {
                         x_norm: button.0,
                         y_norm: button.1,
+                        tile: false,
                     });
                 }
             }
@@ -219,6 +224,7 @@ impl PlatformAutoplay for MajsoulAutoplay {
                     result.steps.push(Step::Click {
                         x_norm: button.0,
                         y_norm: button.1,
+                        tile: false,
                     });
                 }
             }
@@ -393,6 +399,7 @@ fn plan_dahai_click(pai: &str, ctx: &ActionContext) -> Option<Step> {
         return Some(Step::Click {
             x_norm: x,
             y_norm: y,
+            tile: true,
         });
     }
 
@@ -428,6 +435,7 @@ fn plan_dahai_click(pai: &str, ctx: &ActionContext) -> Option<Step> {
             return Some(Step::Click {
                 x_norm: x,
                 y_norm: y,
+                tile: true,
             });
         }
         // Discarding a closed-hand tile. The tsumohai sits on the far right
@@ -448,6 +456,7 @@ fn plan_dahai_click(pai: &str, ctx: &ActionContext) -> Option<Step> {
         return Some(Step::Click {
             x_norm: x,
             y_norm: y,
+            tile: true,
         });
     }
 
@@ -460,6 +469,7 @@ fn plan_dahai_click(pai: &str, ctx: &ActionContext) -> Option<Step> {
     Some(Step::Click {
         x_norm: x,
         y_norm: y,
+        tile: true,
     })
 }
 /// True for the dealer's very first discard of a kyoku — the moment
@@ -497,6 +507,7 @@ fn plan_meld(op: MajsoulOpType, at: ActionType, result: &mut PlanResult, ctx: &A
     result.steps.push(Step::Click {
         x_norm: button.0,
         y_norm: button.1,
+        tile: false,
     });
 
     let consumed: Vec<String> = match ctx.action {
@@ -523,6 +534,7 @@ fn plan_meld(op: MajsoulOpType, at: ActionType, result: &mut PlanResult, ctx: &A
             result.steps.push(Step::Click {
                 x_norm: p.0,
                 y_norm: p.1,
+                tile: false,
             });
         }
     }
@@ -541,6 +553,7 @@ fn plan_kan(op: MajsoulOpType, at: ActionType, result: &mut PlanResult, ctx: &Ac
     result.steps.push(Step::Click {
         x_norm: button.0,
         y_norm: button.1,
+        tile: false,
     });
 
     // Collect both ankan and kakan candidates. When the bot is doing
@@ -601,6 +614,7 @@ fn plan_kan(op: MajsoulOpType, at: ActionType, result: &mut PlanResult, ctx: &Ac
         result.steps.push(Step::Click {
             x_norm: p.0,
             y_norm: p.1,
+            tile: false,
         });
     }
 }
@@ -773,6 +787,7 @@ mod tests {
             click_retries: 0,
             reload_after_failures: 0,
             dealer_first_discard_extra_delay_ms: crate::config::MsRange::fixed(0),
+            mouse: crate::config::MouseProfile::default(),
         }
     }
 
@@ -938,7 +953,7 @@ mod tests {
         let result = MajsoulAutoplay::new().plan(&ctx);
         assert_eq!(result.steps.len(), 2, "sleep + ron click, got {result:?}");
         match &result.steps[1] {
-            Step::Click { x_norm, y_norm } => {
+            Step::Click { x_norm, y_norm, .. } => {
                 // [Ron, Pass] sorted by priority → Ron in slot 1, one left
                 // of the always-rightmost pass.
                 assert_eq!(*x_norm, 8.637_5);
@@ -969,7 +984,7 @@ mod tests {
         let result = MajsoulAutoplay::new().plan(&ctx);
         assert_eq!(result.steps.len(), 2, "sleep + pass click, got {result:?}");
         match &result.steps[1] {
-            Step::Click { x_norm, y_norm } => {
+            Step::Click { x_norm, y_norm, .. } => {
                 assert_eq!(*x_norm, 10.875);
                 assert_eq!(*y_norm, 7.0);
             }
@@ -1010,7 +1025,7 @@ mod tests {
         let result = MajsoulAutoplay::new().plan(&ctx);
         assert_eq!(result.steps.len(), 2, "sleep + X click, got {result:?}");
         match &result.steps[1] {
-            Step::Click { x_norm, y_norm } => {
+            Step::Click { x_norm, y_norm, .. } => {
                 // The X (pass / cancel) is always the rightmost button —
                 // slot 0 — regardless of what else is on the row.
                 assert_eq!(*x_norm, 10.875);
@@ -1079,7 +1094,7 @@ mod tests {
         let result = MajsoulAutoplay::new().plan(&ctx);
         assert_eq!(result.steps.len(), 2, "sleep + X click, got {result:?}");
         match &result.steps[1] {
-            Step::Click { x_norm, y_norm } => {
+            Step::Click { x_norm, y_norm, .. } => {
                 assert_eq!(*x_norm, 10.875);
                 assert_eq!(*y_norm, 7.0);
             }
@@ -1328,7 +1343,7 @@ mod tests {
         let result = MajsoulAutoplay::new().plan(&ctx);
         assert_eq!(result.steps.len(), 2);
         match &result.steps[1] {
-            Step::Click { x_norm, y_norm } => {
+            Step::Click { x_norm, y_norm, .. } => {
                 // ACTIONS[0] is the pass slot (rightmost top row).
                 assert_eq!(*x_norm, 10.875);
                 assert_eq!(*y_norm, 7.0);
@@ -1746,7 +1761,7 @@ mod tests {
             .steps
             .iter()
             .filter_map(|s| match s {
-                Step::Click { x_norm, y_norm } => Some((*x_norm, *y_norm)),
+                Step::Click { x_norm, y_norm, .. } => Some((*x_norm, *y_norm)),
                 _ => None,
             })
             .collect()
@@ -1846,7 +1861,7 @@ mod tests {
             .steps
             .iter()
             .filter_map(|s| match s {
-                Step::Click { x_norm, y_norm } => Some((*x_norm, *y_norm)),
+                Step::Click { x_norm, y_norm, .. } => Some((*x_norm, *y_norm)),
                 _ => None,
             })
             .collect();
