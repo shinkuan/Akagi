@@ -33,13 +33,19 @@ export function autoplayBlock(
   return null
 }
 
-/** At startup: autoplay is already on for Mahjong Soul but was never
- *  calibrated (a config from before calibration existed). */
-export function shouldPromptAtStartup(
+/** The saved settings have autoplay on for Mahjong Soul without a
+ *  calibration. `false` until the calibration status is known. */
+export function needsCalibrationPrompt(
   config: AppConfig | null | undefined,
   status: MouseCalibrationStatus | null,
 ): boolean {
-  return !!config?.autoplay?.enabled && autoplayBlock(config, status) === 'calibrate'
+  return !!status && !!config?.autoplay?.enabled && autoplayBlock(config, status) === 'calibrate'
+}
+
+/** Calibration records only Mahjong Soul in the Chromium capture mode, and
+ *  the backend checks the saved settings. */
+export function canStartCalibration(config: AppConfig | null | undefined): boolean {
+  return config?.platform.kind === 'Majsoul' && config.capture?.mode === 'chromium'
 }
 
 export function canFinish(status: MouseCalibrationStatus | null): boolean {

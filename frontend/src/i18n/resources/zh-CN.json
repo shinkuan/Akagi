@@ -935,6 +935,7 @@
     "prompt_more": "场数越多越准,{{recommended}} 场左右就够了。",
     "prompt_window": "请在 Akagi 打开的浏览器窗口里打,并保持窗口可见;窗口被遮住时画面帧数会变少。",
     "prompt_paused": "完成校准前,自动打牌不会启动。",
+    "prompt_save_first": "开始前,请先把平台设为雀魂、捕获模式设为 Chromium,并保存设置。",
     "later": "稍后",
     "start": "开始校准",
     "started": "已开始鼠标校准",

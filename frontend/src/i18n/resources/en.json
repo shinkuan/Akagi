@@ -935,6 +935,7 @@
     "prompt_more": "More games give a better fit; around {{recommended}} is enough.",
     "prompt_window": "Play in the browser window Akagi opened and keep it visible: a hidden window draws fewer frames.",
     "prompt_paused": "Autoplay stays off until you finish the calibration.",
+    "prompt_save_first": "To start, set the platform to Mahjong Soul and the capture mode to Chromium, and save the settings.",
     "later": "Later",
     "start": "Start calibration",
     "started": "Mouse calibration started",

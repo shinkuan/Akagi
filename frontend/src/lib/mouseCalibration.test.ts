@@ -4,14 +4,16 @@ import {
   DEFAULT_MOUSE_PROFILE,
   autoplayBlock,
   canFinish,
+  canStartCalibration,
   formatGames,
   hasEnough,
-  shouldPromptAtStartup,
+  needsCalibrationPrompt,
 } from './mouseCalibration'
 
-function config(kind: string, enabled: boolean, calibrated: boolean): AppConfig {
+function config(kind: string, enabled: boolean, calibrated: boolean, mode = 'chromium'): AppConfig {
   return {
     platform: { kind },
+    capture: { mode },
     autoplay: {
       enabled,
       majsoul: { mouse: { ...DEFAULT_MOUSE_PROFILE, calibrated } },
@@ -45,11 +47,18 @@ describe('mouse calibration gating', () => {
     expect(autoplayBlock(config('Tenhou', true, false), status(true))).toBeNull()
   })
 
-  it('asks at startup only when autoplay is already on without a calibration', () => {
-    expect(shouldPromptAtStartup(config('Majsoul', true, false), status(false))).toBe(true)
-    expect(shouldPromptAtStartup(config('Majsoul', false, false), status(false))).toBe(false)
-    expect(shouldPromptAtStartup(config('Majsoul', true, false), status(true))).toBe(false)
-    expect(shouldPromptAtStartup(config('Majsoul', true, true), status(false))).toBe(false)
+  it('asks when saved autoplay is on for Mahjong Soul without a calibration', () => {
+    expect(needsCalibrationPrompt(config('Majsoul', true, false), status(false))).toBe(true)
+    expect(needsCalibrationPrompt(config('Majsoul', false, false), status(false))).toBe(false)
+    expect(needsCalibrationPrompt(config('Majsoul', true, false), status(true))).toBe(false)
+    expect(needsCalibrationPrompt(config('Majsoul', true, true), status(false))).toBe(false)
+    expect(needsCalibrationPrompt(config('Majsoul', true, false), null)).toBe(false)
+  })
+
+  it('starts only from saved Mahjong Soul in Chromium mode', () => {
+    expect(canStartCalibration(config('Majsoul', true, false))).toBe(true)
+    expect(canStartCalibration(config('Majsoul', true, false, 'mitm'))).toBe(false)
+    expect(canStartCalibration(config('Tenhou', true, false))).toBe(false)
   })
 })
 

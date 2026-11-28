@@ -13,12 +13,16 @@ import {
 import { Button } from '@/components/ui/button'
 import { useConfigStore } from '@/stores/configStore'
 import { useMouseCalibrationStore } from '@/stores/mouseCalibrationStore'
-import { formatGames, shouldPromptAtStartup } from '@/lib/mouseCalibration'
+import {
+  canStartCalibration,
+  formatGames,
+  needsCalibrationPrompt,
+} from '@/lib/mouseCalibration'
 import type { MouseCalibrationStatus } from '@/types'
 
-/** "Calibrate first": opened by the Settings autoplay switch, and once at
- *  startup when autoplay is already on for Mahjong Soul without a
- *  calibration. */
+/** "Calibrate first": opened by the Settings autoplay switch, and whenever
+ *  the saved settings enter "autoplay on for Mahjong Soul, not calibrated" —
+ *  at startup, or after switching platform and saving. */
 export function MouseCalibrationPrompt() {
   const { t } = useTranslation()
   const open = useMouseCalibrationStore((s) => s.promptOpen)
@@ -28,13 +32,14 @@ export function MouseCalibrationPrompt() {
   const setStatus = useMouseCalibrationStore((s) => s.setStatus)
   const config = useConfigStore((s) => s.config)
   const [busy, setBusy] = useState(false)
-  const asked = useRef(false)
+  const needs = needsCalibrationPrompt(config, status)
+  const needed = useRef(false)
+  const canStart = canStartCalibration(config)
 
   useEffect(() => {
-    if (asked.current || !config || !status) return
-    asked.current = true
-    if (shouldPromptAtStartup(config, status)) openPrompt()
-  }, [config, status, openPrompt])
+    if (needs && !needed.current) openPrompt()
+    needed.current = needs
+  }, [needs, openPrompt])
 
   const required = formatGames(status?.required_games ?? 2)
   const recommended = formatGames(status?.recommended_games ?? 5)
@@ -65,11 +70,14 @@ export function MouseCalibrationPrompt() {
           <li>{t('mouse_calibration.prompt_window')}</li>
           <li>{t('mouse_calibration.prompt_paused')}</li>
         </ul>
+        {!canStart && (
+          <p className="text-xs text-amber-500">{t('mouse_calibration.prompt_save_first')}</p>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={closePrompt}>
             {t('mouse_calibration.later')}
           </Button>
-          <Button onClick={start} disabled={busy}>
+          <Button onClick={start} disabled={busy || !canStart}>
             {t('mouse_calibration.start')}
           </Button>
         </DialogFooter>
