@@ -972,6 +972,13 @@
       "settings_button": "Announcements"
     },
     "entries": {
+      "v3_9_1": {
+        "title": "HoloMahjong autoplay, Mahjong Soul mouse calibration",
+        "holomahjong_autoplay_title": "HoloMahjong autoplay",
+        "holomahjong_autoplay_desc": "Akagi plays your turns in HoloMahjong: discards, calls, riichi, wins and kita, in 4- and 3-player games. Moves are sent on the game's own connection, so nothing is clicked.",
+        "mouse_calibration_title": "Mahjong Soul mouse calibration",
+        "mouse_calibration_desc": "Mahjong Soul reports how much your cursor moves each hand, so autoplay there now moves it throughout the game the way you do. It stays off until you have played at least 2 full South games yourself to record your mouse habits, which you can then edit in Settings."
+      },
       "v3_9_0": {
         "title": "HoloMahjong support, one-click log packs",
         "holomahjong_title": "HoloMahjong support",

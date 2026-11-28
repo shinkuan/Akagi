@@ -7,6 +7,7 @@ import {
   CreditCard,
   Download,
   Gamepad2,
+  MousePointer2,
   Package,
   RefreshCw,
   SearchCheck,
@@ -59,6 +60,15 @@ export type AnnouncementEntry = {
  * committed entry here. See README.md in this directory for the workflow.
  */
 export const ANNOUNCEMENTS: AnnouncementEntry[] = [
+  {
+    id: 'v3_9_1',
+    date: '2026-11-28',
+    version: '3.9.1',
+    features: [
+      { icon: Bot, key: 'holomahjong_autoplay' },
+      { icon: MousePointer2, key: 'mouse_calibration' },
+    ],
+  },
   {
     id: 'v3_9_0',
     date: '2026-11-25',

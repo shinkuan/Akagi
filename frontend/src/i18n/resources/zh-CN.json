@@ -972,6 +972,13 @@
       "settings_button": "公告"
     },
     "entries": {
+      "v3_9_1": {
+        "title": "ホロじゃん自动打牌,雀魂鼠标校准",
+        "holomahjong_autoplay_title": "ホロじゃん自动打牌",
+        "holomahjong_autoplay_desc": "让 Akagi 在ホロじゃん自动帮你出牌、鸣牌、立直、和了与拔北,四麻与三麻均支持。操作直接从游戏自己的连接发出,不会点击画面。",
+        "mouse_calibration_title": "雀魂鼠标校准",
+        "mouse_calibration_desc": "雀魂每局都会上报光标移动了多少,所以雀魂自动打牌现在会按你的习惯整局移动光标。要先自己打至少 2 场完整的半庄记录鼠标习惯,完成前不会启动;记下的数值之后可在设置里修改。"
+      },
       "v3_9_0": {
         "title": "支持ホロじゃん,一键打包日志",
         "holomahjong_title": "支持ホロじゃん",
