@@ -29,6 +29,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tile::{compare_pai, ms_to_mjai};
+use tokio::sync::broadcast;
 use tracing::{info, warn};
 
 const METHOD_AUTH_GAME: &str = ".lq.FastTest.authGame";
@@ -43,6 +44,7 @@ const METHOD_SYNC_GAME: &str = ".lq.FastTest.syncGame";
 /// can tell a click that registered from one the UI swallowed.
 const METHOD_INPUT_OPERATION: &str = ".lq.FastTest.inputOperation";
 const METHOD_INPUT_CHI_PENG_GANG: &str = ".lq.FastTest.inputChiPengGang";
+const METHOD_LOG_REPORT: &str = ".lq.Lobby.logReport";
 /// `timeuse` the client stamps on an action it took by itself rather than
 /// on one the player made — a decision window that ran out, or an auto
 /// setting. Observed as exactly this value on both input methods.
@@ -196,6 +198,10 @@ pub struct MajsoulBridge {
     /// autoplay manager for click verification (see `autoplay::verify`).
     /// `None` when the autoplay context isn't wired (MITM path, tests).
     input_watch: Option<crate::autoplay::verify::SharedInputWatch>,
+    /// Where the client's per-kyoku `logReport` goes (see `autoplay::majsoul::calibration`).
+    /// `None` on the MITM path and in tests.
+    mouse_reports:
+        Option<broadcast::Sender<crate::autoplay::majsoul::calibration::LogReportSample>>,
 }
 
 impl MajsoulBridge {
@@ -219,6 +225,7 @@ impl MajsoulBridge {
             replaying: false,
             restore_budget: None,
             input_watch: None,
+            mouse_reports: None,
         }
     }
 
@@ -236,6 +243,16 @@ impl MajsoulBridge {
         watch: Option<crate::autoplay::verify::SharedInputWatch>,
     ) -> Self {
         self.input_watch = watch;
+        self
+    }
+
+    /// Install the `logReport` sink (builder-style; used by
+    /// `bridge::for_platform`).
+    pub fn with_mouse_reports(
+        mut self,
+        sink: Option<broadcast::Sender<crate::autoplay::majsoul::calibration::LogReportSample>>,
+    ) -> Self {
+        self.mouse_reports = sink;
         self
     }
 
@@ -312,6 +329,34 @@ impl MajsoulBridge {
                 if let Some(watch) = &self.input_watch {
                     if is_client_initiated(&msg.payload) {
                         watch.note_sent(input_kind(msg.method_name.as_ref(), &msg.payload));
+                    }
+                }
+                Vec::new()
+            }
+            // Sent by the client at every kyoku end, on the lobby socket — not
+            // the game's, so this bridge has no game id; the report's uuid
+            // gives it. Feeds mouse calibration and the cursor's controller.
+            (MessageType::Request, METHOD_LOG_REPORT) => {
+                if let Some(sink) = &self.mouse_reports {
+                    let now = Local::now().timestamp_millis();
+                    let game_id = msg
+                        .payload
+                        .get("uuid")
+                        .and_then(JsonValue::as_str)
+                        .filter(|u| !u.is_empty())
+                        .map(stable_game_id);
+                    match crate::autoplay::majsoul::calibration::LogReportSample::from_payload(
+                        &msg.payload,
+                        game_id,
+                        now,
+                    ) {
+                        Some(sample) => {
+                            let _ = sink.send(sample);
+                        }
+                        None => warn!(
+                            target: "akagi::bridge::majsoul",
+                            "logReport without its counters; ignored"
+                        ),
                     }
                 }
                 Vec::new()
@@ -1737,6 +1782,27 @@ mod tests {
             method_name: Arc::from(method),
             payload,
         }
+    }
+
+    /// The client's per-kyoku report reaches the mouse feed, keyed to its
+    /// game, and produces no mjai event; a response to it does not.
+    #[test]
+    fn log_reports_reach_the_mouse_feed() {
+        let (tx, mut rx) = broadcast::channel(4);
+        let mut bridge = MajsoulBridge::new(None, None).with_mouse_reports(Some(tx));
+        let payload = json!({
+            "a": 1_000, "d": 1234, "m": 0, "t": 0, "g": 0, "x": 1, "y": 2, "z": 0,
+            "e": 300, "f": 600, "uuid": "fake-game-uuid", "c": {"device_id": "fake"}, "v": 1
+        });
+        assert!(bridge
+            .dispatch(&req(METHOD_LOG_REPORT, payload.clone()))
+            .is_empty());
+        let got = rx.try_recv().unwrap();
+        assert_eq!(got.d, 1234);
+        assert_eq!((got.chang, got.ju), (1, 2));
+        assert_eq!(got.game_id, Some(stable_game_id("fake-game-uuid")));
+        bridge.dispatch(&resp(METHOD_LOG_REPORT, json!({})));
+        assert!(rx.try_recv().is_err());
     }
 
     /// Autoplay tells a click that registered from one the UI swallowed by

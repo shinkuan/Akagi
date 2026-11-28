@@ -47,6 +47,9 @@ pub struct AutoplayContext {
     /// proxy's client→server relay transmits them. The `in_game` gate is
     /// maintained by the Riichi City bridge. See `autoplay::inject`.
     pub inject: crate::autoplay::inject::SharedInjectBus,
+    /// Majsoul mouse calibration: page input, the client's per-kyoku report
+    /// and the session. See `autoplay::majsoul::calibration`.
+    pub majsoul_mouse: crate::autoplay::majsoul::calibration::MouseFeed,
 }
 
 impl AutoplayContext {

@@ -30,6 +30,8 @@ import { useSidebar } from '@/hooks/useSidebar'
 import { useAnnouncementStore } from '@/stores/announcementStore'
 import { useCaptureStore } from '@/stores/captureStore'
 import { useConfigStore } from '@/stores/configStore'
+import { useMouseCalibrationStore } from '@/stores/mouseCalibrationStore'
+import { DEFAULT_MOUSE_PROFILE, autoplayBlock, formatGames } from '@/lib/mouseCalibration'
 import { selectHasNotifiableUpdate, useUpdaterStore } from '@/stores/updaterStore'
 import {
   SCALE_DEFAULT,
@@ -64,6 +66,8 @@ import type {
   DelayMode,
   DelayModelConfig,
   MsRange,
+  MouseProfile,
+  ClickMode,
   DetectedBrowser,
   GithubMirrorMode,
   NetworkConfig,
@@ -694,6 +698,7 @@ function RangeField({
   max,
   step,
   onChange,
+  disabled,
 }: {
   label: string
   hint?: string
@@ -701,6 +706,7 @@ function RangeField({
   max: number
   step: number
   onChange: (v: MsRange) => void
+  disabled?: boolean
 }) {
   const [lo, hi] = value
   return (
@@ -718,6 +724,7 @@ function RangeField({
         value={[lo, hi]}
         onValueChange={(v) => onChange([v[0] ?? lo, v[1] ?? hi])}
         aria-label={label}
+        disabled={disabled}
       />
       {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
     </div>
@@ -885,11 +892,18 @@ function AutoplayCard({
       click_retries: 2,
       reload_after_failures: 3,
       dealer_first_discard_extra_delay_ms: [2000, 3000],
+      mouse: DEFAULT_MOUSE_PROFILE,
     },
     delay: defaultDelayModel(),
   }
   const delay = ap.delay ?? defaultDelayModel()
   const captureIsChromium = draft.capture?.mode === 'chromium'
+  const mouseStatus = useMouseCalibrationStore((s) => s.status)
+  const openCalibrationPrompt = useMouseCalibrationStore((s) => s.openPrompt)
+  // Mahjong Soul autoplay is refused until the user's mouse habits are
+  // calibrated, and while a calibration records.
+  const block = autoplayBlock(draft, mouseStatus)
+  const isMajsoul = draft.platform?.kind === 'Majsoul'
   // Riichi City autoplay runs through the MITM proxy (frame injection), so
   // the Chromium-mode requirement only applies to the click platforms.
   const platformIsRiichiCity = draft.platform?.kind === 'RiichiCity'
@@ -917,6 +931,11 @@ function AutoplayCard({
           label={t('settings.autoplay.enable')}
           value={ap.enabled}
           onChange={(v) => {
+            if (v && block === 'calibrate') {
+              openCalibrationPrompt()
+              return
+            }
+            if (v && block === 'calibrating') return
             setApField({ enabled: v })
             if (v && platformIsRiichiCity) onRiichiCityAutoplay()
           }}
@@ -924,6 +943,16 @@ function AutoplayCard({
         <p className="text-xs text-muted-foreground">
           {t('settings.autoplay.enable_help')}
         </p>
+        {block === 'calibrating' && (
+          <p className="text-xs text-amber-500">
+            {t('settings.autoplay.mouse.blocked_calibrating')}
+          </p>
+        )}
+        {block === 'calibrate' && ap.enabled && (
+          <p className="text-xs text-amber-500">
+            {t('settings.autoplay.mouse.blocked_uncalibrated')}
+          </p>
+        )}
         {ap.enabled && platformHasNoAutoplay && (
           <p className="text-xs text-amber-500">
             {t('settings.autoplay.unsupported_platform')}
@@ -1000,21 +1029,6 @@ function AutoplayCard({
           onChange={(v) => setMajsoulField({ inter_click_delay_ms: v })}
         />
         <RangeField
-          label={t('settings.autoplay.hover_delay')}
-          hint={t('settings.autoplay.hover_delay_hint')}
-          value={ap.majsoul.hover_delay_ms}
-          max={1000}
-          step={10}
-          onChange={(v) => setMajsoulField({ hover_delay_ms: v })}
-        />
-        <RangeField
-          label={t('settings.autoplay.click_hold')}
-          value={ap.majsoul.click_hold_ms}
-          max={500}
-          step={10}
-          onChange={(v) => setMajsoulField({ click_hold_ms: v })}
-        />
-        <RangeField
           label={t('settings.autoplay.verify_input')}
           hint={t('settings.autoplay.verify_input_hint')}
           value={ap.majsoul.verify_input_ms}
@@ -1062,11 +1076,198 @@ function AutoplayCard({
           step={100}
           onChange={(v) => setMajsoulField({ dealer_first_discard_extra_delay_ms: v })}
         />
+        {isMajsoul && (
+          <MouseHabitSection
+            majsoul={ap.majsoul}
+            setMajsoulField={setMajsoulField}
+            onCalibrate={openCalibrationPrompt}
+          />
+        )}
         <p className="text-xs text-muted-foreground">
           {t('settings.autoplay.platform_note')}
         </p>
       </CardContent>
     </Card>
+  )
+}
+
+/** The user's calibrated mouse habits, editable once calibrated. */
+function MouseHabitSection({
+  majsoul,
+  setMajsoulField,
+  onCalibrate,
+}: {
+  majsoul: AppConfig['autoplay']['majsoul']
+  setMajsoulField: (patch: Partial<AppConfig['autoplay']['majsoul']>) => void
+  onCalibrate: () => void
+}) {
+  const { t, i18n } = useTranslation()
+  const status = useMouseCalibrationStore((s) => s.status)
+  const profile = majsoul.mouse ?? DEFAULT_MOUSE_PROFILE
+  const setProfile = (patch: Partial<MouseProfile>) =>
+    setMajsoulField({ mouse: { ...profile, ...patch } })
+  const locked = !profile.calibrated
+  const calibrating = !!status?.active
+  const date = profile.calibrated_at
+    ? new Date(profile.calibrated_at).toLocaleDateString(i18n.language)
+    : ''
+  const num = (v: string, fallback: number) => {
+    const n = Number(v)
+    return v.trim() !== '' && Number.isFinite(n) ? n : fallback
+  }
+  const rate = profile.move_rate
+  return (
+    <div className="grid gap-4 rounded-lg border border-border p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="grid gap-1">
+          <Label>{t('settings.autoplay.mouse.title')}</Label>
+          <span className="text-xs text-muted-foreground">
+            {profile.calibrated
+              ? t('settings.autoplay.mouse.calibrated_on', {
+                  date,
+                  games: formatGames(profile.sample_games),
+                  kyoku: profile.sample_kyoku,
+                })
+              : t('settings.autoplay.mouse.not_calibrated')}
+          </span>
+        </div>
+        <Button size="sm" variant="outline" disabled={calibrating} onClick={onCalibrate}>
+          {profile.calibrated
+            ? t('settings.autoplay.mouse.recalibrate')
+            : t('settings.autoplay.mouse.calibrate')}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">{t('settings.autoplay.mouse.help')}</p>
+      {locked && (
+        <p className="text-xs text-amber-500">{t('settings.autoplay.mouse.locked')}</p>
+      )}
+      <Field
+        label={t('settings.autoplay.mouse.field_move_rate')}
+        hint={t('settings.autoplay.mouse.move_rate_hint')}
+      >
+        <div className="grid grid-cols-3 gap-2">
+          {(['low', 'median', 'high'] as const).map((k) => (
+            <Input
+              key={k}
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={0.5}
+              disabled={locked}
+              aria-label={t(`settings.autoplay.mouse.rate_${k}`)}
+              title={t(`settings.autoplay.mouse.rate_${k}`)}
+              value={Number(rate[k].toFixed(2))}
+              onChange={(e) =>
+                setProfile({
+                  move_rate: { ...rate, [k]: Math.max(0, num(e.target.value, rate[k])) },
+                })
+              }
+            />
+          ))}
+        </div>
+      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        {(['own_active', 'other_active'] as const).map((k) => (
+          <Field key={k} label={t(`settings.autoplay.mouse.field_${k}`)}>
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={95}
+              step={1}
+              disabled={locked}
+              value={Math.round(profile[k] * 100)}
+              onChange={(e) =>
+                setProfile({
+                  [k]: Math.min(0.95, Math.max(0.01, num(e.target.value, profile[k] * 100) / 100)),
+                })
+              }
+            />
+          </Field>
+        ))}
+      </div>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        {t('settings.autoplay.mouse.active_hint')}
+      </p>
+      <Field
+        label={t('settings.autoplay.mouse.field_speed')}
+        hint={t('settings.autoplay.mouse.speed_hint')}
+      >
+        <div className="grid grid-cols-2 gap-2">
+          {[0, 1].map((i) => (
+            <Input
+              key={i}
+              type="number"
+              inputMode="decimal"
+              min={0.05}
+              step={0.05}
+              disabled={locked}
+              value={Number(profile.speed[i].toFixed(2))}
+              onChange={(e) => {
+                const speed: [number, number] = [profile.speed[0], profile.speed[1]]
+                speed[i] = Math.max(0.05, num(e.target.value, speed[i]))
+                setProfile({ speed })
+              }}
+            />
+          ))}
+        </div>
+      </Field>
+      <RangeField
+        label={t('settings.autoplay.mouse.field_approach_ms')}
+        hint={t('settings.autoplay.mouse.approach_hint')}
+        value={profile.approach_ms}
+        max={2500}
+        step={10}
+        disabled={locked}
+        onChange={(v) => setProfile({ approach_ms: v })}
+      />
+      <RangeField
+        label={t('settings.autoplay.hover_delay')}
+        hint={t('settings.autoplay.hover_delay_hint')}
+        value={majsoul.hover_delay_ms}
+        max={1500}
+        step={10}
+        onChange={(v) => setMajsoulField({ hover_delay_ms: v })}
+      />
+      <RangeField
+        label={t('settings.autoplay.click_hold')}
+        value={majsoul.click_hold_ms}
+        max={600}
+        step={10}
+        onChange={(v) => setMajsoulField({ click_hold_ms: v })}
+      />
+      <Field
+        label={t('settings.autoplay.mouse.field_click_mode')}
+        hint={t('settings.autoplay.mouse.click_mode_hint')}
+      >
+        <Select
+          value={profile.click_mode}
+          disabled={locked}
+          onValueChange={(v) => setProfile({ click_mode: v as ClickMode })}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="single">{t('settings.autoplay.mouse.click_single')}</SelectItem>
+            <SelectItem value="double">{t('settings.autoplay.mouse.click_double')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+      {profile.click_mode === 'double' && (
+        <RangeField
+          label={t('settings.autoplay.mouse.field_double_click_ms')}
+          value={profile.double_click_ms}
+          max={1500}
+          step={10}
+          disabled={locked}
+          onChange={(v) => setProfile({ double_click_ms: v })}
+        />
+      )}
+      <p className="text-xs tabular-nums text-muted-foreground">
+        {t('settings.autoplay.mouse.frame_ratio', { ratio: profile.frame_ratio.toFixed(2) })}
+      </p>
+    </div>
   )
 }
 

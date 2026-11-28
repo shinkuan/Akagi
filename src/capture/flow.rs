@@ -53,6 +53,10 @@ where
     /// filename-safe label used in the per-flow log file name (caller is
     /// responsible for sanitising). `label` is the human-readable
     /// description written to the log header.
+    pub fn platform(&self) -> Platform {
+        self.platform
+    }
+
     pub fn acquire(&self, key: K, slug: &str, label: &str) -> SharedBridge {
         let mut map = self.map.lock().expect("flow bridges mutex poisoned");
         map.entry(key)

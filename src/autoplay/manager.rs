@@ -17,13 +17,14 @@ use crate::autoplay::cdp_input::{dispatch_click_shaped, evaluate_canvas_rect};
 use crate::autoplay::context::{AutoplayContext, CanvasRect};
 use crate::autoplay::delay::Reading;
 use crate::autoplay::inject::InjectFrame;
+use crate::autoplay::majsoul::cursor::{ClickShape, Cursor};
 use crate::autoplay::majsoul::MajsoulAutoplay;
 use crate::autoplay::platform::{ActionContext, PlatformAutoplay, Step};
 use crate::autoplay::riichi_city::RiichiCityAutoplay;
 use crate::autoplay::tenhou::TenhouAutoplay;
 use crate::autoplay::verify::InputTicket;
 use crate::bot::BotResponse;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, ClickMode};
 use crate::event_bus::{BotResponseBus, MjaiBus, NotifyBus};
 use crate::game_state::snapshot::GameStateSnapshot;
 use crate::game_state::tracker::GameTracker;
@@ -67,10 +68,16 @@ pub struct AutoplayManager {
     /// decision would be to a person (see `autoplay::advisor`). Pacing only,
     /// on every platform.
     advisor: crate::autoplay::advisor::Advisor,
+    /// Majsoul: the one sender of mouse events once the manager runs; `None`
+    /// before `run` (tests), which falls back to bare clicks.
+    cursor: Option<Cursor>,
 }
 
 #[derive(Default)]
 struct ManagerState {
+    /// Majsoul autoplay was refused this game (no calibration, or one in
+    /// progress) and the user has been told.
+    blocked_noted: bool,
     last_kawa_tile: Option<String>,
     last_self_tsumo: Option<String>,
     self_riichi_accepted: bool,
@@ -112,6 +119,7 @@ impl AutoplayManager {
             delay_script: crate::autoplay::delay::ScriptHost::default(),
             config_dir,
             advisor: crate::autoplay::advisor::Advisor::default(),
+            cursor: None,
         }
     }
 
@@ -119,6 +127,7 @@ impl AutoplayManager {
     pub async fn run(mut self, response_bus: BotResponseBus) -> anyhow::Result<()> {
         let mut bot_rx = response_bus.subscribe();
         let mut mjai_rx = self.mjai_bus.subscribe();
+        self.cursor = Some(Cursor::spawn(self.cfg.clone(), self.ctx.clone()));
         info!("autoplay manager started");
         // The round-advance watcher runs on its own subscription: at hand
         // end the plan loop is busy draining stale plans and the OK press
@@ -189,6 +198,16 @@ impl AutoplayManager {
             )
         };
         let platform_kind = cfg_guard.platform.kind;
+        if platform_kind == crate::config::Platform::Majsoul {
+            if let Err(blocked) = crate::autoplay::majsoul::calibration::majsoul_gate(
+                &cfg_guard.autoplay.majsoul.mouse,
+                self.ctx.majsoul_mouse.calibrating(),
+            ) {
+                drop(cfg_guard);
+                self.note_blocked(blocked);
+                return;
+            }
+        }
         drop(cfg_guard);
 
         // Tenhou's planner needs the bridge's hand at Tenhou tile-index
@@ -406,10 +425,28 @@ impl AutoplayManager {
         }
 
         let mut window_checked = false;
-        for step in &plan.steps {
+        // The approach onto the next press is part of the thinking time the
+        // delay model chose, so the sleep before it is shortened by as much.
+        let mut approach: Option<u32> = None;
+        for (i, step) in plan.steps.iter().enumerate() {
             match step {
                 Step::Sleep { duration_ms } => {
-                    tokio::time::sleep(Duration::from_millis(*duration_ms as u64)).await;
+                    let next = match plan.steps.get(i + 1) {
+                        Some(Step::Click { x_norm, y_norm, .. }) => {
+                            rect.map(|r| (r, *x_norm, *y_norm))
+                        }
+                        _ => None,
+                    };
+                    approach = match (&self.cursor, next) {
+                        (Some(cursor), Some((r, x, y))) => {
+                            let (px, py) = r.pixel(x, y);
+                            let mut rng = rand::rng();
+                            Some(cursor.approach_ms(&cfg.mouse, &r, px, py, &mut rng))
+                        }
+                        _ => None,
+                    };
+                    let sleep = duration_ms.saturating_sub(approach.unwrap_or(0));
+                    tokio::time::sleep(Duration::from_millis(u64::from(sleep))).await;
                 }
                 Step::AwaitReady { timeout_ms } => {
                     let page_guard = self.ctx.page.read().await;
@@ -484,7 +521,11 @@ impl AutoplayManager {
                         }
                     }
                 }
-                Step::Click { x_norm, y_norm } => {
+                Step::Click {
+                    x_norm,
+                    y_norm,
+                    tile,
+                } => {
                     let Some(rect) = rect else {
                         warn!("autoplay: click step with no canvas rect; skipping");
                         continue;
@@ -522,34 +563,31 @@ impl AutoplayManager {
                         );
                         continue;
                     }
-                    // Need to re-acquire the page handle on each click;
-                    // it may have been replaced (tab reload) between
-                    // successive clicks within one action.
-                    let page_guard = self.ctx.page.read().await;
-                    let Some(page) = page_guard.as_ref() else {
-                        warn!("autoplay: no page handle — aborting click sequence");
-                        return;
-                    };
                     // A lost press usually costs nothing — the decision
                     // window closes and the client passes. A lost *riichi*
                     // press is different: the discard that follows it still
                     // goes out, so the hand throws its riichi tile with no
                     // riichi behind it. That press gets the sturdier shape
                     // from the first attempt rather than only on a retry.
-                    if let Err(e) = dispatch_click_shaped(
-                        page,
-                        px,
-                        py,
-                        cfg.hover_delay_ms.ms(),
-                        cfg.click_hold_ms.ms(),
-                        declares_reach,
-                    )
-                    .await
-                    {
+                    let shape = {
+                        let mut rng = rand::rng();
+                        ClickShape {
+                            approach_ms: approach.take().unwrap_or_else(|| {
+                                self.cursor.as_ref().map_or(0, |c| {
+                                    c.approach_ms(&cfg.mouse, &rect, px, py, &mut rng)
+                                })
+                            }),
+                            hover_ms: cfg.hover_delay_ms.ms(),
+                            hold_ms: cfg.click_hold_ms.ms(),
+                            jiggle: declares_reach,
+                            double_gap_ms: (*tile && self.click_mode(&cfg) == ClickMode::Double)
+                                .then(|| cfg.mouse.double_click_ms.draw(&mut rng).ms()),
+                        }
+                    };
+                    if let Err(e) = self.press(px, py, shape).await {
                         warn!("autoplay: dispatch_click failed: {e:#}");
                         return;
                     }
-                    drop(page_guard);
                 }
                 // Riichi City SendFrames never reach this loop — they are
                 // spawned above as per-decision tasks.
@@ -745,6 +783,37 @@ impl AutoplayManager {
         current.map(|w| w.opened_at) != Some(planned.opened_at)
     }
 
+    /// Press at `(px, py)`: through the cursor once it runs, else a bare
+    /// click. The page guard is not held across the cursor's await — the
+    /// cursor takes it too, and a capture-side writer queued in between
+    /// would deadlock the two.
+    async fn press(&self, px: f64, py: f64, shape: ClickShape) -> anyhow::Result<()> {
+        if let Some(cursor) = &self.cursor {
+            return cursor.click(px, py, shape).await;
+        }
+        let guard = self.ctx.page.read().await;
+        let page = guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no page handle"))?;
+        dispatch_click_shaped(page, px, py, shape.hover_ms, shape.hold_ms, shape.jiggle).await
+    }
+
+    /// How the client discards right now: what it last reported, else the
+    /// calibrated habit.
+    fn click_mode(&self, cfg: &crate::config::MajsoulAutoplayConfig) -> ClickMode {
+        self.ctx
+            .majsoul_mouse
+            .with(|s| s.reported_click_mode())
+            .unwrap_or(cfg.mouse.click_mode)
+    }
+
+    /// Majsoul autoplay was refused: log it once a game.
+    fn note_blocked(&mut self, blocked: crate::autoplay::majsoul::calibration::Blocked) {
+        if !std::mem::replace(&mut self.state.blocked_noted, true) {
+            warn!("autoplay: Mahjong Soul autoplay refused this game: {blocked:?}");
+        }
+    }
+
     /// Wait for the client's input command; press again if it never came.
     ///
     /// Retrying is bounded and gated on the decision window still being the
@@ -766,7 +835,7 @@ impl AutoplayManager {
             .steps
             .iter()
             .filter_map(|s| match s {
-                Step::Click { x_norm, y_norm } => Some((*x_norm, *y_norm)),
+                Step::Click { x_norm, y_norm, .. } => Some((*x_norm, *y_norm)),
                 Step::Sleep { .. }
                 | Step::DomClick { .. }
                 | Step::Discard { .. }
@@ -831,14 +900,22 @@ impl AutoplayManager {
                     );
                     continue;
                 }
-                let page_guard = self.ctx.page.read().await;
-                let Some(page) = page_guard.as_ref() else {
+                if self.ctx.page.read().await.is_none() {
                     warn!("autoplay: no page handle — abandoning retry for {action:?}");
                     return false;
+                }
+                // Single presses even for a double-click user: a press on the
+                // tile the first attempt already selected is the discard.
+                let shape = ClickShape {
+                    approach_ms: self.cursor.as_ref().map_or(0, |c| {
+                        c.approach_ms(&cfg.mouse, &rect, px, py, &mut rand::rng())
+                    }),
+                    hover_ms: cfg.hover_delay_ms.ms(),
+                    hold_ms: hold,
+                    jiggle,
+                    double_gap_ms: None,
                 };
-                if let Err(e) =
-                    dispatch_click_shaped(page, px, py, cfg.hover_delay_ms.ms(), hold, jiggle).await
-                {
+                if let Err(e) = self.press(px, py, shape).await {
                     warn!("autoplay: retry dispatch_click failed: {e:#}");
                 }
             }
@@ -1435,6 +1512,48 @@ mod tests {
             crate::event_bus::notify_bus(),
             std::env::temp_dir(),
         )
+    }
+
+    /// Majsoul autoplay does nothing until the user has calibrated, nor while
+    /// a calibration records.
+    #[tokio::test]
+    async fn majsoul_autoplay_waits_for_calibration() {
+        let mut cfg = AppConfig::default();
+        cfg.autoplay.enabled = true;
+        cfg.platform.kind = crate::config::Platform::Majsoul;
+        let cfg = Arc::new(RwLock::new(cfg));
+        let ctx = Arc::new(AutoplayContext::default());
+        let mut m = AutoplayManager::new(
+            cfg.clone(),
+            ctx.clone(),
+            tracker::new_handle(),
+            mjai_bus(),
+            crate::event_bus::notify_bus(),
+            std::env::temp_dir(),
+        );
+        let start_game = MjaiEvent::StartGame {
+            names: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+            kyoku_first: None,
+            aka_flag: None,
+            id: Some(0),
+            num_players: 4,
+            game_meta: None,
+        };
+
+        m.handle_bot_response(discard_with_runner_up("1m", "2m"))
+            .await;
+        assert!(m.state.blocked_noted, "uncalibrated");
+
+        cfg.write().await.autoplay.majsoul.mouse.calibrated = true;
+        m.handle_mjai_event(&start_game);
+        m.handle_bot_response(discard_with_runner_up("1m", "2m"))
+            .await;
+        assert!(!m.state.blocked_noted, "calibrated");
+
+        ctx.majsoul_mouse.with(|s| s.start(chrono::Local::now()));
+        m.handle_bot_response(discard_with_runner_up("1m", "2m"))
+            .await;
+        assert!(m.state.blocked_noted, "calibrating");
     }
 
     /// Regression: `cached_our_seat` must be populated immediately when

@@ -746,6 +746,43 @@ pub async fn replace_delay_script(state: State<'_, AppState>) -> CmdResult<Optio
         .map_err(|e| format!("replace delay.lua: {e}"))
 }
 
+#[tauri::command]
+pub async fn mouse_calibration_status(
+    state: State<'_, AppState>,
+) -> CmdResult<crate::autoplay::majsoul::calibration::CalibrationStatus> {
+    Ok(state.autoplay_context.majsoul_mouse.with(|s| s.status()))
+}
+
+#[tauri::command]
+pub async fn start_mouse_calibration(
+    state: State<'_, AppState>,
+) -> CmdResult<crate::autoplay::majsoul::calibration::CalibrationStatus> {
+    crate::autoplay::majsoul::calibration::start(
+        &state.config,
+        &state.autoplay_context.majsoul_mouse,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn cancel_mouse_calibration(
+    state: State<'_, AppState>,
+) -> CmdResult<crate::autoplay::majsoul::calibration::CalibrationStatus> {
+    crate::autoplay::majsoul::calibration::cancel(&state.autoplay_context.majsoul_mouse)
+}
+
+#[tauri::command]
+pub async fn finish_mouse_calibration(
+    state: State<'_, AppState>,
+) -> CmdResult<crate::autoplay::majsoul::calibration::FinishedCalibration> {
+    crate::autoplay::majsoul::calibration::finish(
+        &state.config,
+        &state.autoplay_context.majsoul_mouse,
+        |cfg| persist_config(cfg, &state.config_path).map_err(|e| e.to_string()),
+    )
+    .await
+}
+
 /// Opens an `http(s)://` URL in the user's default browser. Used by the
 /// first-run wizard's GitHub / Discord links and the purchase flow's PayPal
 /// approve page — Tauri 2's webview won't reliably honour `target="_blank"`
@@ -1843,6 +1880,10 @@ macro_rules! ipc_handlers {
             $crate::ipc::commands::open_external_url,
             $crate::ipc::commands::delay_script_status,
             $crate::ipc::commands::replace_delay_script,
+            $crate::ipc::commands::mouse_calibration_status,
+            $crate::ipc::commands::start_mouse_calibration,
+            $crate::ipc::commands::cancel_mouse_calibration,
+            $crate::ipc::commands::finish_mouse_calibration,
             $crate::ipc::commands::list_log_sessions,
             $crate::ipc::commands::read_log_session,
             $crate::ipc::commands::subscribe_log_events,

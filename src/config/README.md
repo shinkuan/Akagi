@@ -108,6 +108,17 @@ number stays exactly what the user chose (see the `upgraded_range!` fields
 in `autoplay.rs`). Runtime code draws the range once per use
 (`MsRange::draw`) and reads the drawn value with `MsRange::ms`.
 
+## Mouse profile (`[autoplay.majsoul.mouse]`)
+
+`MouseProfile` in `autoplay.rs`: the user's own mouse habits as measured by
+calibration (see `src/autoplay/majsoul/calibration/README.md`). Mahjong Soul autoplay
+refuses to act until `calibrated = true`, so a config written before the
+section existed reads as uncalibrated. Finishing a calibration rewrites the
+whole section plus `hover_delay_ms` / `click_hold_ms`; every field except
+`calibrated`, `calibrated_at`, the sample counts and `frame_ratio` is a
+user-editable habit. `calibrated_at` is a string (empty = never) rather
+than an `Option`, because the merge-on-save keeps a key the struct omits.
+
 ## Notes
 
 - All section structs must derive `Default` and use `#[serde(default)]` so partial configs work.

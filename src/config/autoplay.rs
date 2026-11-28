@@ -268,6 +268,86 @@ pub struct MajsoulAutoplayConfig {
     /// the regular pre-click delay anyway).
     #[serde(deserialize_with = "upgrade_dealer_first_discard_extra")]
     pub dealer_first_discard_extra_delay_ms: MsRange,
+    /// The user's own mouse habits, measured by calibration. Majsoul
+    /// autoplay refuses to run until `calibrated` is set (see
+    /// `autoplay::majsoul::calibration`).
+    pub mouse: MouseProfile,
+}
+
+/// How the user discards: one press on the tile, or two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ClickMode {
+    #[default]
+    Single,
+    Double,
+}
+
+/// Distribution of the client's per-kyoku moving-frame rate (`d` over the
+/// kyoku's length), frames per second. `low`/`high` are the 10th/90th
+/// percentiles of a log-normal fit.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MoveRate {
+    pub median: f64,
+    pub low: f64,
+    pub high: f64,
+}
+
+impl Default for MoveRate {
+    fn default() -> Self {
+        Self {
+            median: 15.0,
+            low: 8.0,
+            high: 30.0,
+        }
+    }
+}
+
+/// Mouse habits the cursor generator reproduces on Majsoul.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MouseProfile {
+    pub calibrated: bool,
+    /// RFC 3339 local time of the last finished calibration; empty if never.
+    pub calibrated_at: String,
+    /// Complete games behind the fit, an East-only game counting as half.
+    pub sample_games: f64,
+    pub sample_kyoku: u32,
+    pub move_rate: MoveRate,
+    /// Share of time the cursor moves while our own decision is open.
+    pub own_active: f64,
+    /// Share of time the cursor moves during everyone else's turns.
+    pub other_active: f64,
+    /// Stroke speed, canvas widths per second.
+    pub speed: [f64; 2],
+    /// Duration of the last stroke before a press.
+    pub approach_ms: MsRange,
+    pub click_mode: ClickMode,
+    /// Gap between the two presses of a double-click discard.
+    pub double_click_ms: MsRange,
+    /// Client frames per page animation frame (about 1 at the client's fast
+    /// frame rate, 0.5 at its slow one). Measured, not a style knob.
+    pub frame_ratio: f64,
+}
+
+impl Default for MouseProfile {
+    fn default() -> Self {
+        Self {
+            calibrated: false,
+            calibrated_at: String::new(),
+            sample_games: 0.0,
+            sample_kyoku: 0,
+            move_rate: MoveRate::default(),
+            own_active: 0.45,
+            other_active: 0.2,
+            speed: [0.4, 1.5],
+            approach_ms: MsRange::new(180, 450),
+            click_mode: ClickMode::Single,
+            double_click_ms: MsRange::new(120, 260),
+            frame_ratio: 1.0,
+        }
+    }
 }
 
 impl MajsoulAutoplayConfig {
@@ -297,6 +377,7 @@ impl Default for MajsoulAutoplayConfig {
             click_retries: 2,
             reload_after_failures: 3,
             dealer_first_discard_extra_delay_ms: DEALER_FIRST_DISCARD_EXTRA,
+            mouse: MouseProfile::default(),
         }
     }
 }
@@ -347,6 +428,42 @@ mod tests {
         assert_eq!(cfg.delay.min_delay_ms, MIN_DELAY);
         assert_eq!(cfg.delay.min_button_delay_ms, MsRange::fixed(2000));
         assert_eq!(cfg.majsoul.verify_input_ms, VERIFY_INPUT, "absent: default");
+    }
+
+    /// A config from before calibration existed is uncalibrated, so Majsoul
+    /// autoplay stays blocked until the user calibrates.
+    #[test]
+    fn missing_mouse_section_is_uncalibrated() {
+        let cfg: AutoplayConfig =
+            toml::from_str("enabled = true\n[majsoul]\nclick_retries = 1\n").unwrap();
+        assert!(!cfg.majsoul.mouse.calibrated);
+        assert_eq!(cfg.majsoul.mouse, MouseProfile::default());
+    }
+
+    #[test]
+    fn mouse_profile_round_trips() {
+        let mut cfg = AutoplayConfig::default();
+        cfg.majsoul.mouse = MouseProfile {
+            calibrated: true,
+            calibrated_at: "2026-01-02T03:04:05+00:00".into(),
+            sample_games: 2.5,
+            sample_kyoku: 27,
+            move_rate: MoveRate {
+                median: 12.5,
+                low: 6.0,
+                high: 25.0,
+            },
+            own_active: 0.6,
+            other_active: 0.25,
+            speed: [0.3, 1.2],
+            approach_ms: MsRange::new(200, 400),
+            click_mode: ClickMode::Double,
+            double_click_ms: MsRange::new(140, 240),
+            frame_ratio: 0.5,
+        };
+        let text = toml::to_string_pretty(&cfg).unwrap();
+        let back: AutoplayConfig = toml::from_str(&text).unwrap();
+        assert_eq!(back.majsoul.mouse, cfg.majsoul.mouse);
     }
 
     /// A decision's settings hold one drawn value per range, inside it.

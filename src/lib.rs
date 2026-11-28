@@ -242,6 +242,20 @@ pub fn run() {
                     history_rx,
                 ));
 
+                // Majsoul mouse calibration. Runs regardless of
+                // `autoplay.enabled`: calibrating is the user playing with
+                // autoplay off.
+                if let Some(dir) = state.config_path.parent() {
+                    let session = autoplay::majsoul::calibration::Session::load(
+                        dir.join("mouse_calibration"),
+                    );
+                    state.autoplay_context.majsoul_mouse.with(|s| *s = session);
+                }
+                tauri::async_runtime::spawn(autoplay::majsoul::calibration::service::run(
+                    state.autoplay_context.clone(),
+                    mjai_bus.clone(),
+                ));
+
                 if bot_enabled {
                     let cfg_for_bot = state.config.clone();
                     let events_for_bot = post_tracker_bus.clone();

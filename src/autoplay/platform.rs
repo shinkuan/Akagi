@@ -17,8 +17,13 @@ use riichienv_core::action::Action;
 /// original Akagi Python autoplay `LOCATION` table.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
-    /// Click at a normalised 16:9 point on the game canvas.
-    Click { x_norm: f64, y_norm: f64 },
+    /// Click at a normalised 16:9 point on the game canvas. `tile`: the
+    /// point is a hand tile, which a double-click user presses twice.
+    Click {
+        x_norm: f64,
+        y_norm: f64,
+        tile: bool,
+    },
     /// Pause for `duration_ms` before the next step. Used for the
     /// pre-click "thinking" delay and the inter-click gap inside one
     /// action.
