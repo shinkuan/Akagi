@@ -931,6 +931,7 @@
     "prompt_title": "Calibrate your mouse habits first",
     "prompt_body": "Mahjong Soul reports, every hand, how many frames your cursor moved. Before autoplay plays for you, Akagi records how you move the mouse in your own games and then moves the cursor the same way.",
     "prompt_play": "Play at least {{required}} full South games yourself, the way you normally play. An East-only game counts as half.",
+    "prompt_no_hints": "Ideally, play on your own judgment rather than following the AI suggestions, so the recording matches how you normally move the mouse.",
     "prompt_more": "More games give a better fit; around {{recommended}} is enough.",
     "prompt_window": "Play in the browser window Akagi opened and keep it visible: a hidden window draws fewer frames.",
     "prompt_paused": "Autoplay stays off until you finish the calibration.",

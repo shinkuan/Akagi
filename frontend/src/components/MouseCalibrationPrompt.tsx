@@ -66,6 +66,7 @@ export function MouseCalibrationPrompt() {
         </DialogHeader>
         <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
           <li>{t('mouse_calibration.prompt_play', { required })}</li>
+          <li>{t('mouse_calibration.prompt_no_hints')}</li>
           <li>{t('mouse_calibration.prompt_more', { recommended })}</li>
           <li>{t('mouse_calibration.prompt_window')}</li>
           <li>{t('mouse_calibration.prompt_paused')}</li>
