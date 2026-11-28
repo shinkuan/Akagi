@@ -8,8 +8,11 @@ use crate::config::{ClickMode, MouseProfile, MoveRate, MsRange};
 
 /// z of the 10th / 90th percentile of a standard normal.
 const Z90: f64 = 1.281_551_6;
-/// Gap between moving frames that ends a stroke, in frame intervals.
+/// Gap between moving frames that ends a stroke: this many frame intervals,
+/// but never under `STROKE_GAP_MS` — at a high refresh rate a hand moving
+/// steadily still leaves frames without a new position.
 const STROKE_GAP_FRAMES: f64 = 2.5;
+const STROKE_GAP_MS: f64 = 60.0;
 /// The client starts a drag past 20 px of travel with the button down.
 const DRAG_PX: f64 = 20.0;
 const DOUBLE_PX: f64 = 15.0;
@@ -207,11 +210,12 @@ pub fn strokes(k: &RawKyoku) -> Vec<Stroke> {
     } else {
         9.0 / 16.0
     };
+    let gap = (STROKE_GAP_FRAMES * frame).max(STROKE_GAP_MS);
     let mut out = Vec::new();
     let mut cur: Option<(Stroke, [f64; 3])> = None;
     for m in &k.moves {
         cur = Some(match cur {
-            Some((mut s, prev)) if m[0] - prev[0] <= STROKE_GAP_FRAMES * frame => {
+            Some((mut s, prev)) if m[0] - prev[0] <= gap => {
                 s.end_ms = m[0];
                 s.length += ((m[1] - prev[1]).powi(2) + ((m[2] - prev[2]) * aspect).powi(2)).sqrt();
                 (s, *m)
@@ -465,6 +469,30 @@ mod tests {
         assert_eq!(s.len(), 2);
         assert!((s[0].length - 0.1).abs() < 1e-9);
         assert!((s[0].duration_ms() - 32.0).abs() < 1e-9);
+    }
+
+    /// Regression: at 240 Hz a steady move skips a frame or two now and
+    /// then; a frame-count gap cut it into slivers and the approach fit
+    /// collapsed to its floor.
+    #[test]
+    fn a_high_refresh_stroke_with_skipped_frames_stays_whole() {
+        let frame = 1000.0 / 240.0;
+        let frames: Vec<f64> = (0..120).map(|i| f64::from(i) * frame).collect();
+        let moves = frames
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i % 8 < 5)
+            .map(|(i, &t)| [t, 0.1 + i as f64 * 0.002, 0.5])
+            .collect();
+        let k = RawKyoku {
+            rect: (1600.0, 900.0),
+            frames,
+            moves,
+            ..RawKyoku::default()
+        };
+        let s = strokes(&k);
+        assert_eq!(s.len(), 1, "{s:?}");
+        assert!(s[0].duration_ms() > 480.0);
     }
 
     #[test]
