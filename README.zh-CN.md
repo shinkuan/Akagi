@@ -144,7 +144,7 @@ https://github.com/user-attachments/assets/2ce7cb71-8b25-4895-a12b-0a638665dcab
 | **雀魂（Mahjong Soul / Majsoul）** | &check; | &check; | &check; |
 | **天凤（Tenhou）** | &check; | &check; | &check; |
 | **Riichi City** | &check; | &check; | &cross; |
-| **ホロじゃん (HoloMahjong)** | &check; | &check; | &cross; |
+| **ホロじゃん (HoloMahjong)** | &check; | &check; | &check; |
 | **Amatsuki** | （计划中） | （计划中） | &cross; |
 
 ---
@@ -480,7 +480,7 @@ Chromium 抓包 backend（CDP）执行：雀魂是在牌桌上点击，天凤的
 │   ├── bot/           Bot manager：内置 bot、云端 API client、mjai 子进程执行器
 │   ├── bridge/        各平台协议 → MjaiEvent
 │   │   ├── majsoul/   雀魂（liqi protobuf）
-│   │   ├── holomahjong/  ホロじゃん（仅 MITM，仅观战）
+│   │   ├── holomahjong/  ホロじゃん（仅 MITM）
 │   │   ├── riichi_city/  Riichi City（仅 MITM）
 │   │   └── tenhou/    天凤（JSON tag stream，仅观战）
 │   ├── capture/       抓包 backend 抽象（mitm | chromium）

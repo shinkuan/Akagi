@@ -123,9 +123,10 @@ impl CaptureBackend for ChromiumBackend {
                 input_watch: Some(a.input_watch.clone()),
                 mouse_reports: Some(a.majsoul_mouse.reports.clone()),
                 tenhou_state: Some(a.tenhou_state.clone()),
-                // Chromium has no injection relay; Riichi City autoplay
-                // only runs on the MITM path.
+                // Chromium has no injection relay; Riichi City and
+                // HoloMahjong autoplay only run on the MITM path.
                 riichi_inject: None,
+                holo: None,
                 notify: None,
                 tenhou_journal: None,
             })

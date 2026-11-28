@@ -116,6 +116,9 @@ pub struct BridgeHooks {
     /// Riichi City: frame-injection gate, maintained by the bridge between
     /// `cmd_enter_room` and `cmd_room_end` (see `autoplay::inject`).
     pub riichi_inject: Option<crate::autoplay::inject::SharedInjectBus>,
+    /// HoloMahjong: the decision window the bridge keeps for autoplay (see
+    /// `autoplay::holomahjong::link`).
+    pub holo: Option<crate::autoplay::holomahjong::link::SharedHoloLink>,
     /// Frontend toast channel, for states a bridge must tell the user about
     /// that no mjai event can carry (Tenhou: a mid-hand rejoin pauses
     /// analysis until the next hand). Wired by both capture backends.
@@ -154,6 +157,8 @@ pub fn for_platform(
         crate::config::Platform::RiichiCity => {
             Box::new(RiichiCityBridge::new(flow_log, session).with_inject(hooks.riichi_inject))
         }
-        crate::config::Platform::HoloMahjong => Box::new(HoloMahjongBridge::new(flow_log, session)),
+        crate::config::Platform::HoloMahjong => {
+            Box::new(HoloMahjongBridge::new(flow_log, session).with_link(hooks.holo))
+        }
     }
 }

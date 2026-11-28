@@ -86,7 +86,9 @@ export function Settings() {
   // moment the draft combines the two, from either direction (platform
   // switched to Riichi City while autoplay is on, or autoplay switched on
   // while the platform is Riichi City).
-  const [rcAutoplayWarnOpen, setRcAutoplayWarnOpen] = useState(false)
+  // The platform whose injected autoplay was just switched on, while its
+  // risk warning is up.
+  const [injectWarn, setInjectWarn] = useState<PlatformKind | null>(null)
 
   useEffect(() => {
     // Sync the editable draft from the store when it (re)loads.
@@ -221,11 +223,7 @@ export function Settings() {
 
       <OverlayCard draft={draft} setDraft={setDraft} />
 
-      <PlatformCard
-        draft={draft}
-        setDraft={setDraft}
-        onRiichiCityAutoplay={() => setRcAutoplayWarnOpen(true)}
-      />
+      <PlatformCard draft={draft} setDraft={setDraft} onInjectedAutoplay={setInjectWarn} />
 
       <CaptureCard draft={draft} setDraft={setDraft} />
 
@@ -295,11 +293,7 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <AutoplayCard
-        draft={draft}
-        setDraft={setDraft}
-        onRiichiCityAutoplay={() => setRcAutoplayWarnOpen(true)}
-      />
+      <AutoplayCard draft={draft} setDraft={setDraft} onInjectedAutoplay={setInjectWarn} />
 
       <NetworkCard draft={draft} setDraft={setDraft} />
 
@@ -332,17 +326,28 @@ export function Settings() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={rcAutoplayWarnOpen} onOpenChange={setRcAutoplayWarnOpen}>
+      <Dialog
+        open={injectWarn !== null}
+        onOpenChange={(open) => {
+          if (!open) setInjectWarn(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('settings.autoplay.rc_warning_title')}</DialogTitle>
+            <DialogTitle>
+              {t('settings.autoplay.inject_warning_title', {
+                platform: injectWarn ? t(platformInfo(injectWarn).labelKey) : '',
+              })}
+            </DialogTitle>
             <DialogDescription>
-              {t('settings.autoplay.rc_warning_desc')}
+              {t('settings.autoplay.inject_warning_desc', {
+                platform: injectWarn ? t(platformInfo(injectWarn).labelKey) : '',
+              })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="bg-transparent p-0 border-0 mx-0 mb-0">
-            <Button size="sm" onClick={() => setRcAutoplayWarnOpen(false)}>
-              {t('settings.autoplay.rc_warning_ack')}
+            <Button size="sm" onClick={() => setInjectWarn(null)}>
+              {t('settings.autoplay.inject_warning_ack')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -806,18 +811,18 @@ function UiScaleField() {
 function PlatformCard({
   draft,
   setDraft,
-  onRiichiCityAutoplay,
+  onInjectedAutoplay,
 }: {
   draft: AppConfig
   setDraft: (c: AppConfig) => void
-  onRiichiCityAutoplay: () => void
+  onInjectedAutoplay: (kind: PlatformKind) => void
 }) {
   const { t } = useTranslation()
   const current = draft.platform.kind
   const setKind = (kind: PlatformKind) => {
     if (kind === current) return
-    if (kind === 'RiichiCity' && (draft.autoplay?.enabled ?? false)) {
-      onRiichiCityAutoplay()
+    if (platformInfo(kind).autoplayInjects && (draft.autoplay?.enabled ?? false)) {
+      onInjectedAutoplay(kind)
     }
     // If the user hasn't customised the Chromium start URL, swap it to
     // the new platform's default so the next launch lands on the right
@@ -873,11 +878,11 @@ function PlatformCard({
 function AutoplayCard({
   draft,
   setDraft,
-  onRiichiCityAutoplay,
+  onInjectedAutoplay,
 }: {
   draft: AppConfig
   setDraft: (c: AppConfig) => void
-  onRiichiCityAutoplay: () => void
+  onInjectedAutoplay: (kind: PlatformKind) => void
 }) {
   const { t } = useTranslation()
   const ap = draft.autoplay ?? {
@@ -904,11 +909,9 @@ function AutoplayCard({
   // calibrated, and while a calibration records.
   const block = autoplayBlock(draft, mouseStatus)
   const isMajsoul = draft.platform?.kind === 'Majsoul'
-  // Riichi City autoplay runs through the MITM proxy (frame injection), so
-  // the Chromium-mode requirement only applies to the click platforms.
-  const platformIsRiichiCity = draft.platform?.kind === 'RiichiCity'
-  // Observe-only platforms: no input path exists, whatever the capture mode.
-  const platformHasNoAutoplay = draft.platform?.kind === 'HoloMahjong'
+  // Injected autoplay runs through the MITM proxy, so the Chromium-mode
+  // requirement only applies to the platforms whose autoplay acts on a page.
+  const platformInjects = platformInfo(draft.platform.kind).autoplayInjects
   const setApField = (patch: Partial<typeof ap>) =>
     setDraft({ ...draft, autoplay: { ...ap, ...patch } })
   const setMajsoulField = (patch: Partial<typeof ap.majsoul>) =>
@@ -937,7 +940,7 @@ function AutoplayCard({
             }
             if (v && block === 'calibrating') return
             setApField({ enabled: v })
-            if (v && platformIsRiichiCity) onRiichiCityAutoplay()
+            if (v && platformInjects) onInjectedAutoplay(draft.platform.kind)
           }}
         />
         <p className="text-xs text-muted-foreground">
@@ -953,12 +956,7 @@ function AutoplayCard({
             {t('settings.autoplay.mouse.blocked_uncalibrated')}
           </p>
         )}
-        {ap.enabled && platformHasNoAutoplay && (
-          <p className="text-xs text-amber-500">
-            {t('settings.autoplay.unsupported_platform')}
-          </p>
-        )}
-        {ap.enabled && !captureIsChromium && !platformIsRiichiCity && !platformHasNoAutoplay && (
+        {ap.enabled && !captureIsChromium && !platformInjects && (
           <p className="text-xs text-amber-500">
             {t('settings.autoplay.requires_chromium')}
           </p>

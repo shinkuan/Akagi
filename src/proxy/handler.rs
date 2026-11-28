@@ -107,6 +107,9 @@ pub struct ProxyHandler {
     /// bridge's `in_game` flag). `None` in "log only" mode / tests.
     /// See `autoplay::inject`.
     inject: Option<crate::autoplay::inject::SharedInjectBus>,
+    /// HoloMahjong autoplay: the window its bridge keeps and the channel the
+    /// h2c relay splices our calls from. `None` in tests.
+    holo: Option<crate::autoplay::holomahjong::link::SharedHoloLink>,
     /// Tenhou: the record of the hand in progress that every flow of this
     /// proxy shares, so the flow a reconnect opens carries on from what the
     /// dropped one saw. See `bridge::tenhou::journal`.
@@ -128,7 +131,7 @@ impl ProxyHandler {
         certs: Arc<CertStore>,
         rewrite_cert_report: bool,
         block_telemetry: bool,
-        inject: Option<crate::autoplay::inject::SharedInjectBus>,
+        autoplay: Option<Arc<crate::autoplay::AutoplayContext>>,
     ) -> anyhow::Result<Self> {
         let binary = session.binary_logger("proxy")?;
         let inspector = session.inspector();
@@ -149,7 +152,8 @@ impl ProxyHandler {
             certs,
             rewrite_cert_report,
             block_telemetry,
-            inject,
+            inject: autoplay.as_ref().map(|a| a.inject.clone()),
+            holo: autoplay.as_ref().map(|a| a.holo.clone()),
             tenhou_journal: crate::bridge::tenhou::journal::new_shared(),
         })
     }
@@ -439,12 +443,17 @@ impl ProxyHandler {
                     };
                 // No time-budget slot and no input watch: the MITM path
                 // has no `Page` handle, so click-based autoplay can never
-                // run here. The one slot the MITM path DOES wire is Riichi
-                // City's frame-injection gate — its autoplay transmits
-                // protocol frames rather than clicking a page.
+                // run here. What the MITM path does wire is for the
+                // platforms whose autoplay transmits protocol frames rather
+                // than clicking a page: Riichi City and HoloMahjong.
                 let hooks = bridge::BridgeHooks {
                     riichi_inject: if self.platform == Platform::RiichiCity {
                         self.inject.clone()
+                    } else {
+                        None
+                    },
+                    holo: if self.platform == Platform::HoloMahjong {
+                        self.holo.clone()
                     } else {
                         None
                     },
@@ -1191,8 +1200,16 @@ impl ProxyHandler {
                 let authority = authority.to_string();
                 move |events: Vec<TapEvent>| this.on_tap_events(client, &authority, events)
             };
+            // Autoplay's calls go out on the hub stream of whichever battle
+            // connection opened it last.
+            let splice = self.holo.as_ref().map(|link| h2c::Splice {
+                path: crate::autoplay::holomahjong::link::HUB_PATH.to_string(),
+                rx: link.subscribe(),
+                owner: link.owner(),
+                id: link.relay_id(),
+            });
             tokio::select! {
-                r = h2c::relay(client_io, server, &first, sink) => {
+                r = h2c::relay(client_io, server, &first, sink, splice) => {
                     if let Err(e) = r {
                         debug!(target: "akagi::proxy::forward", "h2c tunnel to {authority} ended: {e}");
                     }
@@ -1262,6 +1279,29 @@ impl ProxyHandler {
                         &result,
                     );
                     self.dispatch_events(arrow, &uri.to_string(), result.events);
+                }
+                TapEvent::Injected { path, payload, .. } => {
+                    let Ok(uri) = format!("http://{authority}{path}").parse::<Uri>() else {
+                        continue;
+                    };
+                    info!(target: "akagi::proxy::forward", "h2c {authority}: spliced an autoplay call");
+                    self.binary.write(TAG_CLIENT_TO_SERVER, &payload);
+                    let bridge = self.acquire_bridge(client, &uri);
+                    let mut result = bridge
+                        .lock()
+                        .expect("bridge mutex poisoned")
+                        .parse(Direction::Up, &payload);
+                    // Ours, not the client's: the timeline says so.
+                    if let Some(parsed) = &mut result.parsed {
+                        parsed.method.push_str(" (injected)");
+                    }
+                    self.record_frame(
+                        client,
+                        Direction::Up,
+                        FrameRaw::Binary(b64(&payload)),
+                        payload.len(),
+                        &result,
+                    );
                 }
                 TapEvent::Desync { dir, reason } => warn!(
                     target: "akagi::proxy::forward",

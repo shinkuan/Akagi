@@ -155,7 +155,7 @@ https://github.com/user-attachments/assets/d5bc6ff6-6560-4365-ae55-660c9a522790
 | **Mahjong Soul (Majsoul)** | &check; | &check; | &check; |
 | **Tenhou** | &check; | &check; | &check; |
 | **Riichi City** | &check; | &check; | &check; |
-| **HoloMahjong (ホロじゃん)** | &check; | &check; | &cross; |
+| **HoloMahjong (ホロじゃん)** | &check; | &check; | &check; |
 | **Amatsuki** | (planned) | (planned) | &cross; |
 
 ---
@@ -488,7 +488,7 @@ Tenhou, whose client protocol is plain enough to speak directly.
 │   ├── bot/           Bot manager: built-in bot, cloud API client, mjai subprocess runner
 │   ├── bridge/        Per-platform protocol → MjaiEvent
 │   │   ├── majsoul/   Mahjong Soul (liqi protobuf)
-│   │   ├── holomahjong/  HoloMahjong (MITM only, observe-only)
+│   │   ├── holomahjong/  HoloMahjong (MITM only)
 │   │   ├── riichi_city/  Riichi City (MITM only)
 │   │   └── tenhou/    Tenhou (JSON tag stream, observe-only)
 │   ├── capture/       Capture backends abstraction (mitm | chromium)

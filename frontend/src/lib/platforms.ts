@@ -26,6 +26,12 @@ export type PlatformInfo = {
    * Chromium option and forces MITM for these.
    */
   supportsChromium: boolean
+  /**
+   * Whether autoplay sends the client's own protocol messages through the
+   * MITM proxy instead of acting on a page (no Chromium needed). The user is
+   * warned of the risk whenever such autoplay is switched on.
+   */
+  autoplayInjects: boolean
 }
 
 export const PLATFORMS: PlatformInfo[] = [
@@ -35,6 +41,7 @@ export const PLATFORMS: PlatformInfo[] = [
     descriptionKey: 'platform.majsoul_desc',
     defaultStartUrl: 'https://game.maj-soul.com/1/',
     supportsChromium: true,
+    autoplayInjects: false,
   },
   {
     kind: 'Tenhou',
@@ -42,6 +49,7 @@ export const PLATFORMS: PlatformInfo[] = [
     descriptionKey: 'platform.tenhou_desc',
     defaultStartUrl: 'https://tenhou.net/4/',
     supportsChromium: true,
+    autoplayInjects: false,
   },
   {
     kind: 'RiichiCity',
@@ -50,6 +58,7 @@ export const PLATFORMS: PlatformInfo[] = [
     // Native client, no web build → MITM only.
     defaultStartUrl: '',
     supportsChromium: false,
+    autoplayInjects: true,
   },
   {
     kind: 'HoloMahjong',
@@ -58,6 +67,7 @@ export const PLATFORMS: PlatformInfo[] = [
     // Native client, no web build → MITM only.
     defaultStartUrl: '',
     supportsChromium: false,
+    autoplayInjects: true,
   },
 ]
 

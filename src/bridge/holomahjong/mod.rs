@@ -1,4 +1,4 @@
-//! ホロじゃん / HoloMahjong protocol bridge. Observe-only.
+//! ホロじゃん / HoloMahjong protocol bridge.
 //!
 //! The battle server is a MagicOnion StreamingHub reached over gRPC on
 //! cleartext HTTP/2; the proxy relays and taps that connection itself (see
@@ -18,13 +18,20 @@
 //! `(its wind + hand number) mod players` — winds follow turn order whatever
 //! the seat numbers are. Likewise the target of a call is the seat that made
 //! the discard being called, not a reading of the meld's direction mark.
+//!
+//! For autoplay the bridge also records each decision the server waits on
+//! from us — with the calls it offers and the time it allows — in the
+//! shared [`HoloLink`](crate::autoplay::holomahjong::link); [`build`] turns a
+//! decision into the client's own hub call.
 
+pub mod build;
 pub mod hub;
 pub mod rebuild;
 pub mod tile;
 
 use super::{shown, Bridge, Direction, ParseResult};
 use crate::{
+    autoplay::holomahjong::link::{SharedHoloLink, Window, WindowKind},
     config::Platform,
     logger::{FlowLogger, Session},
     schema::{mjai::Tile, GameEndReason, MjaiEvent, ParsedFrame},
@@ -61,6 +68,8 @@ pub struct HoloMahjongBridge {
     flow_log: Option<Arc<FlowLogger>>,
     session: Option<Arc<Session>>,
     mjai_log: Option<Arc<FlowLogger>>,
+    /// Autoplay's view of the open decision window; `None` without autoplay.
+    link: Option<SharedHoloLink>,
 }
 
 impl HoloMahjongBridge {
@@ -77,7 +86,13 @@ impl HoloMahjongBridge {
             flow_log,
             session,
             mjai_log: None,
+            link: None,
         }
+    }
+
+    pub fn with_link(mut self, link: Option<SharedHoloLink>) -> Self {
+        self.link = link;
+        self
     }
 
     fn actor(&self, seat: u8) -> Option<u8> {
@@ -128,6 +143,160 @@ impl HoloMahjongBridge {
         })
     }
 
+    /// Keep autoplay's window in step with a broadcast: every event that moves
+    /// play closes the open one, and those asking something of us open the
+    /// next. Runs after [`dispatch`](Self::dispatch), so a deal or a game's
+    /// start has already set our seat.
+    fn track_window(&self, msg: &HubMessage) {
+        let Some(link) = &self.link else { return };
+        let moves_play = matches!(
+            msg.method,
+            hub::ON_ZIMO
+                | hub::ON_DAPAI
+                | hub::ON_FULOU
+                | hub::ON_AN_GANG_ADD_GANG
+                | hub::ON_BABEI
+                | hub::ON_HULE
+                | hub::ON_PINGJU
+                | hub::ON_QIPAI
+                | hub::ON_ZHUNBEI_CHONGLIAN
+                | hub::ON_CHONGXIN_LIANJIE_CHENGGONG
+        );
+        // Votes and system calls only matter once they have ended the game.
+        if !moves_play && self.game_open {
+            return;
+        }
+        link.set_seat(self.my_seat.filter(|_| self.game_open));
+        link.close();
+        if !self.kyoku_open {
+            return;
+        }
+        // A reconnect on our draw carries that draw as a ZimoEvent (`[5]`).
+        let resumed_draw = (msg.method == hub::ON_CHONGXIN_LIANJIE_CHENGGONG)
+            .then(|| msg.body.get(5))
+            .flatten()
+            .map(|zimo| HubMessage {
+                message_id: None,
+                method: hub::ON_ZIMO,
+                body: zimo.clone(),
+            });
+        if let Some(w) = self.window_for(resumed_draw.as_ref().unwrap_or(msg)) {
+            debug!(
+                target: LOG,
+                "window: {:?} chi {:?} pon {:?} kan {:?} kita {:?} win {} ({} + {} ms)",
+                w.kind, w.chi, w.pon, w.kan, w.kita, w.can_win, w.base_ms, w.bank_ms
+            );
+            link.open(w);
+        }
+    }
+
+    /// The decision `msg` asks of us, if any: our draw (ZimoEvent), the
+    /// discard owed after our call (FulouEvent), or a tile of another seat's
+    /// we may claim (DapaiEvent; a kan to rob, AnGangAddGangEvent; a kita to
+    /// ron, BabeiEvent). Each carries a ResponseTimeOutStruct `[server_time,
+    /// deadline, base, bank]`; a zero deadline asks nothing.
+    fn window_for(&self, msg: &HubMessage) -> Option<Window> {
+        let b = &msg.body;
+        let mine = seat_of(b.get(1)?)? == self.my_seat?;
+        let offers = |i: usize| -> Vec<String> {
+            b.get(i)
+                .and_then(JsonValue::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|o| o.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        // MahjongHuleStruct: `[8]` is the score the win would make.
+        let wins = |i: usize| {
+            b.get(i)
+                .and_then(|h| h.get(8))
+                .and_then(JsonValue::as_i64)
+                .is_some_and(|points| points > 0)
+        };
+        let none = Vec::new;
+        let (kind, chi, pon, kan, kita, can_win, timeout) = match msg.method {
+            hub::ON_ZIMO if mine => {
+                let drawn = tile::tile(b.get(2)?.as_str()?);
+                (
+                    WindowKind::Turn { drawn },
+                    none(),
+                    none(),
+                    offers(3),
+                    offers(4),
+                    wins(5),
+                    6,
+                )
+            }
+            hub::ON_FULOU if mine => (
+                WindowKind::Turn { drawn: None },
+                none(),
+                none(),
+                none(),
+                none(),
+                false,
+                4,
+            ),
+            hub::ON_DAPAI if !mine => (
+                WindowKind::Claim,
+                offers(3),
+                offers(4),
+                offers(5),
+                none(),
+                wins(6),
+                10,
+            ),
+            hub::ON_AN_GANG_ADD_GANG if !mine => (
+                WindowKind::Claim,
+                none(),
+                none(),
+                none(),
+                none(),
+                wins(4),
+                5,
+            ),
+            hub::ON_BABEI if !mine => (
+                WindowKind::Claim,
+                none(),
+                none(),
+                none(),
+                none(),
+                wins(3),
+                4,
+            ),
+            _ => return None,
+        };
+        let t = b.get(timeout)?;
+        let ms = |i: usize| t.get(i).and_then(JsonValue::as_i64);
+        let (server_time, deadline) = (ms(0)?, ms(1)?);
+        if deadline <= 0 {
+            return None;
+        }
+        if kind == WindowKind::Claim
+            && chi.is_empty()
+            && pon.is_empty()
+            && kan.is_empty()
+            && !can_win
+        {
+            return None;
+        }
+        let clamp = |v: i64| u32::try_from(v.max(0)).unwrap_or(u32::MAX);
+        Some(Window {
+            opened_at: std::time::Instant::now(),
+            kind,
+            chi,
+            pon,
+            kan,
+            kita,
+            can_win,
+            base_ms: clamp(ms(2).unwrap_or(0)),
+            bank_ms: clamp(ms(3).unwrap_or(0)),
+            total_ms: clamp(deadline - server_time),
+            answered: false,
+        })
+    }
+
     /// KaijuEvent `[_, game_info, seat, rule, timeout, players, extended_rules,
     /// default_field]`. `rule[1]` is the player count; each player is a
     /// MessagePack union `[0, [seat, account, detail, connected, is_ai]]`
@@ -169,6 +338,7 @@ impl HoloMahjongBridge {
             num_players: Some(n),
             flow_log: self.flow_log.take(),
             session: self.session.take(),
+            link: self.link.take(),
             ..Self::new(None, None)
         };
         info!(target: LOG, "game opened: seat {:?}", self.my_seat);
@@ -631,6 +801,20 @@ fn end_game(reason: GameEndReason) -> MjaiEvent {
     }
 }
 
+/// A call answering a decision window, from the client or from autoplay.
+fn is_decision(method: i64) -> bool {
+    matches!(
+        method,
+        hub::SELECT_DAPAI
+            | hub::SELECT_FULOU
+            | hub::SELECT_ACTION_SKIP
+            | hub::SELECT_HULE
+            | hub::SELECT_AN_GANG_ADD_GANG
+            | hub::SELECT_DAOPAI
+            | hub::SELECT_BABEI
+    )
+}
+
 /// Messages whose content may go into the shareable logs. `JoinRoomAsync`
 /// carries the account and battle-session ids, `OnKaiju` and the reconnect
 /// snapshots every player's account id and name, and `OnJieju` the result
@@ -671,6 +855,7 @@ fn is_shareable(msg: &HubMessage) -> bool {
             | hub::SELECT_HULE
             | hub::SELECT_AN_GANG_ADD_GANG
             | hub::SELECT_DAOPAI
+            | hub::SELECT_BABEI
             | hub::RESULT_COMPLETE
             | hub::RESUME_CONTROL
             | hub::END_GAME_VOTE_START
@@ -695,8 +880,16 @@ impl Bridge for HoloMahjongBridge {
         // Only broadcasts drive play; requests, responses and our own calls
         // are recorded but carry nothing the broadcasts don't.
         let events = if direction == Direction::Down && msg.message_id.is_none() {
-            self.dispatch(&msg)
+            let events = self.dispatch(&msg);
+            // Before the events go out, so the bot's answer finds its window.
+            self.track_window(&msg);
+            events
         } else {
+            if direction == Direction::Up && is_decision(msg.method) {
+                if let Some(link) = &self.link {
+                    link.mark_answered();
+                }
+            }
             Vec::new()
         };
         self.write_mjai(&events);

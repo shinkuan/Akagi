@@ -34,7 +34,7 @@ pub async fn start_proxy<F>(
     mjai_tx: Option<MjaiBus>,
     notify_tx: Option<NotifyBus>,
     force_close: Arc<Notify>,
-    inject: Option<crate::autoplay::inject::SharedInjectBus>,
+    autoplay: Option<Arc<crate::autoplay::AutoplayContext>>,
     shutdown: F,
 ) -> Result<()>
 where
@@ -61,7 +61,7 @@ where
         certs.clone(),
         config.rewrite_certificate_report,
         config.block_telemetry,
-        inject,
+        autoplay,
     )?;
 
     info!("Starting proxy on {addr}");
